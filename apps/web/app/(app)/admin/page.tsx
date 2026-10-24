@@ -4,7 +4,8 @@ import { CHANNEL_LABELS, ROLE_LABELS, ROLES, type Channel } from "@bodh/shared";
 import { requireModule } from "@/lib/auth";
 import { ago, num } from "@/lib/format";
 import { Card, CardHeader, PageHeader, Pill, Table } from "@/components/ui";
-import { AddUserForm, CapsForm, RoleForm } from "./forms";
+import { AccessForm, AddUserForm, CapsForm, RoleForm } from "./forms";
+import { allowedDomains } from "@/lib/google";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Admin" };
@@ -41,21 +42,22 @@ export default async function AdminPage() {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
-          <CardHeader title="People" sub={`Only @${process.env.ALLOWED_EMAIL_DOMAIN ?? "rechargestudio.com"} accounts can sign in`} />
+          <CardHeader title="People" sub={`Only people added here can sign in, with an ${allowedDomains().map((d) => `@${d}`).join(" or ")} Google account`} />
           <Table>
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th><span className="sr-only">Access</span></th></tr></thead>
             <tbody>
               {people.map((p) => (
-                <tr key={p.id}>
-                  <td className="font-medium">{p.name}</td>
+                <tr key={p.id} className={p.active ? "" : "opacity-60"}>
+                  <td className="font-medium">{p.name}{!p.active && <span className="ml-2 text-xs font-normal text-muted">No access</span>}</td>
                   <td className="text-muted">{p.email}</td>
                   <td><RoleForm id={p.id} role={p.role} roles={roles} self={p.id === me.id} /></td>
+                  <td className="text-right"><AccessForm id={p.id} active={p.active} self={p.id === me.id} /></td>
                 </tr>
               ))}
             </tbody>
           </Table>
           <div className="border-t border-rule">
-            <AddUserForm roles={roles} domain={process.env.ALLOWED_EMAIL_DOMAIN ?? "rechargestudio.com"} />
+            <AddUserForm roles={roles} domain={allowedDomains()[0] ?? "rechargestudio.com"} />
           </div>
         </Card>
 

@@ -12,3 +12,9 @@ coverage/
 .secrets/
 .uploads/
 *.tsbuildinfo
+
+# Terraform
+infra/.terraform/
+infra/*.tfstate*
+infra/terraform.tfvars
+infra/.terraform.lock.hcl.bak

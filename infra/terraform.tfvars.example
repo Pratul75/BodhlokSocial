@@ -1,0 +1,8 @@
+project_id            = "your-gcp-project-id"
+region                = "asia-south1"
+bootstrap_admin_email = "kshitij@rechargestudio.com"
+bootstrap_admin_name  = "Kshitij Shivprasad"
+google_client_id      = "1234567890-abc.apps.googleusercontent.com"
+allowed_email_domains = "rechargestudio.com"
+# search_console_site = "sc-domain:asttrolok.com"
+# app_url             = "https://growth.rechargestudio.com"

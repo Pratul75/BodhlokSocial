@@ -11,8 +11,12 @@ try {
 } catch {}
 
 const config: NextConfig = {
+  output: "standalone",
+  // Trace files from the monorepo root so workspace packages land in the standalone build.
+  outputFileTracingRoot: resolve(__dirname, "../.."),
   transpilePackages: ["@bodh/db", "@bodh/shared", "@bodh/guardrails"],
-  serverExternalPackages: ["postgres"],
+  serverExternalPackages: ["postgres", "@google-cloud/secret-manager", "@google-cloud/storage"],
+  poweredByHeader: false,
 };
 
 export default config;

@@ -1,0 +1,65 @@
+name: Deploy
+
+# Runs after CI passes on main, once the GCP variables are set in the repository
+# (Settings > Secrets and variables > Actions > Variables). See infra/README.md.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      vars.GCP_PROJECT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION || 'asia-south1' }}
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push images
+        run: |
+          REG="$REGION-docker.pkg.dev/$PROJECT/bodh"
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          for t in web worker; do
+            docker build --target "$t" -t "$REG/$t:$SHA" -t "$REG/$t:latest" .
+            docker push --all-tags "$REG/$t"
+          done
+          echo "REG=$REG" >> "$GITHUB_ENV"
+
+      - name: Run database migrations
+        run: |
+          gcloud run jobs update bodh-migrate --image "$REG/worker:$SHA" --region "$REGION" --quiet
+          gcloud run jobs execute bodh-migrate --region "$REGION" --wait
+
+      - name: Deploy worker and web
+        run: |
+          gcloud run deploy bodh-worker --image "$REG/worker:$SHA" --region "$REGION" --quiet
+          gcloud run deploy bodh-web --image "$REG/web:$SHA" --region "$REGION" --quiet
+
+      - name: Smoke test
+        run: |
+          URL=$(gcloud run services describe bodh-web --region "$REGION" --format 'value(status.url)')
+          curl -fsS "$URL/api/health"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/")" = "307"

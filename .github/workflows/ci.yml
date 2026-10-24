@@ -33,8 +33,15 @@ jobs:
           node-version: 24
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @bodh/db exec drizzle-kit push --force
-      - run: pnpm --filter @bodh/db exec tsx src/seed.ts
+      - name: Migrations match the schema
+        run: |
+          pnpm --filter @bodh/db exec drizzle-kit generate --name ci-check
+          test -z "$(git status --porcelain packages/db/migrations)" || (git status --porcelain packages/db/migrations && echo "Schema changed without a migration. Run pnpm db:generate and commit it." && exit 1)
+      - name: Apply migrations to an empty database
+        run: pnpm db:migrate
+        env:
+          BOOTSTRAP_ADMIN_EMAIL: kshitij@rechargestudio.com
+      - run: pnpm db:seed
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter @bodh/web build

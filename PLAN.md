@@ -8,7 +8,8 @@ product plan into a build plan for this repository. Repo: github.com/Pratul75/Bo
 
 | Date | What landed |
 |---|---|
-| 2026-10-24 | Phase 0 scaffold: pnpm + Turborepo monorepo, Postgres schema and seed, guardrails package with tests, worker service, CI. Web UI for all 14 modules on sample data, with working approvals, calendar ideas, connections (API keys), uploads, leads, caps and roles. Dev sign-in only; Google sign-in, OAuth, Secret Manager and Terraform are still open. |
+| 2026-10-24 | Phase 1 built: Google sign-in (Workspace domain check, signed sessions, removed users locked out), Secret Manager and Cloud Storage backends, Search Console connect flow with keyword sync, SQL migrations with first-admin bootstrap, Docker images, Terraform for the whole GCP stack, deploy workflow. Not yet deployed: needs the GCP project and OAuth client. |
+| 2026-10-24 | Phase 0 scaffold: pnpm + Turborepo monorepo, Postgres schema and seed, guardrails package with tests, worker service, CI. Web UI for all 14 modules on sample data, with working approvals, calendar ideas, connections (API keys), uploads, leads, caps and roles. Dev sign-in only at this point. |
 
 ## 1. What we are building
 

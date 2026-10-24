@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { bearerAuth } from "hono/bearer-auth";
+import { Hono, type MiddlewareHandler } from "hono";
+import { createHash, timingSafeEqual as nodeTimingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { agentRuns, auditLog, budgets, db } from "@bodh/db";
 import { checkAdChange, type AdChange } from "@bodh/guardrails";
@@ -22,6 +22,12 @@ type AgentName = keyof typeof AGENTS;
 
 const app = new Hono();
 
+function timingSafeEqual(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return nodeTimingSafeEqual(ha, hb);
+}
+
 app.get("/health", async (c) => {
   try {
     await db.select({ one: agentRuns.id }).from(agentRuns).limit(1);
@@ -33,8 +39,18 @@ app.get("/health", async (c) => {
 
 const token = process.env.WORKER_TOKEN;
 if (!token) throw new Error("WORKER_TOKEN is not set");
-app.use("/jobs/*", bearerAuth({ token }));
-app.use("/guardrails/*", bearerAuth({ token }));
+
+/**
+ * Callers send the shared token as X-Worker-Token (Cloud Scheduler, whose Authorization
+ * header carries its own OIDC token for Cloud Run IAM) or as a Bearer token (local tools).
+ */
+const requireToken: MiddlewareHandler = async (c, next) => {
+  const header = c.req.header("x-worker-token") ?? c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!header || !timingSafeEqual(header, token)) return c.json({ error: "Unauthorized" }, 401);
+  await next();
+};
+app.use("/jobs/*", requireToken);
+app.use("/guardrails/*", requireToken);
 
 app.get("/jobs", (c) => c.json(AGENTS));
 
@@ -74,5 +90,5 @@ app.post("/guardrails/ad-change", async (c) => {
   return c.json(decision);
 });
 
-const port = Number(process.env.WORKER_PORT ?? 8787);
+const port = Number(process.env.PORT ?? process.env.WORKER_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, (info) => console.log(`worker listening on http://localhost:${info.port}`));

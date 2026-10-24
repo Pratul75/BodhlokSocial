@@ -23,7 +23,7 @@ export async function uploadAssets(_prev: UploadResult, formData: FormData): Pro
     if (f.size > MAX_BYTES) return { ok: false, error: `${f.name} is over 200 MB.` };
   }
   for (const f of files) {
-    const path = await saveUpload(f.name, await f.arrayBuffer());
+    const path = await saveUpload(f.name, await f.arrayBuffer(), f.type);
     await db.insert(assets).values({ name: f.name, type: f.type.startsWith("video") ? "video" : "image", source: "upload", storagePath: path });
   }
   await audit({ actor: user.email, actorType: "user", action: "upload_assets", target: `${files.length} file(s)`, result: "stored" });

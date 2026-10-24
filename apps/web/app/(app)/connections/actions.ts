@@ -7,6 +7,7 @@ import { getIntegration } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { secretName, secretStore } from "@/lib/secrets";
+import { revokeGrant, syncIntegration } from "@/lib/integrations/google-connection";
 
 export type ConnResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
@@ -36,7 +37,7 @@ export async function saveKey(_prev: ConnResult, formData: FormData): Promise<Co
       }
     }
 
-    const ref = await secretStore().put(secretName(key), value);
+    const ref = await (await secretStore()).put(secretName(key), value);
     await db
       .update(connections)
       .set({ status: "connected", secretRef: ref, accountLabel: label, error: null, updatedAt: new Date() })
@@ -54,11 +55,32 @@ export async function disconnect(formData: FormData) {
   const key = String(formData.get("key"));
   const def = getIntegration(key);
   if (!def) return;
-  await secretStore().remove(secretName(key));
+  if (def.googleOAuth) await revokeGrant(key);
+  await (await secretStore()).remove(secretName(key));
   await db
     .update(connections)
-    .set({ status: "not_connected", secretRef: null, accountLabel: null, lastSyncAt: null, updatedAt: new Date() })
+    .set({ status: "not_connected", secretRef: null, accountLabel: null, lastSyncAt: null, error: null, updatedAt: new Date() })
     .where(eq(connections.key, key));
   await audit({ actor: user.email, actorType: "user", action: "disconnect", target: def.name, result: "disconnected" });
   revalidatePath("/connections");
+}
+
+export async function syncNow(_prev: ConnResult, formData: FormData): Promise<ConnResult> {
+  try {
+    const user = await requireAdmin();
+    const key = String(formData.get("key"));
+    const def = getIntegration(key);
+    if (!def) return { ok: false, error: "Unknown integration." };
+    const { message } = await syncIntegration(key);
+    await audit({ actor: user.email, actorType: "user", action: "sync", target: def.name, result: message });
+    revalidatePath("/connections");
+    revalidatePath("/seo");
+    return { ok: true, message };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : "Sync failed.";
+    const key = String(formData.get("key"));
+    await db.update(connections).set({ status: "error", error, updatedAt: new Date() }).where(eq(connections.key, key));
+    revalidatePath("/connections");
+    return { ok: false, error };
+  }
 }

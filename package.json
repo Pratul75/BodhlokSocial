@@ -10,7 +10,9 @@
     "db:up": "docker compose up -d db",
     "db:push": "pnpm --filter @bodh/db push",
     "db:seed": "pnpm --filter @bodh/db seed",
-    "start": "turbo run start"
+    "start": "turbo run start",
+    "db:migrate": "pnpm --filter @bodh/db migrate",
+    "db:generate": "pnpm --filter @bodh/db generate"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

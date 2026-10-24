@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { KeyRound, Link2, Unplug } from "lucide-react";
-import { saveKey, disconnect, type ConnResult } from "./actions";
+import { KeyRound, Link2, RefreshCw, Unplug } from "lucide-react";
+import { saveKey, disconnect, syncNow, type ConnResult } from "./actions";
 import { btn, inputClass, Pill, StatusPill } from "@/components/ui";
 
 export interface ConnectionView {
@@ -14,6 +14,14 @@ export interface ConnectionView {
   status: string;
   accountLabel: string | null;
   updatedLabel: string | null;
+  syncedLabel: string | null;
+  error: string | null;
+  /** Google OAuth flow is switched on for this integration. */
+  oauthEnabled: boolean;
+  /** A key or OAuth grant is stored for this integration. */
+  hasCredential: boolean;
+  /** The app has a Google OAuth client configured. */
+  oauthClientReady: boolean;
 }
 
 const METHOD_LABEL = {
@@ -27,7 +35,9 @@ const METHOD_LABEL = {
 export function ConnectionCard({ c }: { c: ConnectionView }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ConnResult, FormData>(saveKey, null);
-  const connected = c.status === "connected";
+  const [syncState, syncAction, syncing] = useActionState<ConnResult, FormData>(syncNow, null);
+  // A failed sync keeps the stored credential, so the card still offers Sync and Disconnect.
+  const connected = c.status === "connected" || (c.status === "error" && c.hasCredential);
 
   return (
     <article className="flex flex-col rounded-xl border border-rule bg-card p-4">
@@ -46,17 +56,36 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
       {connected && (
         <p className="mt-2 text-xs text-muted">
           {c.accountLabel ? `${c.accountLabel} · ` : ""}Connected {c.updatedLabel}
+          {c.syncedLabel && ` · synced ${c.syncedLabel}`}
         </p>
       )}
+      {c.error && <p className="mt-2 text-xs text-sindoor" role="alert">{c.error}</p>}
 
       <div className="mt-auto pt-4">
         {connected ? (
-          <form action={disconnect}>
-            <input type="hidden" name="key" value={c.key} />
-            <button className={btn.ghost}>
-              <Unplug size={15} /> Disconnect
-            </button>
-          </form>
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {c.oauthEnabled && (
+                <form action={syncAction}>
+                  <input type="hidden" name="key" value={c.key} />
+                  <button className={btn.secondary} disabled={syncing}>
+                    <RefreshCw size={15} className={syncing ? "animate-spin" : ""} /> {syncing ? "Syncing…" : "Sync now"}
+                  </button>
+                </form>
+              )}
+              <form action={disconnect}>
+                <input type="hidden" name="key" value={c.key} />
+                <button className={btn.ghost}>
+                  <Unplug size={15} /> Disconnect
+                </button>
+              </form>
+            </div>
+            {syncState && (
+              <p className={`text-xs ${syncState.ok ? "text-leaf" : "text-sindoor"}`} role={syncState.ok ? "status" : "alert"}>
+                {syncState.ok ? syncState.message : syncState.error}
+              </p>
+            )}
+          </div>
         ) : c.method === "api_key" || c.method === "service_account" ? (
           open ? (
             <form action={action} className="space-y-2">
@@ -79,12 +108,22 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
               <KeyRound size={15} /> {c.method === "api_key" ? "Add API key" : "Add service account"}
             </button>
           )
+        ) : c.method === "oauth" && c.oauthEnabled && c.oauthClientReady ? (
+          <a href={`/api/connect/${c.key}/start`} className={btn.primary}>
+            <Link2 size={15} /> Connect with Google
+          </a>
         ) : c.method === "oauth" ? (
           <div>
-            <button className={btn.secondary} disabled title="OAuth apps are registered in Phase 1">
+            <button className={btn.secondary} disabled>
               <Link2 size={15} /> Connect
             </button>
-            <p className="mt-1.5 text-xs text-muted">Available once the OAuth app for this platform is registered.</p>
+            <p className="mt-1.5 text-xs text-muted">
+              {c.oauthEnabled
+                ? "Needs the Google OAuth client. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET."
+                : c.prerequisite
+                  ? `Switched on once the ${c.prerequisite} comes through.`
+                  : "Connect flow not built yet."}
+            </p>
           </div>
         ) : c.method === "none" ? (
           <p className="text-xs text-muted">Quora has no public API. Agents draft answers and a person posts them.</p>

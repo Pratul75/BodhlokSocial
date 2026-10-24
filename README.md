@@ -2,7 +2,8 @@
 
 Internal app for the Recharge Studio marketing team to run BODH (Asttrolok) growth
 marketing with Claude agents. Agents plan, draft, publish, run ads and report. People
-approve everything before it goes public. See [PLAN.md](PLAN.md) for the full build plan.
+approve everything before it goes public. See [PLAN.md](PLAN.md) for the full build plan
+and [infra/README.md](infra/README.md) to deploy to GCP.
 
 ## Run it locally
 
@@ -12,35 +13,37 @@ You need Node 24, Docker, and pnpm (`corepack enable` installs it).
 cp .env.example .env
 pnpm install
 pnpm db:up        # Postgres 16 on localhost:5433
-pnpm db:push      # create tables
+pnpm db:migrate   # create tables
 pnpm db:seed      # load sample data
 pnpm dev          # web on :3000, worker on :8787
 ```
 
-Open http://localhost:3000. `pnpm dev` needs ports 3000 and 8787 free. Until Google sign-in is set up, every request runs as
-`DEV_USER_EMAIL`. Use **Preview as** in the top bar to see the app as each role.
+Open http://localhost:3000. `pnpm dev` needs ports 3000 and 8787 free.
+
+### Sign-in
+
+- **Dev mode** (default): with `GOOGLE_CLIENT_ID` empty, every request runs as `DEV_USER_EMAIL`, and **Preview as** in the top bar switches roles. Production refuses to start this way.
+- **Google sign-in**: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `AUTH_SECRET` in `.env`. Only verified Workspace accounts on `ALLOWED_EMAIL_DOMAINS` that an admin has added can sign in.
+
+### Changing the database schema
+
+Edit `packages/db/src/schema.ts`, then run `pnpm db:generate` to write a migration and `pnpm db:migrate` to apply it. Commit the migration; CI fails if the schema and migrations disagree.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `apps/web` | Next.js app with all modules: Today, Strategy, Calendar, Creative, Approvals, Publishing, Ads, SEO & GEO, Community, Leads, Analytics, Ask the agents, Connections, Admin |
+| `apps/web` | Next.js app: sign-in and all modules (Today, Strategy, Calendar, Creative, Approvals, Publishing, Ads, SEO & GEO, Community, Leads, Analytics, Ask the agents, Connections, Admin) |
 | `apps/worker` | Hono service. Cloud Scheduler calls `POST /jobs/:agent`. Agents call `POST /guardrails/ad-change` before any ad change |
-| `packages/db` | Drizzle schema, Postgres client, sample-data seed |
+| `packages/db` | Drizzle schema, migrations, migrate and seed scripts |
 | `packages/shared` | Roles, module access rules, integrations catalog, channels |
-| `packages/guardrails` | Spend caps, auto-allow rules, ad copy checks, publish-approval rule, with tests |
+| `packages/guardrails` | Spend caps, auto-allow rules, ad copy checks, publish-approval rule |
+| `Dockerfile` | `web` and `worker` images for Cloud Run |
+| `infra` | Terraform for Cloud Run, Cloud SQL, Secret Manager, Storage, Scheduler, GitHub deploys |
 
-## What works today
+## Tests
 
-- Approvals queue: approve, edit and approve, or reject with a note. Role checks, ad-rule warnings, audit log.
-- Content calendar with month and week views. Adding ideas works.
-- Connections: API keys and service accounts are saved to the secrets store, never the database.
-- Uploads in Creative studio, lead assignment, strategy plan approval, publish retry, spend caps, roles.
-- Funnel analytics from the `funnel_daily` table, which BigQuery will feed in production.
-
-## Not built yet
-
-- Google sign-in (dev user only for now).
-- OAuth connect flows, Secret Manager backend, and real platform API calls.
-- The agent runtime. Job runs are recorded as queued until Phase 4.
-- Infrastructure as code for GCP.
+```bash
+pnpm test        # guardrails, auth, secrets store, Search Console client
+pnpm typecheck
+```

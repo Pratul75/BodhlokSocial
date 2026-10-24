@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { addUser, setCaps, setRole, type AdminResult } from "./actions";
+import { addUser, setActive, setCaps, setRole, type AdminResult } from "./actions";
 import { btn, inputClass } from "@/components/ui";
 
 export function RoleForm({ id, role, roles, self }: { id: string; role: string; roles: { value: string; label: string }[]; self: boolean }) {
@@ -56,6 +56,19 @@ export function CapsForm({ platform, label, dailyCap, monthlyCap }: { platform: 
       <label className="text-sm"><span className="mb-1 block text-xs text-muted">Monthly cap (₹)</span><input name="monthlyCap" type="number" min={0} step={1000} defaultValue={monthlyCap} className={`${inputClass} font-mono`} /></label>
       <button className={btn.secondary} disabled={pending}>Save caps</button>
       <div className="sm:col-span-4"><Message state={state} /></div>
+    </form>
+  );
+}
+
+export function AccessForm({ id, active, self }: { id: string; active: boolean; self: boolean }) {
+  if (self) return null;
+  return (
+    <form action={setActive}>
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="active" value={active ? "false" : "true"} />
+      <button className={active ? "text-xs text-sindoor hover:underline" : "text-xs text-leaf hover:underline"}>
+        {active ? "Remove access" : "Restore access"}
+      </button>
     </form>
   );
 }

@@ -79,7 +79,7 @@ export default async function CreativePage() {
           );
         })}
       </div>
-      <p className="mt-3 text-xs text-muted">Sample assets show a placeholder because their files are not stored locally.</p>
+      <p className="mt-3 text-xs text-muted">Sample assets show a placeholder because they have no stored file.</p>
     </>
   );
 }

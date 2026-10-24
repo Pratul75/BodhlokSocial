@@ -7,6 +7,7 @@ import { isRole } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { inr } from "@/lib/format";
+import { allowedDomains } from "@/lib/google";
 
 export type AdminResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
@@ -33,8 +34,10 @@ export async function addUser(_prev: AdminResult, formData: FormData): Promise<A
     const email = String(formData.get("email") ?? "").trim().toLowerCase();
     const name = String(formData.get("name") ?? "").trim();
     const role = formData.get("role");
-    const domain = process.env.ALLOWED_EMAIL_DOMAIN ?? "rechargestudio.com";
-    if (!email.endsWith(`@${domain}`)) return { ok: false, error: `Use an @${domain} address. Only that domain can sign in.` };
+    const domains = allowedDomains();
+    if (!domains.includes(email.split("@")[1] ?? "")) {
+      return { ok: false, error: `Use an ${domains.map((d) => `@${d}`).join(" or ")} address. Only those domains can sign in.` };
+    }
     if (!name) return { ok: false, error: "Add the person's name." };
     if (!isRole(role)) return { ok: false, error: "Pick a role." };
     const existing = await db.select().from(users).where(eq(users.email, email));
@@ -69,4 +72,14 @@ export async function setCaps(_prev: AdminResult, formData: FormData): Promise<A
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Couldn't save caps." };
   }
+}
+
+export async function setActive(formData: FormData) {
+  const u = await admin();
+  const id = String(formData.get("id"));
+  const active = formData.get("active") === "true";
+  if (id === u.id) return; // don't lock yourself out
+  const [row] = await db.update(users).set({ active }).where(eq(users.id, id)).returning();
+  if (row) await audit({ actor: u.email, actorType: "user", action: active ? "restore_access" : "remove_access", target: row.email, result: active ? "active" : "removed" });
+  revalidatePath("/admin");
 }
