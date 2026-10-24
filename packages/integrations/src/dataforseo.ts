@@ -58,6 +58,7 @@ export type KeywordIntent = "tool" | "learn" | "software";
 
 /** BODH's three buckets: free tools (kundli makers etc.), learning, and the app itself. */
 export function intentFor(keyword: string, mainIntent?: string | null): KeywordIntent {
+  if (/\b(software|app|program|tool for astrologers|desktop|jagannatha|parashara)\b/i.test(keyword)) return "software";
   if (/\b(calculator|generator|maker|free|online|check|finder|chart|kundli|kundali|panchang|matching|milan)\b/i.test(keyword)) return "tool";
   if (mainIntent === "informational" || !mainIntent) return "learn";
   return "software";
@@ -100,6 +101,19 @@ export async function rankedKeywords(creds: DataForSeoCredentials, limit = 200):
 export async function keywordIdeas(creds: DataForSeoCredentials, seeds: string[], limit = 50): Promise<Omit<KeywordRow, "position" | "url">[]> {
   const { result } = await call<{ items?: LabsKeywordData[] }>(creds, "/dataforseo_labs/google/keyword_ideas/live", [
     { keywords: seeds.slice(0, 20), ...INDIA, limit, order_by: ["keyword_info.search_volume,desc"] },
+  ]);
+  return (result[0]?.items ?? []).map((i) => ({
+    keyword: i.keyword,
+    volume: i.keyword_info?.search_volume ?? 0,
+    difficulty: i.keyword_properties?.keyword_difficulty ?? 0,
+    intent: intentFor(i.keyword, i.search_intent_info?.main_intent),
+  }));
+}
+
+/** Volume, difficulty and intent for keywords you name (up to 700), in Google India. */
+export async function keywordOverview(creds: DataForSeoCredentials, words: string[]): Promise<Omit<KeywordRow, "position" | "url">[]> {
+  const { result } = await call<{ items?: LabsKeywordData[] }>(creds, "/dataforseo_labs/google/keyword_overview/live", [
+    { keywords: [...new Set(words.map((w) => w.toLowerCase().trim()))].slice(0, 700), ...INDIA },
   ]);
   return (result[0]?.items ?? []).map((i) => ({
     keyword: i.keyword,

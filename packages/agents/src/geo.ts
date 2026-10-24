@@ -84,7 +84,7 @@ async function askGemini(q: string): Promise<EngineAnswer | null> {
   const sa = await readJsonSecret<ServiceAccountKey>("vertex");
   if (!sa && process.env.VERTEX_USE_ADC !== "true") return null;
   const auth = await vertexAuth(sa);
-  const model = process.env.GEO_GEMINI_MODEL ?? "gemini-2.5-flash";
+  const model = process.env.GEO_GEMINI_MODEL ?? "gemini-3.8-flash";
   const url = `https://aiplatform.googleapis.com/v1/projects/${auth.projectId}/locations/global/publishers/google/models/${model}:generateContent`;
   const res = await fetch(url, {
     method: "POST",

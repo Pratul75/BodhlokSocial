@@ -84,7 +84,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     fields: [
       { name: "login", label: "API login (email)", placeholder: "you@rechargestudio.com" },
       { name: "password", label: "API password (DataForSEO dashboard > API Access)", secret: true },
-      { name: "target", label: "BODH's website domain", placeholder: "asttrolok.com" },
+      { name: "target", label: "Website to track (keywords and site audit)", placeholder: "www.bodhlok.com" },
     ],
   },
   { key: "semrush", name: "Semrush or Ahrefs", usedFor: "Competitor data (optional)", method: "api_key", group: "Search" },

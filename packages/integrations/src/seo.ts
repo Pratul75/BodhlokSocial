@@ -3,6 +3,7 @@ import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { connections, db, keywords, seoAudits, seoPages } from "@bodh/db";
 import {
   CHECK_LABELS,
+  keywordOverview,
   onPagePagesFailing,
   onPageSummary,
   rankedKeywords,
@@ -65,14 +66,56 @@ export async function syncKeywords(): Promise<string> {
           set: { volume: r.volume, difficulty: r.difficulty, position: r.position, pageUrl: r.url, updatedAt: new Date() },
         });
     }
-    // Catalog keywords we don't rank for yet keep volume from keyword ideas, filled by the SEO agent.
+    const tracked = await trackTargetKeywords(creds);
     await markConnection(null);
-    return `Synced ${rows.length} ranking keywords for ${creds.target}.`;
+    return `Synced ${rows.length} ranking keywords for ${creds.target}.${tracked ? ` Looked up volume and difficulty for ${tracked} target keywords.` : ""}`;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await markConnection(msg);
     throw e;
   }
+}
+
+/** What Bodhlok sells, as people search for it. The page catalog adds the learning topics. */
+export const PRODUCT_KEYWORDS = [
+  "vedic astrology software",
+  "kundli software",
+  "kp astrology software",
+  "jyotish software",
+  "astrology software for astrologers",
+  "online kundli software",
+  "astrology software online",
+  "kp horary software",
+  "astrology software in hindi",
+  "jagannatha hora online",
+  "professional astrology software",
+  "dasha calculator",
+  "ashtakavarga calculator",
+  "prashna kundli",
+  "muhurta calculator",
+];
+
+/**
+ * Volume, difficulty and intent for every catalog page's keyword and the product keywords, so
+ * pages can be ordered by demand before the site ranks for anything. Refreshed monthly.
+ */
+export async function trackTargetKeywords(creds: DataForSeoCredentials): Promise<number> {
+  const words = [...PRODUCT_KEYWORDS, ...pageCatalog().map((p) => p.keyword)];
+  const fresh = await db
+    .select({ keyword: keywords.keyword })
+    .from(keywords)
+    .where(and(inArray(keywords.keyword, words), sql`${keywords.updatedAt} > now() - interval '30 days'`, sql`${keywords.volume} > 0`));
+  const known = new Set(fresh.map((k) => k.keyword));
+  const todo = words.filter((w) => !known.has(w));
+  if (!todo.length) return 0;
+  const rows = await keywordOverview(creds, todo);
+  for (const r of rows) {
+    await db
+      .insert(keywords)
+      .values({ keyword: r.keyword.toLowerCase(), volume: r.volume, difficulty: r.difficulty, intent: r.intent, source: "dataforseo" })
+      .onConflictDoUpdate({ target: keywords.keyword, set: { volume: r.volume, difficulty: r.difficulty, intent: r.intent, updatedAt: new Date() } });
+  }
+  return rows.length;
 }
 
 export const AUDIT_MAX_PAGES = Number(process.env.SEO_AUDIT_MAX_PAGES ?? 500);

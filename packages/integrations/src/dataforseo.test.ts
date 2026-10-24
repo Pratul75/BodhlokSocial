@@ -49,3 +49,17 @@ describe("dataforseo", () => {
     expect(s.metrics).toMatchObject({ broken_links: 3 });
   });
 });
+
+describe("keyword overview", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("looks up named keywords once each", async () => {
+    let body: unknown;
+    vi.stubGlobal("fetch", async (_u: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body));
+      return ok([{ items: [{ keyword: "kp astrology software", keyword_info: { search_volume: 880 }, keyword_properties: { keyword_difficulty: 12 }, search_intent_info: { main_intent: "commercial" } }] }]);
+    });
+    const { keywordOverview } = await import("./dataforseo");
+    expect(await keywordOverview(creds, ["KP astrology software", "kp astrology software "])).toEqual([{ keyword: "kp astrology software", volume: 880, difficulty: 12, intent: "software" }]);
+    expect((body as { keywords: string[] }[])[0]!.keywords).toEqual(["kp astrology software"]);
+  });
+});

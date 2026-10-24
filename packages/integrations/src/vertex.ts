@@ -5,7 +5,7 @@
  * - Video: Veo through predictLongRunning, polled with fetchPredictOperation.
  * Credentials: the vertex connection's service account JSON, or the runtime identity.
  */
-export const IMAGE_MODEL = process.env.VERTEX_IMAGE_MODEL ?? "gemini-2.5-flash-image";
+export const IMAGE_MODEL = process.env.VERTEX_IMAGE_MODEL ?? "gemini-3.1-flash-image";
 export const VIDEO_MODEL = process.env.VERTEX_VIDEO_MODEL ?? "veo-3.1-fast-generate-001";
 export const VIDEO_LOCATION = process.env.VERTEX_VIDEO_LOCATION ?? "us-central1";
 
