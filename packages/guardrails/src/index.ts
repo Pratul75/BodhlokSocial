@@ -171,3 +171,38 @@ export function requiresPublishApproval(launchDate: Date, now: Date, channelAuto
   if (days < 60) return true;
   return !channelAutoApprove;
 }
+
+/* ---------- positioning (from the launch film) ---------- */
+
+export interface PositioningIssue extends CopyIssue {
+  level: "error" | "warning";
+}
+
+const NOT_MEDICAL = /\bnot (medical|healthcare|health) advice\b|\bastrological guidance only\b/i;
+
+/**
+ * Bodhlok speaks to astrologers, students and institutes, never to the public wanting a
+ * prediction; the AI assists the astrologer; the planning modules are not medical advice;
+ * the tone is calm and professional. Errors block a post; warnings go to the approver.
+ */
+const POSITIONING: { pattern: RegExp; why: string; level: "error" | "warning" }[] = [
+  { pattern: /\byour (own )?(kundli|kundali|janam ?kundli|birth ?chart|horoscope|future|destiny|love life|lucky (number|colou?r|day)|rashi|moon sign|sun sign|zodiac|stars)\b/i, why: "Speaks to a horoscope reader, not an astrologer", level: "error" },
+  { pattern: /\b(free|instant|online) (kundli|kundali|horoscope|prediction)s?\b/i, why: "Consumer kundli offer; Bodhlok's offer is the free desk", level: "error" },
+  { pattern: /\bwhat (the|your) (stars|planets) (say|hold|have in store)\b|\bpredictions? for you\b|\b(daily|weekly|monthly) horoscope\b/i, why: "Predictions for the reader", level: "error" },
+  { pattern: /\bai astrologers?\b|\b(no|without an?) astrologer (needed|required)\b|\bai (predicts|reads your|replaces)\b|\breplaces? (the|an|your) astrologer\b|\bastrologer[- ]free\b/i, why: "The AI assists the astrologer; it never replaces one", level: "error" },
+  { pattern: /\b(fertility|conception|contracepti\w+|pregnan\w+|infertil\w+|diagnos\w+|cure|treatment|medical)\b/i, why: "Health or fertility claim without the line \"Astrological guidance only. Not medical advice.\"", level: "error" },
+  { pattern: /\b(mystical|magical|cosmic energ(y|ies)|the universe (has|is|wants)|manifest(ing|ation)?|crystal ball|psychic|miracle|secrets? of the universe)\b/i, why: "Mystical tone; Bodhlok is calm and professional", level: "warning" },
+  { pattern: /\byou won'?t believe\b|\bshocking\b|\bmind[- ]blowing\b/i, why: "Clickbait", level: "warning" },
+];
+
+export function lintPositioning(text: string): PositioningIssue[] {
+  const issues: PositioningIssue[] = [];
+  const disclaimed = NOT_MEDICAL.test(text);
+  for (const { pattern, why, level } of POSITIONING) {
+    const m = text.match(pattern);
+    if (!m) continue;
+    if (why.startsWith("Health") && disclaimed) continue;
+    issues.push({ match: m[0], why, level });
+  }
+  return issues;
+}

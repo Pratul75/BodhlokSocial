@@ -41,13 +41,22 @@ export async function ensurePageCatalog(): Promise<number> {
     .values(pages.map((p) => ({ ...p, status: "planned", needsReview: p.template !== "panchang_city" })))
     .onConflictDoNothing()
     .returning({ id: seoPages.id });
-  // Keep the catalog's inputs (such as priority) current on pages nobody has written yet.
+  // Keep the catalog's title, keyword and inputs current on pages nobody has written yet.
   for (const p of pages) {
     await db
       .update(seoPages)
-      .set({ params: p.params })
-      .where(and(eq(seoPages.template, p.template), eq(seoPages.slug, p.slug), eq(seoPages.status, "planned"), sql`${seoPages.params} is distinct from ${JSON.stringify(p.params)}::jsonb`));
+      .set({ title: p.title, keyword: p.keyword, params: p.params })
+      .where(
+        and(
+          eq(seoPages.template, p.template),
+          eq(seoPages.slug, p.slug),
+          eq(seoPages.status, "planned"),
+          sql`(${seoPages.params} is distinct from ${JSON.stringify(p.params)}::jsonb or ${seoPages.title} <> ${p.title} or ${seoPages.keyword} is distinct from ${p.keyword})`,
+        ),
+      );
   }
+  // Retired templates: drop their unwritten pages.
+  await db.delete(seoPages).where(and(eq(seoPages.template, "panchang_city"), eq(seoPages.status, "planned")));
   return rows.length;
 }
 
@@ -79,6 +88,14 @@ export async function syncKeywords(): Promise<string> {
 /** What Bodhlok sells, as people search for it. The page catalog adds the learning topics. */
 export const PRODUCT_KEYWORDS = [
   "vedic astrology software",
+  "jagannatha hora alternative",
+  "jagannatha hora for mac",
+  "parashara's light software",
+  "leostar astrology software",
+  "astrology software for institutes",
+  "astrology client management software",
+  "bhrigu nandi nadi software",
+  "ai astrology software",
   "kundli software",
   "kp astrology software",
   "jyotish software",

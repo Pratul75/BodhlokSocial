@@ -17,7 +17,7 @@ export default async function StrategyPage() {
       title="Strategy agent"
       sub="Runs on the 25th for next month. Run it now to draft or redo the plan; an approved plan is never replaced."
       label="Run Strategy agent"
-      placeholder="Optional: anything to focus on, e.g. push the Diwali kundli offer"
+      placeholder="Optional: anything to focus on, e.g. the KP module for practitioners, or institutes"
     />
   );
   const [plan] = await db.select().from(strategyPlans).orderBy(desc(strategyPlans.month)).limit(1);

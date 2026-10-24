@@ -50,3 +50,19 @@ describe("checkPost", () => {
     expect(r.warnings).toHaveLength(2);
   });
 });
+
+describe("positioning checks", () => {
+  const base = { channel: "linkedin" as const, format: "post", title: null, assets: [], bannedPhrases: [] };
+  it("blocks consumer address, AI-replaces claims and undisclaimed health claims", () => {
+    const r = checkPost({ ...base, caption: "Get your free kundli and see what the stars say about your love life. Our AI astrologer predicts your future." });
+    expect(r.errors).toEqual(expect.arrayContaining([expect.stringContaining("free kundli"), expect.stringContaining("AI astrologer")]));
+    expect(r.errors.some((e) => /horoscope reader/.test(e))).toBe(true);
+    expect(checkPost({ ...base, caption: "Muhurta for conception on the desk: Tarabala, Chandrabala and the running dasha." }).errors.some((e) => /not medical advice/i.test(e))).toBe(true);
+    expect(checkPost({ ...base, caption: "Muhurta for conception on the desk. Astrological guidance only. Not medical advice." }).errors).toEqual([]);
+  });
+  it("lets practitioner copy through and only warns on tone", () => {
+    const r = checkPost({ ...base, caption: "Open your client's D9 beside D1 and check the 7th lord's dignity before you time the muhurta. Try it on a sample chart in Bodhlok. Some call this cosmic energy; we call it Shadbala." });
+    expect(r.errors).toEqual([]);
+    expect(r.warnings.some((w) => /mystical tone/i.test(w))).toBe(true);
+  });
+});

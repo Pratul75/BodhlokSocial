@@ -1,4 +1,4 @@
-import { lintAdCopy } from "./index";
+import { lintAdCopy, lintPositioning } from "./index";
 
 /**
  * Rules a post must pass before it can be sent for approval, and again before it is
@@ -76,6 +76,9 @@ export function checkPost(p: PostDraft): PostCheck {
 
   for (const issue of lintAdCopy(`${p.title ?? ""}\n${caption}`)) {
     errors.push(`"${issue.match}": ${issue.why.toLowerCase()} aren't allowed.`);
+  }
+  for (const issue of lintPositioning(`${p.title ?? ""}\n${caption}`)) {
+    (issue.level === "error" ? errors : warnings).push(`"${issue.match}": ${issue.why.toLowerCase()}.`);
   }
   for (const phrase of p.bannedPhrases ?? []) {
     const f = phrase.trim();

@@ -95,7 +95,7 @@ export default async function AdsPage() {
           title="Ads agent"
           sub="Reviews both accounts every morning at 07:30 against cost per activated user, acts within the guardrails and proposes the rest."
           label="Run Ads agent"
-          placeholder="Optional: e.g. focus on the Diwali kundli campaign, or propose a test of new hooks"
+          placeholder="Optional: e.g. focus on the institutes campaign, or propose a test of problem-first hooks"
         />
       </Card>
 

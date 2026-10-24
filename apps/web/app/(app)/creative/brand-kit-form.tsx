@@ -40,7 +40,7 @@ export function BrandKitForm({ kit }: { kit: BrandKitView }) {
         </label>
         <label className="block text-sm">
           <span className={label}>Default hashtags</span>
-          <input name="hashtags" defaultValue={kit.hashtags} className={inputClass} placeholder="#vedicastrology #kundli #bodh" />
+          <input name="hashtags" defaultValue={kit.hashtags} className={inputClass} placeholder="#Bodhlok #VedicAstrology #Jyotish" />
         </label>
         <div className="space-y-2 text-sm">
           <label className="block">

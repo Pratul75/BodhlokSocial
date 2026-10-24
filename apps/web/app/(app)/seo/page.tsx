@@ -21,7 +21,7 @@ const STATUSES = [
   { key: "drafted", label: "Changes asked", cls: "bg-sindoor/70" },
   { key: "planned", label: "Planned", cls: "bg-rule" },
 ];
-const TEMPLATES: Template[] = ["planet_house", "nakshatra", "yoga", "lagna", "panchang_city", "blog"];
+const TEMPLATES: Template[] = ["compare", "guide", "planet_house", "nakshatra", "yoga", "lagna", "blog"];
 const fmt = (d: Date) => d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default async function SeoPage({ searchParams }: { searchParams: Promise<{ kw?: string }> }) {
@@ -79,13 +79,13 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
           title="SEO agent"
           sub="Every Monday it drafts the next programmatic pages and a blog, highest search volume first. Drafts go to Approvals; approved pages go live in the page feed."
           label="Run SEO agent"
-          placeholder="Optional: e.g. write all 27 nakshatra pages, or a blog on Shani's transit"
+          placeholder="Optional: e.g. write the Jagannatha Hora comparison, or the KP sub-lords guide"
         />
       </Card>
 
       <div className="mb-6 grid gap-6 xl:grid-cols-2">
         <Card>
-          <CardHeader title="Programmatic pages" sub={`${num(n("live"))} live of ${num(total)}. Each opens with a direct answer and an FAQ with schema.`} />
+          <CardHeader title="Programmatic pages" sub={`${num(n("live"))} approved of ${num(total)}. Comparisons and module guides first, then study guides. Approved pages wait in the page feed until bodhlok.com pulls them.`} />
           <div className="px-5 py-4">
             <div className="flex h-3 overflow-hidden rounded-full bg-paper" role="img" aria-label="Pages by status">
               {STATUSES.map((s) => (

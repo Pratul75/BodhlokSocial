@@ -1,24 +1,25 @@
 ---
 name: bodh-reel-formats
-description: Formats, lengths and structures that work for BODH on Instagram, Facebook, YouTube and LinkedIn.
+description: Formats, lengths and channel roles for Bodhlok content, built around screen recordings of the desk and the film's demo sequence.
 ---
 
 # Bodhlok formats
 
-**Reels / Shorts (15 to 45 seconds)** carry most reach. Script them shot by shot:
-1. Hook in the first 1.5 seconds, on screen as text and spoken: a question or a surprising specific ("Your moon sign is probably not what you think").
-2. Two or three beats of payoff, one idea each, with on-screen text.
-3. Close with the CTA and the app on screen.
-Note the voiceover language, on-screen text and B-roll or graphics for each beat. Vertical 9:16.
+**The product is the visual.** Every format below is built on screen recordings or screenshots of the Bodhlok desk on a sample chart, with the brand overlay. Generated illustrations are for covers and quote cards only, in Bodhlok's greens, never galaxies, zodiac wheels, glowing sages or AI brains.
 
-Series that suit learners and practising astrologers: "Read this chart with me" (one technique on a sample chart, screen recorded in the desk), "KP in 60 seconds" (one sub-lord idea), "One yoga, one real chart", "Dasha timing explained" (a Vimshottari timeline walked through), "Desk tip" (a Bodhlok feature that saves time in a consultation), "Myth vs classical text" (what BPHS actually says). Screen recordings of the desk are the most honest demo; always use a sample chart, never a real client's.
+**The demo sequence** (from the launch film): Question → Relevant charts → Dasha → Strength → Rules → Context → Language output. Long videos follow it whole; Reels and Shorts take one step of it.
 
-**Carousels (5 to 8 slides)**: slide 1 is the hook as a headline, one point per slide, last slide is the CTA. Good for sign-by-sign lists and explainers. 4:5.
+**Creative brief = a shot list.** For each post the brief names: the sample chart, the screens to record in order (zoom into what is discussed; nothing static beyond 5 to 7 seconds), the on-screen text per beat, the voiceover language, and the cover frame.
 
-**Single images**: quote cards, transit announcements, festival greetings with one line of insight. 4:5 for Instagram, 1.91:1 or 1:1 for Facebook and LinkedIn.
+## Channels, in order of importance for this audience
+1. **YouTube long videos (8 to 15 minutes):** a technique walked through on the desk, a module explained (KP sub-lords, Ashtakavarga, Jaimini, Muhurta), a full consultation-style walkthrough on a sample chart, "How Bodhlok's AI actually works" (the four layers). Title under 70 characters, keyword first; description opens with two plain sentences, then chapters.
+2. **LinkedIn (text-first, one or two a week):** for practising astrologers, teachers and institutes: running a practice (client notes, consultation history), teaching with a shared desk, how Bodhlok is built and tested, cut-downs of the film. At most three hashtags.
+3. **YouTube Shorts and Instagram Reels (20 to 45 seconds, 9:16):** one idea per piece, shown on screen: "Desk tip" (a feature that saves time), "KP in 60 seconds", "Read this placement with me", "Myth vs classical text", "Dasha timing explained". Hook in the first 1.5 seconds as a question an astrologer asks, spoken and on screen. Close with the CTA and the desk on screen.
+4. **Instagram carousels (5 to 8 slides, 4:5):** a technique step by step with desk screenshots; the AI four-layer story; a yoga on a sample chart.
+5. **Facebook:** the same posts as Instagram, plus the film and long videos. No greeting cards unless they teach one line of Jyotish.
 
-**YouTube long videos (8 to 15 minutes)**: monthly forecasts by sign and deep dives. Title under 70 characters with the main keyword first; description opens with two plain sentences, then chapters.
+**Series ideas:** "Read this chart with me", "KP in 60 seconds", "One yoga, one sample chart", "Dasha timing explained", "Desk tip", "Myth vs classical text", "How the AI works" (one layer per episode), "For institutes" (teaching with a shared desk), and the launch film cut by section.
 
-**LinkedIn**: one post a week at most, for astrologers running a practice and for institutes: client records, consultation workflow, teaching with a shared desk, building Bodhlok. Text-first, no hashtag walls.
+**Sample charts only.** Never a real client's chart or birth details; say "sample chart" on screen.
 
-**Timing (IST)**: Instagram and Facebook do best 7:00 to 9:00 and 19:00 to 22:00; YouTube Shorts 12:00 to 14:00 and evenings; LinkedIn weekdays 9:00 to 11:00. Space posts on the same channel at least four hours apart. Plan around Hindu festivals, eclipses, Shani and Guru transits, and Mercury retrogrades, which drive search interest.
+**Timing (IST):** YouTube uploads 11:00 to 13:00 or 18:00 to 20:00; LinkedIn weekdays 9:00 to 11:00; Instagram 8:00 to 9:00 and 19:00 to 21:00. Same channel at least four hours apart. Plan around transits, eclipses, retrogrades and festival muhurtas, which practitioners get asked about.

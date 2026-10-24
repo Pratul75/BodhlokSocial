@@ -42,7 +42,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader
         title="Analytics"
-        description="Every channel is judged on cost per activated user: registered and generated at least one chart."
+        description="Every channel is judged on cost per activated user: an astrologer or student who created a free desk and opened a first chart."
         actions={
           <div className="flex rounded-lg bg-card p-0.5 ring-1 ring-rule">
             {RANGES.map((r) => (

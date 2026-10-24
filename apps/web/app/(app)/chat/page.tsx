@@ -10,7 +10,7 @@ export const metadata = { title: "Ask the agents" };
 
 const EXAMPLES = [
   "How did cost per activated user change this week?",
-  "Which ads brought the most activations in the last 28 days?",
+  "Which channel brought the most first charts in the last 28 days?",
   "What's on the calendar for the next 7 days?",
   "Which keywords are we close to page one for?",
 ];

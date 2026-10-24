@@ -1,15 +1,17 @@
-# BODH events: integration guide for the BODH backend
+# BODH events: integration guide for the Bodhlok backend
 
-BODH Growth OS measures marketing by **cost per activated user**. It needs three events
-from the BODH backend, sent server to server as they happen:
+BODH Growth OS measures marketing by **cost per activated user**, where a user is an
+astrologer, student or institute member on Bodhlok. It needs three events from the
+Bodhlok backend, sent server to server as they happen:
 
 | Event | Send when | Why it matters |
 |---|---|---|
-| `registration` | A user finishes creating a free account | Counts the signup and records where it came from |
-| `activation` | The same user generates their **first** chart | The North Star metric |
-| `paid` | The user's first successful payment for a plan | Conversion to Chaatra, Jyotish or Guru |
+| `registration` | A person finishes creating a free desk (account) | Counts the signup and records where it came from |
+| `activation` | The same person opens their **first** chart in the desk (birth details entered, or a sample chart opened) | The North Star metric: people who work with a chart are the ones who upgrade |
+| `paid` | The person's first successful payment: a paid plan, institute seats or AI consult credits | Conversion |
 
-Send each event once per user. Later charts and renewals are not needed.
+Send each event once per person. Later charts and renewals are not needed. (A fourth event,
+`return`, for a second session three or more days after the first, is planned; don't send it yet.)
 
 ## Endpoint
 
@@ -20,9 +22,9 @@ X-Bodh-Timestamp: <unix seconds>
 X-Bodh-Signature: v1=<hex HMAC-SHA256>
 ```
 
-The host is the Growth OS web app URL. The signing secret is the `app-bodh-events-secret`
-secret in the Growth OS GCP project. The marketing admin grants your service account read
-access to it, so it is never sent by email or chat.
+The host is `https://growth.rechargestudio.com`. The signing secret is `BODH_EVENTS_SECRET`
+in the Growth OS server settings; the marketing admin hands it over through a password
+manager or a one-time secret link, never by email or chat.
 
 ## Signing
 

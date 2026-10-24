@@ -19,7 +19,7 @@ const JOBS: { key: string; label: string; schedule: string }[] = [
   { key: "rebuild_funnel", label: "Rebuild the funnel", schedule: "Hourly, and daily for 35 days" },
 ];
 
-const TYPE_LABEL: Record<string, string> = { registration: "Registered", activation: "First chart", paid: "Paid" };
+const TYPE_LABEL: Record<string, string> = { registration: "Desk created", activation: "First chart opened", paid: "Paid" };
 const PLATFORM_LABEL: Record<string, string> = { web: "Web", android: "Android", ios: "iOS" };
 
 export default async function TrackingPage() {
@@ -152,7 +152,7 @@ export default async function TrackingPage() {
 
       <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
         <Card>
-          <CardHeader title="For the BODH backend team" sub="Send each registration, first chart and purchase as a signed POST" />
+          <CardHeader title="For the BODH backend team" sub="Send each desk created, first chart opened and purchase as a signed POST" />
           <div className="space-y-4 px-5 py-4">
             <CopyField label="Endpoint" value={`${appUrl}/api/events/bodh`} />
             <p className="text-sm">

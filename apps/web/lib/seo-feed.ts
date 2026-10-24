@@ -10,6 +10,8 @@ type Page = typeof seoPages.$inferSelect;
 
 /** Where each template lives on BODH's site. The web team can map these however they like. */
 export const SITE_PATHS: Record<string, (slug: string, params: Record<string, unknown>) => string> = {
+  compare: (s) => `/compare/${s}`,
+  guide: (s) => `/guides/${s}`,
   planet_house: (s) => `/astrology/planets-in-houses/${s}`,
   nakshatra: (s) => `/astrology/nakshatras/${s}`,
   yoga: (s) => `/astrology/yogas/${s}`,
@@ -100,6 +102,8 @@ export async function livePage(template: string, slug: string): Promise<Page | n
 }
 
 const SECTION: Record<string, string> = {
+  compare: "Choosing astrology software",
+  guide: "Module guides: techniques on the desk",
   planet_house: "Planets in houses",
   nakshatra: "Nakshatras",
   yoga: "Yogas",

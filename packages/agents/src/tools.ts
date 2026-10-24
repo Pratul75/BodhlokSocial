@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { adEntities, approvals, auditLog, brandKit, calendarItems, creativePerformance, db, keywords, seoPages, strategyPlans } from "@bodh/db";
 import { adResults, JUDGE_DAYS, judgeAd, requestChange, spendNow, testsWithResults } from "@bodh/integrations/ads";
-import { lintAdCopy } from "@bodh/guardrails";
+import { lintAdCopy, lintPositioning } from "@bodh/guardrails";
 import { keywordIdeas, searchTrends } from "@bodh/integrations/dataforseo";
 import { dataForSeoCredentials, latestAudit, nextPlannedPages } from "@bodh/integrations/seo";
 import { readSkill } from "./skills";
@@ -334,7 +334,7 @@ export function contentTools(ctx: ToolContext) {
       title: z.string().max(100).optional().describe("Required for YouTube: 2 to 100 characters"),
       script: z.string().max(4000).describe("Shot-by-shot script or slide-by-slide outline, with the hook first"),
       caption: z.string().max(2200).describe("The caption or YouTube description, ready to post"),
-      creative_brief: z.string().max(1000).describe("What the image, carousel or video should show, for the creative team or the image generator"),
+      creative_brief: z.string().max(1500).describe("A shot list: the sample chart, the desk screens to record in order, on-screen text per beat, voiceover language, cover frame. Illustrations only for covers or quote cards."),
       needs_jyotish_review: z.boolean().describe("True when the post makes a specific astrological claim that a Jyotish expert should check"),
       idea_id: z.uuid().optional().describe("The id of an 'idea' item on the calendar this draft fills; it keeps its slot unless you change scheduled_at"),
     }),
@@ -414,6 +414,7 @@ function contentProblems(p: { answer: string; body: string; title: string; descr
   if (/^#\s/m.test(p.body)) out.push("Don't use a single-# H1 in the body; start at ##.");
   const all = [p.title, p.description, p.answer, p.body, ...p.faq.flatMap((f) => [f.q, f.a])].join("\n");
   for (const issue of lintAdCopy(all, "page")) out.push(`"${issue.match}": ${issue.why.toLowerCase()} aren't allowed.`);
+  for (const issue of lintPositioning(all)) if (issue.level === "error") out.push(`"${issue.match}": ${issue.why.toLowerCase()}.`);
   for (const b of banned) if (b && all.toLowerCase().includes(b.toLowerCase())) out.push(`"${b}" is on the brand kit's banned list.`);
   return out;
 }

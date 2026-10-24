@@ -6,7 +6,7 @@
  */
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { adChanges, adEntities, approvals, auditLog, budgets, connections, creativePerformance, db, experiments } from "@bodh/db";
-import { checkAdChange, isLosingAd, lintAdCopy, MAX_TEST_VARIANTS, type AdChange, type Decision } from "@bodh/guardrails";
+import { checkAdChange, isLosingAd, lintAdCopy, lintPositioning, MAX_TEST_VARIANTS, type AdChange, type Decision } from "@bodh/guardrails";
 import {
   fetchGoogleStructure,
   fetchMetaStructure,
@@ -178,6 +178,7 @@ function copyProblems(platform: Platform, variants: VariantCopy[]): string[] {
   for (const v of variants) {
     const all = [v.headline, v.text, ...(v.headlines ?? []), ...(v.descriptions ?? [])].filter(Boolean).join("\n");
     for (const i of lintAdCopy(all)) out.push(`${v.name}: "${i.match}" (${i.why.toLowerCase()})`);
+    for (const i of lintPositioning(all)) if (i.level === "error") out.push(`${v.name}: "${i.match}" (${i.why.toLowerCase()})`);
     if (platform === "google_ads") {
       if ((v.headlines?.length ?? 0) < 3 || (v.headlines?.length ?? 0) > 15) out.push(`${v.name}: Google needs 3 to 15 headlines.`);
       if ((v.descriptions?.length ?? 0) < 2 || (v.descriptions?.length ?? 0) > 4) out.push(`${v.name}: Google needs 2 to 4 descriptions.`);

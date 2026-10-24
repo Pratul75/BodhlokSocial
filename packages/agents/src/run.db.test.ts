@@ -112,7 +112,7 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
             scheduled_at: when,
             idea: "Your moon sign in 30 seconds",
             script: "Hook: your moon sign is probably not what you think.",
-            caption: "In Jyotish your Moon sign says more about you than your Sun sign. Get your free kundli on BODH.",
+            caption: "In Jyotish the Moon sign carries more weight than the Sun sign. See both on a sample chart in Bodhlok. Start free.",
             creative_brief: "Night sky, moon over a kundli grid",
             needs_jyotish_review: false,
           }),
@@ -301,7 +301,7 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
       scheduled_at: `${day}T19:00:00+05:30`,
       idea: "Shani's transit in 60 seconds",
       script: "Hook: Shani moves signs this week.",
-      caption: "Shani (Saturn) changes sign this week. See what it means for your Moon sign in the BODH app.",
+      caption: "Shani (Saturn) changes sign this week. Read the transit from Moon and lagna on a sample chart in the desk.",
       creative_brief: "Saturn rings over a kundli grid",
       needs_jyotish_review: true,
     };

@@ -123,7 +123,7 @@ describe.skipIf(!reachable)("ad changes through the guardrails", () => {
     expect(bad.message).toContain("Copy problems");
 
     const ok = await m.ads.requestChange(
-      { type: "ab_test", platform: "meta_ads", baseAdId: "a1", hypothesis: "Naming the nakshatra lifts activations over the Moon sign hook", variants: [{ name: "Nakshatra hook", headline: "Know your nakshatra", text: "Your birth star, explained. Free kundli on BODH." }] },
+      { type: "ab_test", platform: "meta_ads", baseAdId: "a1", hypothesis: "Naming the nakshatra lifts activations over the Moon sign hook", variants: [{ name: "Nakshatra hook", headline: "Every nakshatra, one desk", text: "Nakshatra, pada and lord for all nine grahas on one screen. Start free at bodhlok.com." }] },
       "a1 is our best ad; test whether a nakshatra angle beats it.",
       agent,
     );
@@ -133,7 +133,7 @@ describe.skipIf(!reachable)("ad changes through the guardrails", () => {
 
     expect(await m.ads.applyChange(ok.changeId)).toEqual({ ok: true });
     const creative = posts.find((p) => p.path === "act_1/adcreatives")!;
-    expect(JSON.parse(creative.body.object_story_spec!).link_data).toMatchObject({ message: "Your birth star, explained. Free kundli on BODH.", name: "Know your nakshatra", image_hash: "h" });
+    expect(JSON.parse(creative.body.object_story_spec!).link_data).toMatchObject({ message: "Nakshatra, pada and lord for all nine grahas on one screen. Start free at bodhlok.com.", name: "Every nakshatra, one desk", image_hash: "h" });
     expect(posts.find((p) => p.path === "act_1/ads")!.body).toMatchObject({ adset_id: "s1", status: "ACTIVE", creative: '{"creative_id":"cr9"}' });
     const [running] = await m.db.db.select().from(m.db.experiments);
     expect(running).toMatchObject({ status: "running", variants: [{ adId: "a1" }, { adId: "a9", name: "Nakshatra hook" }] });
