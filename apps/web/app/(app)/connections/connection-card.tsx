@@ -23,6 +23,10 @@ export interface ConnectionView {
   hasCredential: boolean;
   /** The app has a Google OAuth client configured. */
   oauthClientReady: boolean;
+  /** Postiz only: an OAuth app is saved, so Postiz can be connected by signing in. */
+  postizSignIn?: boolean;
+  /** Extra line under the description, e.g. the redirect URL to give a platform. */
+  note?: string;
 }
 
 const METHOD_LABEL = {
@@ -61,6 +65,7 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
         </p>
       )}
       {c.error && <p className="mt-2 text-xs text-sindoor" role="alert">{c.error}</p>}
+      {c.note && <p className="mt-2 text-xs break-all text-muted">{c.note}</p>}
 
       <div className="mt-auto pt-4">
         {connected ? (
@@ -121,9 +126,16 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
               <p className="text-xs text-muted">Stored in the secrets store, never in the database.</p>
             </form>
           ) : (
-            <button className={btn.secondary} onClick={() => setOpen(true)}>
-              <KeyRound size={15} /> {c.fields ? "Add credentials" : c.method === "api_key" ? "Add API key" : "Add service account"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              {c.postizSignIn && (
+                <a href="/api/connect/postiz/start" className={btn.primary}>
+                  <Link2 size={15} /> Connect with Postiz
+                </a>
+              )}
+              <button className={btn.secondary} onClick={() => setOpen(true)}>
+                <KeyRound size={15} /> {c.fields ? (c.postizSignIn ? "Paste an API key" : "Add credentials") : c.method === "api_key" ? "Add API key" : "Add service account"}
+              </button>
+            </div>
           )
         ) : c.method === "oauth" && c.oauthEnabled && c.oauthClientReady ? (
           <a href={`/api/connect/${c.key}/start`} className={btn.primary}>

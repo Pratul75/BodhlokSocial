@@ -45,6 +45,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       oauthEnabled: Boolean(i.googleOAuth?.enabled),
       hasCredential: Boolean(r?.secretRef),
       oauthClientReady: authEnabled(),
+      postizSignIn: i.key === "postiz" && byKey.get("postiz_app")?.status === "connected",
+      note: i.key === "postiz_app" ? `Redirect URL for the Postiz app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/postiz/callback` : undefined,
     };
   });
   const groups = [...new Set(INTEGRATIONS.map((i) => i.group))];

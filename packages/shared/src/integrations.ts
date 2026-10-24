@@ -56,6 +56,18 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
       { name: "api_key", label: "API key (Postiz Settings > Developers)", secret: true },
     ],
   },
+  {
+    key: "postiz_app",
+    name: "Postiz sign-in (OAuth app)",
+    usedFor: "Only to connect Postiz by signing in instead of pasting an API key. In Postiz: Settings > Developers > Apps, with the redirect URL shown here.",
+    method: "api_key",
+    group: "Social",
+    fields: [
+      { name: "client_id", label: "Client ID (starts pca_)", placeholder: "pca_..." },
+      { name: "client_secret", label: "Client secret (starts pcs_)", secret: true },
+      { name: "app_url", label: "Postiz address, if self-hosted", optional: true, placeholder: "https://platform.postiz.com" },
+    ],
+  },
   { key: "meta_pages", name: "Instagram + Facebook Pages", usedFor: "Organic posting, connected inside Postiz", method: "none", group: "Social" },
   { key: "youtube", name: "YouTube Data API", usedFor: "Uploads, comments, analytics", method: "oauth", prerequisite: "upload quota audit", group: "Social", googleOAuth: { scopes: ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/yt-analytics.readonly"], enabled: false } },
   { key: "linkedin", name: "LinkedIn", usedFor: "Company page posting, connected inside Postiz", method: "none", group: "Social" },
