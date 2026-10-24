@@ -17,7 +17,7 @@ pnpm db:seed      # load sample data
 pnpm dev          # web on :3000, worker on :8787
 ```
 
-Open http://localhost:3000. Until Google sign-in is set up, every request runs as
+Open http://localhost:3000. `pnpm dev` needs ports 3000 and 8787 free. Until Google sign-in is set up, every request runs as
 `DEV_USER_EMAIL`. Use **Preview as** in the top bar to see the app as each role.
 
 ## Layout
