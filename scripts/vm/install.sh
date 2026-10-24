@@ -58,6 +58,9 @@ ENV
   chown root:bodh "$ENVF"; chmod 640 "$ENVF"
 fi
 
+# The public address follows the host given to this run.
+sed -i "s#^APP_URL=.*#APP_URL=https://$HOST#" "$ENVF"
+
 # Database on the existing Postgres.
 DBPASS="$(sed -n 's#^DATABASE_URL=postgres://bodh_growth:\([^@]*\)@.*#\1#p' "$ENVF")"
 if ! sudo -u postgres psql -tAc "select 1 from pg_roles where rolname='bodh_growth'" | grep -q 1; then
@@ -95,12 +98,25 @@ systemctl enable --now bodh-web bodh-worker >/dev/null
 systemctl restart bodh-web bodh-worker
 for t in "$HERE"/systemd/*.timer; do systemctl enable --now "$(basename "$t")" >/dev/null; done
 
-# Caddy site, validated before reload so other sites are never affected.
-if ! grep -q "^$HOST {" /etc/caddy/Caddyfile; then
-  log "adding $HOST to Caddy"
+# Caddy site, validated before reload so other sites are never affected. The block between
+# the BODH markers is ours; it is replaced on every run so the host can change.
+BEGIN_MARK="# >>> BODH Growth OS (managed by scripts/vm/install.sh)"
+END_MARK="# <<< BODH Growth OS"
+BLOCK="$(printf '%s\n%s {\n    encode gzip\n    reverse_proxy 127.0.0.1:3100\n}\n%s' "$BEGIN_MARK" "$HOST" "$END_MARK")"
+CURRENT="$(sed -n "/^$BEGIN_MARK\$/,/^$END_MARK\$/p" /etc/caddy/Caddyfile)"
+if [ "$CURRENT" != "$BLOCK" ]; then
+  log "setting Caddy site to $HOST"
   cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.bak-$(date -u +%Y%m%dT%H%M%SZ)"
-  cp /etc/caddy/Caddyfile /tmp/Caddyfile.new
-  printf '\n# BODH Growth OS (installed by scripts/vm/install.sh)\n%s {\n    encode gzip\n    reverse_proxy 127.0.0.1:3100\n}\n' "$HOST" >> /tmp/Caddyfile.new
+  # Drop our previous block (and the unmarked one from the first install), then append the new one.
+  awk -v b="$BEGIN_MARK" -v e="$END_MARK" '
+    $0 == b { skip = 1; next }
+    $0 == e { skip = 0; next }
+    $0 == "# BODH Growth OS (installed by scripts/vm/install.sh)" { legacy = 1; next }
+    legacy && /^\}/ { legacy = 0; next }
+    legacy { next }
+    !skip { print }
+  ' /etc/caddy/Caddyfile > /tmp/Caddyfile.new
+  printf '\n%s\n' "$BLOCK" >> /tmp/Caddyfile.new
   if caddy validate --adapter caddyfile --config /tmp/Caddyfile.new >/dev/null 2>&1; then
     cp /tmp/Caddyfile.new /etc/caddy/Caddyfile
     systemctl reload caddy
@@ -112,7 +128,7 @@ if ! grep -q "^$HOST {" /etc/caddy/Caddyfile; then
 fi
 
 log "health"
-for i in $(seq 1 30); do curl -fsS http://127.0.0.1:3100/api/health >/dev/null 2>&1 && break; sleep 1; done
+for i in $(seq 1 30); do curl -fsS http://127.0.0.1:3100/api/health >/dev/null 2>&1 && curl -fsS http://127.0.0.1:8787/health >/dev/null 2>&1 && break; sleep 1; done
 echo "web:    $(curl -sS http://127.0.0.1:3100/api/health)"
 echo "worker: $(curl -sS http://127.0.0.1:8787/health)"
 
