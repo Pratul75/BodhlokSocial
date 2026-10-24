@@ -1,0 +1,8 @@
+[Unit]
+Description=BODH Growth OS job %i
+After=bodh-worker.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/bodh/bin/job %i

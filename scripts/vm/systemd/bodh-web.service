@@ -1,0 +1,21 @@
+[Unit]
+Description=BODH Growth OS web
+After=network.target postgresql.service
+
+[Service]
+User=bodh
+Group=bodh
+EnvironmentFile=/opt/bodh/shared/bodh.env
+Environment=PORT=3100 HOSTNAME=127.0.0.1 NEXT_TELEMETRY_DISABLED=1
+WorkingDirectory=/opt/bodh/current/web/apps/web
+ExecStart=/opt/bodh/node/bin/node server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

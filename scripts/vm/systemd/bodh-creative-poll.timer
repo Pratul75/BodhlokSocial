@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: check video generation
+
+[Timer]
+OnCalendar=*:*:00
+Unit=bodh-job@creative-poll.service
+Persistent=true
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target

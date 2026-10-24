@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: GA4 sessions and a 35-day rebuild
+
+[Timer]
+OnCalendar=*-*-* 06:30:00 Asia/Kolkata
+Unit=bodh-job@tracking-daily.service
+Persistent=true
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target

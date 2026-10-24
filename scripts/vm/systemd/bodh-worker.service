@@ -1,0 +1,21 @@
+[Unit]
+Description=BODH Growth OS worker
+After=network.target postgresql.service
+
+[Service]
+User=bodh
+Group=bodh
+EnvironmentFile=/opt/bodh/shared/bodh.env
+Environment=PORT=8787 WORKER_HOST=127.0.0.1
+WorkingDirectory=/opt/bodh/current/worker/apps/worker
+ExecStart=/opt/bodh/node/bin/node node_modules/tsx/dist/cli.mjs src/index.ts
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target

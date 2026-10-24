@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: send conversions to Meta and Google
+
+[Timer]
+OnCalendar=*:0/5
+Unit=bodh-job@tracking-forward.service
+Persistent=true
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target

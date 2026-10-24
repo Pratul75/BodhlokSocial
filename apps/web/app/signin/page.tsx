@@ -54,6 +54,10 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
             </svg>
             Sign in with Google
           </a>
+        ) : process.env.NODE_ENV === "production" && process.env.ALLOW_DEV_AUTH !== "true" ? (
+          <div className="mt-6 rounded-lg bg-turmeric-soft px-3 py-3 text-sm text-turmeric-ink">
+            Sign-in isn't set up yet. An admin needs to add the Google sign-in client, then this page shows the sign-in button.
+          </div>
         ) : (
           <div className="mt-6 rounded-lg bg-turmeric-soft px-3 py-3 text-sm text-turmeric-ink">
             Google sign-in isn't configured, so the app runs as the dev user.{" "}

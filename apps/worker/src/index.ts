@@ -171,4 +171,6 @@ app.post("/guardrails/ad-change", async (c) => {
 });
 
 const port = Number(process.env.PORT ?? process.env.WORKER_PORT ?? 8787);
-serve({ fetch: app.fetch, port }, (info) => console.log(`worker listening on http://localhost:${info.port}`));
+// Cloud Run needs 0.0.0.0; on a shared VM set WORKER_HOST=127.0.0.1 so only local jobs can reach it.
+const hostname = process.env.WORKER_HOST ?? "0.0.0.0";
+serve({ fetch: app.fetch, port, hostname }, (info) => console.log(`worker listening on http://${hostname}:${info.port}`));

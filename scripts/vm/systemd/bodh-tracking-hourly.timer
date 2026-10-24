@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: load ad spend and rebuild the funnel
+
+[Timer]
+OnCalendar=*:10
+Unit=bodh-job@tracking-hourly.service
+Persistent=true
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target

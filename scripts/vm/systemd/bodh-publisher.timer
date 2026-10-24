@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: publish approved posts through Postiz
+
+[Timer]
+OnCalendar=*:0/5
+Unit=bodh-job@publisher.service
+Persistent=true
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target
