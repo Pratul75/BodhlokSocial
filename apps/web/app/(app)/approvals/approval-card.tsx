@@ -25,6 +25,8 @@ export interface ApprovalView {
   calendarItemId?: string | null;
   checkErrors?: string[];
   checkWarnings?: string[];
+  /** SEO pages: the direct answer block and a link to the full preview. */
+  page?: { id: string; answer: string | null; words: number };
 }
 
 export function ApprovalCard({ item }: { item: ApprovalView }) {
@@ -59,6 +61,15 @@ export function ApprovalCard({ item }: { item: ApprovalView }) {
             className={`${inputClass} mt-3 font-mono text-[13px] leading-relaxed`}
             aria-label="Edit draft"
           />
+        ) : item.page ? (
+          <div className="mt-2.5 space-y-2 text-sm leading-relaxed text-ink/90">
+            {item.page.answer && <p className="rounded-lg bg-paper px-3 py-2"><span className="text-xs text-muted">Answer block: </span>{item.page.answer}</p>}
+            <p className="line-clamp-4 whitespace-pre-wrap">{item.body}</p>
+            <p className="text-xs">
+              {item.page.words} words ·{" "}
+              <a href={`/seo/pages/${item.page.id}`} className="text-dusk hover:underline">Read the full page, FAQ and schema</a>
+            </p>
+          </div>
         ) : (
           <p className="mt-2.5 text-sm leading-relaxed whitespace-pre-wrap text-ink/90">{item.body}</p>
         )}

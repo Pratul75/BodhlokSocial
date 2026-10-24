@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import { Markdown } from "./markdown";
 import { btn, inputClass } from "./ui";
 
 interface Turn {
@@ -8,40 +9,6 @@ interface Turn {
   text: string;
   activity?: string[];
   error?: string;
-}
-
-/** Bold, inline code and bullet lists: enough for the agent's short answers. */
-function inline(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) =>
-    part.startsWith("**") && part.endsWith("**") ? (
-      <strong key={i}>{part.slice(2, -2)}</strong>
-    ) : part.startsWith("`") && part.endsWith("`") ? (
-      <code key={i} className="rounded bg-paper px-1 font-mono text-[0.85em]">{part.slice(1, -1)}</code>
-    ) : (
-      part
-    ),
-  );
-}
-
-function Markdown({ text }: { text: string }) {
-  const blocks = text.trim().split(/\n{2,}/);
-  return (
-    <div className="space-y-2">
-      {blocks.map((b, i) => {
-        const lines = b.split("\n");
-        if (lines.every((l) => /^\s*([-*]|\d+\.)\s/.test(l))) {
-          return (
-            <ul key={i} className="list-disc space-y-1 pl-5">
-              {lines.map((l, j) => <li key={j}>{inline(l.replace(/^\s*([-*]|\d+\.)\s/, ""))}</li>)}
-            </ul>
-          );
-        }
-        const h = b.match(/^#{1,4}\s+(.*)$/);
-        if (h && lines.length === 1) return <p key={i} className="font-semibold">{inline(h[1]!)}</p>;
-        return <p key={i} className="whitespace-pre-wrap">{inline(b)}</p>;
-      })}
-    </div>
-  );
 }
 
 export function ChatPanel({ examples }: { examples: string[] }) {

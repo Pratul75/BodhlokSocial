@@ -5,15 +5,16 @@ import { agentRuns, auditLog, db } from "@bodh/db";
 import { anthropicClient, FALLBACK_BETA, MODEL } from "./client";
 import { addUsage, costUsd, emptyTotals, MONTHLY_BUDGET_USD, spentThisMonthUsd, type RunTotals } from "./cost";
 import { defaultTask, systemPrompt, userMessage, type AgentName } from "./prompts";
-import { contentTools, readTools, strategyTools, type ToolContext } from "./tools";
+import { contentTools, readTools, seoTools, strategyTools, type ToolContext } from "./tools";
 
-export const AGENT_NAMES: AgentName[] = ["strategy", "content"];
+export const AGENT_NAMES: AgentName[] = ["strategy", "content", "seo"];
 export const isAgentName = (a: string): a is AgentName => (AGENT_NAMES as string[]).includes(a);
 
 /** One run may not spend more than this, whatever the monthly budget says. */
 export const RUN_CAP_USD = Number(process.env.AI_RUN_CAP_USD ?? 6);
-const EFFORT = { strategy: "high", content: "medium" } as const;
-const WEB_SEARCHES = { strategy: 8, content: 4 } as const;
+const EFFORT = { strategy: "high", content: "medium", seo: "medium" } as const;
+const WEB_SEARCHES = { strategy: 8, content: 4, seo: 6 } as const;
+const TOOLS = { strategy: strategyTools, content: contentTools, seo: seoTools } as const;
 
 export interface RunOptions {
   trigger: "manual" | "schedule";
@@ -82,11 +83,12 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
   await db.insert(auditLog).values({ actor: `${agent} agent`, actorType: "agent", action: "run", target: agent, reason: opts.requestedBy ? `requested by ${opts.requestedBy}` : opts.trigger, result: "started" });
 
   const ctx: ToolContext = { agent, runId, drafts: 0 };
-  const tools = [...readTools(ctx), ...(agent === "strategy" ? strategyTools(ctx) : contentTools(ctx))];
+  const tools = [...readTools(ctx), ...TOOLS[agent](ctx)];
 
   try {
     const runner = client.beta.messages.toolRunner({
       model: MODEL,
+      // Non-streaming requests must stay under ~21k max_tokens; one page fits easily.
       max_tokens: 16000,
       system: await systemPrompt(agent),
       tools: [...tools, { type: "web_search_20260209", name: "web_search", max_uses: WEB_SEARCHES[agent] }],
@@ -118,7 +120,8 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
     }
 
     const text = textOf(last);
-    const done = agent === "content" ? `${ctx.drafts} post${ctx.drafts === 1 ? "" : "s"} drafted. ` : "";
+    const unit = { content: "post", seo: "page", strategy: "calendar idea" }[agent];
+    const done = agent === "strategy" && ctx.drafts === 0 ? "" : `${ctx.drafts} ${unit}${ctx.drafts === 1 ? "" : "s"} ${agent === "strategy" ? "added" : "drafted"}. `;
     if (stopped) return finish(runId, ctx.drafts > 0 ? "succeeded" : "failed", `${stopped} ${done}${text}`.trim(), totals);
     return finish(runId, "succeeded", `${done}${text}`.trim() || "Finished without a summary.", totals);
   } catch (e) {

@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: store finished site audits
+
+[Timer]
+OnCalendar=*-*-* *:20:00
+Unit=bodh-job@seo-audit-poll.service
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

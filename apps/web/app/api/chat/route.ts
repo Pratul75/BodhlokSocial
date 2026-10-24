@@ -2,6 +2,9 @@ import { z } from "zod";
 import { chat } from "@bodh/agents";
 import { canAccess } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
+import { startAgentRun } from "@/lib/agents";
+
+const MODULE_FOR = { strategy: "strategy", content: "calendar", seo: "seo" } as const;
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -18,7 +21,10 @@ export async function POST(req: Request) {
   if (!parsed.success) return Response.json({ error: "Bad request" }, { status: 400 });
 
   const encoder = new TextEncoder();
-  const events = chat(parsed.data.messages, user.email);
+  // Chat can start the agents this person could start from their pages.
+  const start = async (agent: keyof typeof MODULE_FOR, task: string | undefined) =>
+    canAccess(user.role, MODULE_FOR[agent]) ? startAgentRun(agent, user.email, task) : { error: "Your role can't run that agent." };
+  const events = chat(parsed.data.messages, user.email, undefined, start);
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {

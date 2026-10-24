@@ -1,0 +1,136 @@
+/** SEO jobs: page catalog, keyword sync and the weekly site audit, all through DataForSEO. */
+import { and, desc, eq, sql } from "drizzle-orm";
+import { connections, db, keywords, seoAudits, seoPages } from "@bodh/db";
+import {
+  CHECK_LABELS,
+  onPagePagesFailing,
+  onPageSummary,
+  rankedKeywords,
+  startOnPage,
+  type DataForSeoCredentials,
+} from "./dataforseo";
+import { pageCatalog } from "./seo-catalog";
+import { readJsonSecret } from "./secrets";
+
+export async function dataForSeoCredentials(): Promise<DataForSeoCredentials | null> {
+  const c = await readJsonSecret<DataForSeoCredentials>("dataforseo");
+  return c?.login && c.password && c.target ? c : null;
+}
+
+async function markConnection(error: string | null) {
+  await db
+    .update(connections)
+    .set(error ? { status: "error", error, updatedAt: new Date() } : { status: "connected", error: null, lastSyncAt: new Date(), updatedAt: new Date() })
+    .where(eq(connections.key, "dataforseo"));
+}
+
+/** Flags a DataForSEO connection whose saved value isn't the login, password and domain. */
+export async function checkDataForSeoConnection(): Promise<void> {
+  const [row] = await db.select().from(connections).where(eq(connections.key, "dataforseo"));
+  if (row?.status === "connected" && !(await dataForSeoCredentials())) {
+    await markConnection("Enter the API login, API password and website domain again.");
+  }
+}
+
+/** Adds catalog pages that aren't in seo_pages yet, as planned. Never touches existing rows. */
+export async function ensurePageCatalog(): Promise<number> {
+  const pages = pageCatalog();
+  const rows = await db
+    .insert(seoPages)
+    .values(pages.map((p) => ({ ...p, status: "planned", needsReview: p.template !== "panchang_city" })))
+    .onConflictDoNothing()
+    .returning({ id: seoPages.id });
+  return rows.length;
+}
+
+/** Keywords BODH's site ranks for in Google India: volume, difficulty, position and page. */
+export async function syncKeywords(): Promise<string> {
+  const creds = await dataForSeoCredentials();
+  if (!creds) return "DataForSEO isn't connected.";
+  try {
+    const rows = await rankedKeywords(creds, 300);
+    for (const r of rows) {
+      await db
+        .insert(keywords)
+        .values({ keyword: r.keyword.toLowerCase(), volume: r.volume, difficulty: r.difficulty, intent: r.intent, position: r.position, pageUrl: r.url, source: "dataforseo" })
+        .onConflictDoUpdate({
+          target: keywords.keyword,
+          set: { volume: r.volume, difficulty: r.difficulty, position: r.position, pageUrl: r.url, updatedAt: new Date() },
+        });
+    }
+    // Catalog keywords we don't rank for yet keep volume from keyword ideas, filled by the SEO agent.
+    await markConnection(null);
+    return `Synced ${rows.length} ranking keywords for ${creds.target}.`;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await markConnection(msg);
+    throw e;
+  }
+}
+
+export const AUDIT_MAX_PAGES = Number(process.env.SEO_AUDIT_MAX_PAGES ?? 500);
+
+/** Starts a crawl unless one is already running. */
+export async function startSiteAudit(): Promise<string> {
+  const creds = await dataForSeoCredentials();
+  if (!creds) return "DataForSEO isn't connected.";
+  const [running] = await db.select().from(seoAudits).where(eq(seoAudits.status, "running")).limit(1);
+  if (running && Date.now() - running.startedAt.getTime() < 2 * 86_400_000) return "An audit is already running.";
+  if (running) await db.update(seoAudits).set({ status: "failed", error: "Timed out", finishedAt: new Date() }).where(eq(seoAudits.id, running.id));
+  const taskId = await startOnPage(creds, AUDIT_MAX_PAGES);
+  await db.insert(seoAudits).values({ target: creds.target, taskId, status: "running" });
+  return `Started a crawl of ${creds.target} (up to ${AUDIT_MAX_PAGES} pages).`;
+}
+
+/** Checks running crawls and stores the results of finished ones. */
+export async function pollSiteAudits(): Promise<string> {
+  const creds = await dataForSeoCredentials();
+  if (!creds) return "DataForSEO isn't connected.";
+  const running = await db.select().from(seoAudits).where(eq(seoAudits.status, "running"));
+  const out: string[] = [];
+  for (const a of running) {
+    try {
+      const s = await onPageSummary(creds, a.taskId);
+      if (!s.finished) {
+        await db.update(seoAudits).set({ pagesCrawled: s.pagesCrawled }).where(eq(seoAudits.id, a.id));
+        out.push(`${a.target}: ${s.pagesCrawled} pages so far`);
+        continue;
+      }
+      const issues = [];
+      for (const c of s.checks.slice(0, 15)) {
+        issues.push({ check: c.check, pages: c.pages, examples: c.pages ? await onPagePagesFailing(creds, a.taskId, c.check, 5).catch(() => []) : [] });
+      }
+      await db
+        .update(seoAudits)
+        .set({ status: "finished", pagesCrawled: s.pagesCrawled, onpageScore: s.onpageScore?.toFixed(2) ?? null, metrics: s.metrics, issues, finishedAt: new Date() })
+        .where(eq(seoAudits.id, a.id));
+      out.push(`${a.target}: finished, ${s.pagesCrawled} pages, score ${s.onpageScore ?? "n/a"}`);
+    } catch (e) {
+      out.push(`${a.target}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  return out.join("; ") || "No audits running.";
+}
+
+export async function latestAudit() {
+  const [a] = await db.select().from(seoAudits).where(eq(seoAudits.status, "finished")).orderBy(desc(seoAudits.finishedAt)).limit(1);
+  return a ? { ...a, issues: a.issues.map((i) => ({ ...i, label: CHECK_LABELS[i.check] ?? i.check.replace(/_/g, " ") })) } : null;
+}
+
+export async function pageCounts() {
+  return db
+    .select({ template: seoPages.template, status: seoPages.status, n: sql<number>`count(*)::int` })
+    .from(seoPages)
+    .groupBy(seoPages.template, seoPages.status);
+}
+
+/** Planned pages, highest-volume keyword first, for the SEO agent to draft. */
+export async function nextPlannedPages(limit: number, template?: string) {
+  return db
+    .select({ page: seoPages, volume: keywords.volume })
+    .from(seoPages)
+    .leftJoin(keywords, eq(keywords.keyword, seoPages.keyword))
+    .where(template ? and(eq(seoPages.status, "planned"), eq(seoPages.template, template)) : eq(seoPages.status, "planned"))
+    .orderBy(sql`coalesce(${keywords.volume}, 0) desc`, seoPages.template, seoPages.slug)
+    .limit(limit);
+}

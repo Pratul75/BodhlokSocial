@@ -16,7 +16,8 @@ import {
 } from "@bodh/integrations/pipeline";
 import { runPublisher } from "@bodh/integrations/publisher";
 import { pollVideoJobs } from "@bodh/integrations/creative";
-import { activeRun, anthropicClient, failStaleRuns, isAgentName, queueRun, runAgent } from "@bodh/agents";
+import { activeRun, anthropicClient, failStaleRuns, isAgentName, queueRun, runAgent, runVisibilityChecks } from "@bodh/agents";
+import { checkDataForSeoConnection, ensurePageCatalog, pollSiteAudits, startSiteAudit, syncKeywords } from "@bodh/integrations/seo";
 
 /** Agents and their schedules, from the build plan. Cloud Scheduler calls POST /jobs/:agent. */
 export const AGENTS = {
@@ -172,6 +173,42 @@ app.post("/jobs/creative/poll", async (c) => {
   }
 });
 
+/**
+ * SEO and GEO jobs, called by the VM timers:
+ *   catalog      add missing programmatic pages as planned (also runs on start)
+ *   keywords     weekly DataForSEO ranking sync
+ *   audit-start  weekly site crawl;  audit-poll  hourly, stores finished crawls
+ *   geo          weekly AI-visibility checks (runs in the background, takes minutes)
+ */
+let geoRunning = false;
+app.post("/jobs/seo/:job", async (c) => {
+  const job = c.req.param("job");
+  try {
+    switch (job) {
+      case "catalog":
+        return c.json({ message: `Added ${await ensurePageCatalog()} planned pages.` });
+      case "keywords":
+        return c.json({ message: await syncKeywords() });
+      case "audit-start":
+        return c.json({ message: await startSiteAudit() });
+      case "audit-poll":
+        return c.json({ message: await pollSiteAudits() });
+      case "geo":
+        if (geoRunning) return c.json({ message: "AI-visibility checks are already running." }, 409);
+        geoRunning = true;
+        void runVisibilityChecks()
+          .then((m) => console.log(`geo: ${m}`))
+          .catch((e) => console.error("geo failed", e))
+          .finally(() => (geoRunning = false));
+        return c.json({ message: "Started the AI-visibility checks. They take a few minutes." }, 202);
+      default:
+        return c.json({ error: `Unknown SEO job "${job}"` }, 404);
+    }
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
 /** Agents call this before any ad change. The caps come from the database, never from the agent. */
 app.post("/guardrails/ad-change", async (c) => {
   const body = await c.req.json<{ platform: string; change: AdChange }>();
@@ -192,3 +229,7 @@ serve({ fetch: app.fetch, port, hostname }, (info) => console.log(`worker listen
 failStaleRuns()
   .then((n) => n && console.log(`marked ${n} interrupted agent run(s) as failed`))
   .catch((e) => console.error("failStaleRuns", e));
+ensurePageCatalog()
+  .then((n) => n && console.log(`added ${n} planned SEO pages`))
+  .then(checkDataForSeoConnection)
+  .catch((e) => console.error("SEO start-up", e));

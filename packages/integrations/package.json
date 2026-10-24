@@ -19,7 +19,12 @@
     "./vertex": "./src/vertex.ts",
     "./creative": "./src/creative.ts",
     "./postiz": "./src/postiz.ts",
-    "./publisher": "./src/publisher.ts"
+    "./publisher": "./src/publisher.ts",
+    "./dataforseo": "./src/dataforseo.ts",
+    "./seo": "./src/seo.ts",
+    "./panchang": "./src/panchang.ts",
+    "./geo": "./src/geo.ts",
+    "./seo-catalog": "./src/seo-catalog.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -32,6 +37,7 @@
     "@google-cloud/bigquery": "^9.5.0",
     "@google-cloud/secret-manager": "^7.2.0",
     "@google-cloud/storage": "^8.4.0",
+    "astronomy-engine": "^2.1.19",
     "drizzle-orm": "^0.45.4",
     "google-auth-library": "^11.3.1",
     "zod": "^4.6.7"

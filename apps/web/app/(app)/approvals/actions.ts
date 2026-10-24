@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
-import { approvals, calendarItems, db } from "@bodh/db";
+import { approvals, calendarItems, db, seoPages } from "@bodh/db";
 import { APPROVAL_KINDS, canApprove, type ApprovalKind } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
@@ -47,6 +47,14 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
     }
   }
 
+  // SEO pages: the approval covers the draft it was sent with.
+  const pageId = item.kind === "page" ? String((item.payload as { seoPageId?: string }).seoPageId ?? "") : "";
+  const [page] = pageId ? await db.select().from(seoPages).where(eq(seoPages.id, pageId)).limit(1) : [];
+  if (item.kind === "page") {
+    if (!page) return { ok: false, error: "The page was deleted." };
+    if (page.status !== "in_review") return { ok: false, error: "The page changed after it was sent. It needs a fresh approval request." };
+  }
+
   // Only update while still pending, so two people can't decide the same item.
   const updated = await db
     .update(approvals)
@@ -73,6 +81,18 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
     revalidatePath("/calendar");
     revalidatePath(`/calendar/${post.id}`);
     revalidatePath("/publishing");
+  }
+
+  if (page) {
+    await db
+      .update(seoPages)
+      .set(
+        decision === "approve"
+          ? { status: "live", body, reviewNote: null, publishedAt: page.publishedAt ?? new Date(), updatedAt: new Date() }
+          : { status: "drafted", reviewNote: note, updatedAt: new Date() },
+      )
+      .where(eq(seoPages.id, page.id));
+    revalidatePath("/seo");
   }
 
   await audit({

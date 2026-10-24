@@ -175,32 +175,104 @@ export const funnelDaily = pgTable(
   (t) => [index("funnel_day_idx").on(t.day), uniqueIndex("funnel_day_channel_uq").on(t.day, t.channel)],
 );
 
-export const keywords = pgTable("keywords", {
+export const keywords = pgTable(
+  "keywords",
+  {
+    id: id(),
+    keyword: text("keyword").notNull(),
+    volume: integer("volume").notNull(),
+    difficulty: integer("difficulty").notNull(),
+    position: integer("position"),
+    intent: text("intent").notNull(), // tool | learn | software
+    pageUrl: text("page_url"),
+    /** Where the row came from: manual | dataforseo | search_console. */
+    source: text("source").notNull().default("manual"),
+    clicks28d: integer("clicks_28d"),
+    impressions28d: integer("impressions_28d"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("keywords_keyword_idx").on(t.keyword)],
+);
+
+export interface FaqItem {
+  q: string;
+  a: string;
+}
+
+/**
+ * Programmatic pages (planet in house, nakshatra, yoga, lagna, city Panchang) and blogs.
+ * Content is drafted by the SEO agent, approved in the queue, then served to BODH's
+ * website through the page feed. "live" means approved and in the feed.
+ */
+export const seoPages = pgTable(
+  "seo_pages",
+  {
+    id: id(),
+    template: text("template").notNull(), // planet_house | nakshatra | yoga | lagna | panchang_city | blog
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    status: text("status").notNull(), // planned | drafted | in_review | live
+    clicks28d: integer("clicks_28d").notNull().default(0),
+    /** Template inputs, e.g. { planet: "Saturn", house: 7 }. */
+    params: jsonb("params").$type<Record<string, unknown>>().notNull().default({}),
+    keyword: text("keyword"),
+    /** What the page must cover, written before the draft. */
+    brief: text("brief"),
+    description: text("description"),
+    /** The 40 to 60 word direct answer shown at the top of the page. */
+    answer: text("answer"),
+    body: text("body"),
+    faq: jsonb("faq").$type<FaqItem[]>().notNull().default([]),
+    needsReview: boolean("needs_review").notNull().default(true),
+    reviewNote: text("review_note"),
+    runId: uuid("run_id"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("seo_pages_template_slug_idx").on(t.template, t.slug), index("seo_pages_status_idx").on(t.status)],
+);
+
+/** DataForSEO On-Page crawls of BODH's site. */
+export const seoAudits = pgTable("seo_audits", {
   id: id(),
-  keyword: text("keyword").notNull(),
-  volume: integer("volume").notNull(),
-  difficulty: integer("difficulty").notNull(),
-  position: integer("position"),
-  intent: text("intent").notNull(), // tool | learn | software
-  pageUrl: text("page_url"),
+  target: text("target").notNull(),
+  taskId: text("task_id").notNull(),
+  status: text("status").notNull(), // running | finished | failed
+  pagesCrawled: integer("pages_crawled").notNull().default(0),
+  onpageScore: numeric("onpage_score", { precision: 5, scale: 2 }),
+  /** page_metrics from the summary, minus checks. */
+  metrics: jsonb("metrics").$type<Record<string, unknown>>().notNull().default({}),
+  /** Failing checks, most pages first: { check, pages, examples }. */
+  issues: jsonb("issues").$type<{ check: string; pages: number; examples: string[] }[]>().notNull().default([]),
+  error: text("error"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
 
-export const seoPages = pgTable("seo_pages", {
+/** Questions asked of AI assistants each week to see whether they mention Asttrolok. */
+export const geoQuestions = pgTable("geo_questions", {
   id: id(),
-  template: text("template").notNull(), // planet_house | nakshatra | yoga | lagna | panchang_city | blog
-  slug: text("slug").notNull(),
-  title: text("title").notNull(),
-  status: text("status").notNull(), // planned | drafted | in_review | live
-  clicks28d: integer("clicks_28d").notNull().default(0),
+  question: text("question").notNull().unique(),
+  active: boolean("active").notNull().default(true),
+  createdAt: createdAt(),
 });
 
-export const aiVisibilityChecks = pgTable("ai_visibility_checks", {
-  id: id(),
-  question: text("question").notNull(),
-  engine: text("engine").notNull(), // chatgpt | gemini | perplexity
-  mentioned: boolean("mentioned").notNull(),
-  checkedAt: date("checked_at").notNull(),
-});
+export const aiVisibilityChecks = pgTable(
+  "ai_visibility_checks",
+  {
+    id: id(),
+    question: text("question").notNull(),
+    engine: text("engine").notNull(), // chatgpt | gemini | perplexity | claude
+    mentioned: boolean("mentioned").notNull(),
+    checkedAt: date("checked_at").notNull(),
+    answer: text("answer"),
+    /** Other astrology brands the answer named. */
+    competitors: jsonb("competitors").$type<string[]>().notNull().default([]),
+    citations: jsonb("citations").$type<string[]>().notNull().default([]),
+    error: text("error"),
+  },
+  (t) => [index("ai_visibility_checked_idx").on(t.checkedAt)],
+);
 
 export const communityItems = pgTable("community_items", {
   id: id(),

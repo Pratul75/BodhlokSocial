@@ -11,7 +11,8 @@ export interface RunState {
   started?: boolean;
 }
 
-const MODULE_FOR = { strategy: "strategy", content: "calendar" } as const;
+export const MODULE_FOR = { strategy: "strategy", content: "calendar", seo: "seo" } as const;
+const PAGE_FOR = { strategy: "/strategy", content: "/calendar", seo: "/seo" } as const;
 
 export async function runAgentAction(_prev: RunState, formData: FormData): Promise<RunState> {
   const user = await getCurrentUser();
@@ -20,6 +21,6 @@ export async function runAgentAction(_prev: RunState, formData: FormData): Promi
   const task = String(formData.get("task") ?? "").trim() || undefined;
   const res = await startAgentRun(agent, user.email, task);
   if (res.error) return { error: res.error };
-  revalidatePath(agent === "strategy" ? "/strategy" : "/calendar");
+  revalidatePath(PAGE_FOR[agent]);
   return { started: true };
 }

@@ -78,8 +78,11 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
   });
 
   beforeEach(async () => {
+    await m.db.db.delete(m.db.approvals);
     await m.db.db.delete(m.db.calendarItems);
     await m.db.db.delete(m.db.strategyPlans);
+    await m.db.db.delete(m.db.seoPages);
+    await m.db.db.delete(m.db.aiVisibilityChecks);
   });
 
   it("the Content agent drafts posts, and a blocked caption goes back to Claude to fix", async () => {
@@ -267,6 +270,135 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
     const done = events.at(-1) as { type: "done"; runId: string };
     const [run] = await m.db.db.select().from(m.db.agentRuns).where(m.drizzle.eq(m.db.agentRuns.id, done.runId));
     expect(run).toMatchObject({ agent: "chat", trigger: "chat", status: "succeeded", tokensOut: 50 });
+  });
+
+  it("the Strategy agent outlines the month as calendar ideas, and Content fills an idea in place", async () => {
+    const day = inDays(3).slice(0, 10);
+    const { client } = scripted([
+      message(
+        [
+          toolUse("t1", "outline_calendar", {
+            ideas: [
+              { date: day, time: "19:00", channel: "instagram", format: "reel", idea: "Shani's transit in 60 seconds", pillar: "Transit updates" },
+              { date: day, time: "19:30", channel: "instagram", format: "image", idea: "Clashing slot", pillar: "Explainers" },
+              { date: "2020-01-01", time: "10:00", channel: "facebook", format: "post", idea: "In the past", pillar: "Explainers" },
+            ],
+          }),
+        ],
+        "tool_use",
+      ),
+      message([{ type: "text", text: "Outlined." }], "end_turn"),
+    ]);
+    const res = await m.run.runAgent("strategy", { trigger: "manual", client });
+    expect(res.summary).toMatch(/^1 calendar idea added/);
+    const [idea] = await m.db.db.select().from(m.db.calendarItems);
+    expect(idea).toMatchObject({ status: "idea", idea: "Shani's transit in 60 seconds", settings: { pillar: "Transit updates", planned_by: "strategy agent" } });
+
+    const draft = {
+      idea_id: idea!.id,
+      channel: "instagram",
+      format: "reel",
+      scheduled_at: `${day}T19:00:00+05:30`,
+      idea: "Shani's transit in 60 seconds",
+      script: "Hook: Shani moves signs this week.",
+      caption: "Shani (Saturn) changes sign this week. See what it means for your Moon sign in the BODH app.",
+      creative_brief: "Saturn rings over a kundli grid",
+      needs_jyotish_review: true,
+    };
+    const c = scripted([message([toolUse("t2", "create_draft_post", draft)], "tool_use"), message([{ type: "text", text: "Done." }], "end_turn")]);
+    const r2 = await m.run.runAgent("content", { trigger: "manual", client: c.client });
+    expect(r2.summary).toMatch(/^1 post drafted/);
+    const items = await m.db.db.select().from(m.db.calendarItems);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ id: idea!.id, status: "drafted", settings: { pillar: "Transit updates", needs_jyotish_review: true, drafted_by: "content agent" } });
+  });
+
+  it("the SEO agent writes a planned page into the approval queue, after fixing a short answer", async () => {
+    const { ensurePageCatalog } = await import("@bodh/integrations/seo");
+    expect(await ensurePageCatalog()).toBeGreaterThan(190);
+    expect(await ensurePageCatalog()).toBe(0);
+    const [page] = await m.db.db.select().from(m.db.seoPages).where(m.drizzle.eq(m.db.seoPages.slug, "saturn-in-7th-house"));
+    const body = "## What it means\n\n" + "Saturn in the seventh house tends to bring a serious, slow-building approach to partnership. ".repeat(30);
+    const content = (answer: string) => ({
+      page_id: page!.id,
+      title: "Saturn (Shani) in the 7th house: marriage and partnership",
+      description: "What Saturn in the 7th house means in Vedic astrology for marriage, business partners and timing, with the dashas that matter most.",
+      answer,
+      body,
+      faq: [
+        { q: "Does Saturn in the 7th house delay marriage?", a: "It often shows as marriage after some waiting or responsibility, but the full chart decides." },
+        { q: "Is Saturn in the 7th house good for business?", a: "It can favour steady, long partnerships built on clear agreements." },
+        { q: "Which dasha activates it?", a: "Saturn's own dasha and antardasha, and periods of the 7th lord." },
+      ],
+      brief: "Intent: people with Shani in the 7th asking about marriage timing. Cover tendencies, dignity, aspects, dashas.",
+      needs_jyotish_review: true,
+    });
+    const good = "Saturn (Shani) in the 7th house usually makes a person serious and patient about marriage and partnerships. Commitment may come later or after some responsibility, and relationships tend to grow steadier with time. The sign, Saturn's dignity and the running dasha decide how this shows up in a particular chart.";
+    const { client, requests } = scripted([
+      message([toolUse("t0", "list_pages_to_write", { template: "planet_house", limit: 3 })], "tool_use"),
+      message([toolUse("t1", "write_page", content("Saturn in the seventh is serious. ".repeat(5)))], "tool_use"),
+      message([toolUse("t2", "write_page", content(good))], "tool_use"),
+      message([{ type: "text", text: "Wrote one page." }], "end_turn"),
+    ]);
+    const res = await m.run.runAgent("seo", { trigger: "manual", client });
+    expect(res.summary).toBe("1 page drafted. Wrote one page.");
+    expect(resultText(lastToolResults(requests[1]!.body)[0]!)).toContain('"id"');
+    expect(resultText(lastToolResults(requests[2]!.body)[0]!)).toMatch(/^Error: The answer block is \d+ words/);
+    const [saved] = await m.db.db.select().from(m.db.seoPages).where(m.drizzle.eq(m.db.seoPages.id, page!.id));
+    expect(saved).toMatchObject({ status: "in_review", answer: good, needsReview: true });
+    const [approval] = await m.db.db.select().from(m.db.approvals);
+    expect(approval).toMatchObject({ kind: "page", status: "pending", agent: "seo", payload: { seoPageId: page!.id, needsJyotishReview: true } });
+    const tools = (requests[0]!.body.tools as { name: string }[]).map((t) => t.name);
+    expect(tools).toEqual(expect.arrayContaining(["write_page", "write_blog", "track_keywords", "read_skill", "get_search_trends"]));
+  });
+
+  it("chat can start an agent run when it's given a starter", async () => {
+    const sse = (events: Record<string, unknown>[]) => events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join("");
+    const start = (id: string) => ({ type: "message_start", message: { ...message([], "end_turn"), id, content: [], stop_reason: null } });
+    const replies = [
+      sse([
+        start("m1"),
+        { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "t1", name: "start_agent_run", input: {} } },
+        { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"agent":"seo","task":"Write the nakshatra pages"}' } },
+        { type: "content_block_stop", index: 0 },
+        { type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { output_tokens: 10 } },
+        { type: "message_stop" },
+      ]),
+      sse([
+        start("m2"),
+        { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+        { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Started it." } },
+        { type: "content_block_stop", index: 0 },
+        { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 5 } },
+        { type: "message_stop" },
+      ]),
+    ];
+    const client = new Anthropic({ apiKey: "test", maxRetries: 0, fetch: async () => new Response(replies.shift()!, { headers: { "content-type": "text/event-stream" } }) });
+    const started: unknown[] = [];
+    const { chat } = await import("./chat");
+    const events = [];
+    for await (const e of chat([{ role: "user", text: "Write the nakshatra pages" }], "a@b.c", client, async (agent, task) => (started.push({ agent, task }), { runId: "r1" }))) events.push(e);
+    expect(started).toEqual([{ agent: "seo", task: "Write the nakshatra pages" }]);
+    expect(events).toContainEqual({ type: "tool", name: "Starting an agent" });
+  });
+
+  it("AI-visibility checks record mentions, competitors and errors per engine", async () => {
+    const { runVisibilityChecks, ensureGeoQuestions } = await import("./geo");
+    await ensureGeoQuestions();
+    const msg = await runVisibilityChecks(["chatgpt", "perplexity", "gemini"], {
+      chatgpt: async (q) => ({ answer: q.includes("learn") ? "Try Asttrolok's courses or AstroSage." : "AstroTalk and Astro-Sage are popular.", citations: ["https://asttrolok.com"] }),
+      perplexity: async () => {
+        throw new Error("Perplexity 401: bad key");
+      },
+      gemini: async () => null,
+      claude: async () => null,
+    });
+    expect(msg).toMatch(/^Asked 8 questions on ChatGPT: Asttrolok mentioned in 1 of 8 answers\. Skipped \(no key\): Gemini\.$/);
+    const rows = await m.db.db.select().from(m.db.aiVisibilityChecks);
+    expect(rows.filter((r) => r.engine === "chatgpt")).toHaveLength(8);
+    expect(rows.find((r) => r.engine === "chatgpt" && r.mentioned)?.competitors).toEqual(["AstroSage"]);
+    expect(rows.find((r) => r.engine === "chatgpt" && !r.mentioned)?.competitors).toEqual(["AstroSage", "Astrotalk"]);
+    expect(rows.filter((r) => r.engine === "perplexity").every((r) => r.error === "Perplexity 401: bad key")).toBe(true);
   });
 
   it("records API failures and the budget stop on the run", async () => {

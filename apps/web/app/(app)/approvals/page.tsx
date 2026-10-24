@@ -18,6 +18,7 @@ const KIND_LABELS: Record<ApprovalKind, string> = {
   reply: "Community reply",
   blog: "Blog",
   listing: "Directory listing",
+  page: "SEO page",
 };
 
 export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<{ kind?: string }> }) {
@@ -62,7 +63,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
       id: a.id,
       kind: a.kind,
       kindLabel: KIND_LABELS[a.kind as ApprovalKind] ?? a.kind,
-      channelLabel: CHANNEL_LABELS[a.channel as Channel] ?? a.channel,
+      channelLabel: a.channel === "website" ? "Website" : (CHANNEL_LABELS[a.channel as Channel] ?? a.channel),
       agent: a.agent,
       title: a.title,
       body: a.body,
@@ -70,13 +71,17 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
       createdLabel: ago(a.createdAt, now),
       flags,
       // Calendar posts get the full post check, which includes these copy rules.
-      copyIssues: post ? [] : a.kind === "ad_change" || a.kind === "post" ? lintAdCopy(`${a.title}\n${a.body}`) : [],
+      copyIssues: post ? [] : a.kind === "ad_change" || a.kind === "post" || a.kind === "page" ? lintAdCopy(`${a.title}\n${a.body}`) : [],
       canDecide: canApprove(user.role, a.kind as ApprovalKind),
       assets: post?.assets,
       calendarItemId: a.calendarItemId,
       scheduledLabel: post ? post.item.scheduledAt.toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : undefined,
       checkErrors: post?.check.errors,
       checkWarnings: post?.check.warnings,
+      page:
+        a.kind === "page" && typeof payload.seoPageId === "string"
+          ? { id: payload.seoPageId, answer: typeof payload.answer === "string" ? payload.answer : null, words: a.body.trim().split(/\s+/).length }
+          : undefined,
     };
   });
 
@@ -86,7 +91,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader
         title="Approvals"
-        description="Every post, ad change, reply and listing an agent drafts waits here. Nothing goes public until someone approves it."
+        description="Every post, SEO page, ad change, reply and listing an agent drafts waits here. Nothing goes public until someone approves it."
       />
 
       <nav className="mb-5 flex flex-wrap gap-1.5" aria-label="Filter by kind">

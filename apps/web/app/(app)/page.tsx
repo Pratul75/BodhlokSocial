@@ -16,6 +16,7 @@ const KIND_LABELS: Record<string, string> = {
   reply: "Community replies",
   blog: "Blogs",
   listing: "Directory listings",
+  page: "SEO pages",
 };
 
 export default async function TodayPage() {

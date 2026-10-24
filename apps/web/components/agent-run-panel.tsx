@@ -6,7 +6,7 @@ import { AgentRunForm } from "./agent-run-form";
 const fmt = (d: Date) => d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 /** The agent's Run button, with how its last run went. */
-export async function AgentRunPanel({ agent, title, sub, label, placeholder }: { agent: "strategy" | "content"; title: string; sub: string; label: string; placeholder: string }) {
+export async function AgentRunPanel({ agent, title, sub, label, placeholder }: { agent: "strategy" | "content" | "seo"; title: string; sub: string; label: string; placeholder: string }) {
   const [last] = await db.select().from(agentRuns).where(and(eq(agentRuns.agent, agent))).orderBy(desc(agentRuns.startedAt)).limit(1);
   const busy = last?.status === "queued" || last?.status === "running";
   return (

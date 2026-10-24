@@ -8,8 +8,12 @@ case "$1" in
   tracking-daily)   path=/jobs/tracking/daily ;;
   publisher)        path=/jobs/publishing/run ;;
   creative-poll)    path=/jobs/creative/poll ;;
+  seo-keywords)     path=/jobs/seo/keywords ;;
+  seo-audit-start)  path=/jobs/seo/audit-start ;;
+  seo-audit-poll)   path=/jobs/seo/audit-poll ;;
+  geo)              path=/jobs/seo/geo ;;
   # Agent runs start in the background; a 409 (no API key yet, or already running) is not a failure.
-  agent-strategy|agent-content)
+  agent-strategy|agent-content|agent-seo)
     curl -sS -m 30 -X POST -H "X-Worker-Token: $TOKEN" "http://127.0.0.1:8787/jobs/${1#agent-}"
     echo
     exit 0 ;;

@@ -17,7 +17,9 @@ export interface IntegrationDef {
 /** From section 6 of the build plan. */
 export const INTEGRATIONS: readonly IntegrationDef[] = [
   { key: "anthropic", name: "Anthropic API", usedFor: "All agents", method: "api_key", group: "AI" },
-  { key: "vertex", name: "Vertex AI (Imagen, Veo, Gemini)", usedFor: "Image and video generation", method: "service_account", group: "AI" },
+  { key: "vertex", name: "Vertex AI (Imagen, Veo, Gemini)", usedFor: "Image and video generation, Gemini visibility checks", method: "service_account", group: "AI" },
+  { key: "openai", name: "OpenAI API", usedFor: "Weekly check: does ChatGPT mention Asttrolok", method: "api_key", group: "AI" },
+  { key: "perplexity", name: "Perplexity API", usedFor: "Weekly check: does Perplexity mention Asttrolok", method: "api_key", group: "AI" },
   { key: "google_ads", name: "Google Ads API", usedFor: "Ads management", method: "oauth", prerequisite: "developer token approval", group: "Ads", googleOAuth: { scopes: ["https://www.googleapis.com/auth/adwords"], enabled: false } },
   {
     key: "meta_marketing",
@@ -61,7 +63,18 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
   { key: "quora", name: "Quora", usedFor: "Find questions (drafts only, a person posts)", method: "none", group: "Social" },
   { key: "gbp", name: "Google Business Profile API", usedFor: "Posts, reviews", method: "oauth", prerequisite: "access request", group: "Search", googleOAuth: { scopes: ["https://www.googleapis.com/auth/business.manage"], enabled: false } },
   { key: "search_console", name: "Google Search Console", usedFor: "Search data, keyword positions", method: "oauth", group: "Search", googleOAuth: { scopes: ["https://www.googleapis.com/auth/webmasters.readonly"], enabled: true } },
-  { key: "dataforseo", name: "DataForSEO", usedFor: "Keywords, SERP, backlinks, audits", method: "api_key", group: "Search" },
+  {
+    key: "dataforseo",
+    name: "DataForSEO",
+    usedFor: "Keywords and rankings, Google Trends, weekly site audit",
+    method: "api_key",
+    group: "Search",
+    fields: [
+      { name: "login", label: "API login (email)", placeholder: "you@rechargestudio.com" },
+      { name: "password", label: "API password (DataForSEO dashboard > API Access)", secret: true },
+      { name: "target", label: "BODH's website domain", placeholder: "asttrolok.com" },
+    ],
+  },
   { key: "semrush", name: "Semrush or Ahrefs", usedFor: "Competitor data (optional)", method: "api_key", group: "Search" },
   { key: "ga4", name: "GA4 / Firebase", usedFor: "Web sessions per channel, from the BigQuery export", method: "service_account", group: "Analytics" },
   { key: "whatsapp", name: "WhatsApp Business API", usedFor: "Onboarding messages", method: "api_key", group: "Messaging" },

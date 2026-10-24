@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: weekly site audit
+
+[Timer]
+OnCalendar=Sun *-*-* 02:00:00 Asia/Kolkata
+Unit=bodh-job@seo-audit-start.service
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: AI-visibility checks
+
+[Timer]
+OnCalendar=Mon *-*-* 08:00:00 Asia/Kolkata
+Unit=bodh-job@geo.service
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

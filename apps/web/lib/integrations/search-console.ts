@@ -2,6 +2,13 @@ import "server-only";
 
 const API = "https://www.googleapis.com/webmasters/v3";
 
+/** Google's own reason, e.g. "Google Search Console API has not been used in project ..." */
+async function failure(what: string, res: Response): Promise<Error> {
+  const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+  const reason = body?.error?.message?.split(". ")[0];
+  return new Error(`Search Console ${what} failed (${res.status})${reason ? `: ${reason}` : ""}`);
+}
+
 export interface SiteEntry {
   siteUrl: string;
   permissionLevel: string;
@@ -9,7 +16,7 @@ export interface SiteEntry {
 
 export async function listSites(accessToken: string): Promise<SiteEntry[]> {
   const res = await fetch(`${API}/sites`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!res.ok) throw new Error(`Search Console sites request failed (${res.status})`);
+  if (!res.ok) throw await failure("sites request", res);
   const body = (await res.json()) as { siteEntry?: SiteEntry[] };
   return (body.siteEntry ?? []).filter((s) => s.permissionLevel !== "siteUnverifiedUser");
 }
@@ -18,7 +25,7 @@ export async function listSites(accessToken: string): Promise<SiteEntry[]> {
 export function pickSite(sites: SiteEntry[]): SiteEntry | undefined {
   const wanted = process.env.SEARCH_CONSOLE_SITE;
   if (wanted) return sites.find((s) => s.siteUrl === wanted);
-  return sites.find((s) => /asttrolok/i.test(s.siteUrl)) ?? sites[0];
+  return sites.find((s) => /asttrolok|bodh/i.test(s.siteUrl)) ?? sites[0];
 }
 
 export interface QueryRow {
@@ -37,7 +44,7 @@ export async function topQueries(accessToken: string, siteUrl: string, days = 28
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ startDate: iso(start), endDate: iso(end), dimensions: ["query"], rowLimit: 1000 }),
   });
-  if (!res.ok) throw new Error(`Search Console query failed (${res.status})`);
+  if (!res.ok) throw await failure("query", res);
   const body = (await res.json()) as { rows?: { keys: string[]; clicks: number; impressions: number; position: number }[] };
   return (body.rows ?? []).map((r) => ({ query: r.keys[0] ?? "", clicks: r.clicks, impressions: r.impressions, position: r.position }));
 }

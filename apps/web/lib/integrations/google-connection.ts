@@ -2,6 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { connections, db, keywords } from "@bodh/db";
 import { refreshAccessToken } from "@/lib/google";
+import { intentFor } from "@bodh/integrations/dataforseo";
 import { secretName, secretStore } from "@/lib/secrets";
 import { listSites, pickSite, topQueries } from "./search-console";
 
@@ -55,16 +56,42 @@ export async function syncIntegration(key: string): Promise<SyncResult> {
   for (const k of tracked) {
     const row = byQuery.get(k.keyword.toLowerCase());
     const position = row ? Math.round(row.position) : null;
-    if (position !== k.position) {
-      await db.update(keywords).set({ position }).where(eq(keywords.id, k.id));
+    if (position !== k.position || row?.clicks !== k.clicks28d) {
+      await db
+        .update(keywords)
+        .set({ position, clicks28d: row?.clicks ?? null, impressions28d: row?.impressions ?? null, updatedAt: new Date() })
+        .where(eq(keywords.id, k.id));
       updated++;
     }
+  }
+  // Start tracking the queries that already bring impressions; DataForSEO fills volume later.
+  const known = new Set(tracked.map((k) => k.keyword.toLowerCase()));
+  const fresh = rows
+    .filter((r) => r.query && !known.has(r.query.toLowerCase()))
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, Math.max(0, 300 - tracked.length));
+  if (fresh.length) {
+    await db
+      .insert(keywords)
+      .values(
+        fresh.map((r) => ({
+          keyword: r.query.toLowerCase(),
+          volume: 0,
+          difficulty: 0,
+          position: Math.round(r.position),
+          intent: intentFor(r.query),
+          source: "search_console",
+          clicks28d: r.clicks,
+          impressions28d: r.impressions,
+        })),
+      )
+      .onConflictDoNothing();
   }
   await db
     .update(connections)
     .set({ status: "connected", accountLabel: site.siteUrl, lastSyncAt: new Date(), error: null, updatedAt: new Date() })
     .where(eq(connections.key, key));
-  return { message: `Read ${rows.length} queries from ${site.siteUrl}. Updated ${updated} of ${tracked.length} tracked keywords.` };
+  return { message: `Read ${rows.length} queries from ${site.siteUrl}. Updated ${updated} of ${tracked.length} tracked keywords${fresh.length ? ` and started tracking ${fresh.length} more` : ""}.` };
 }
 
 export async function revokeGrant(key: string) {

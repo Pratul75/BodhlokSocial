@@ -63,6 +63,15 @@ sed -i "s#^APP_URL=.*#APP_URL=https://$HOST#" "$ENVF"
 # Settings added after the first install.
 grep -q '^WORKER_URL=' "$ENVF" || echo 'WORKER_URL=http://127.0.0.1:8787' >> "$ENVF"
 grep -q '^AI_MONTHLY_BUDGET_USD=' "$ENVF" || echo 'AI_MONTHLY_BUDGET_USD=150' >> "$ENVF"
+grep -q '^SKILLS_DIR=' "$ENVF" || echo "SKILLS_DIR=$SHARED/skills" >> "$ENVF"
+grep -q '^SEO_FEED_TOKEN=' "$ENVF" || echo "SEO_FEED_TOKEN=$(openssl rand -hex 24)" >> "$ENVF"
+
+# Extra agent skills (markdown only), replaced on each deploy that brings them.
+if [ -d "$HERE/skills" ]; then
+  rm -rf "$SHARED/skills.new" && cp -R "$HERE/skills" "$SHARED/skills.new"
+  rm -rf "$SHARED/skills" && mv "$SHARED/skills.new" "$SHARED/skills"
+  chown -R root:bodh "$SHARED/skills" && chmod -R a+rX,go-w "$SHARED/skills"
+fi
 
 # Database on the existing Postgres.
 DBPASS="$(sed -n 's#^DATABASE_URL=postgres://bodh_growth:\([^@]*\)@.*#\1#p' "$ENVF")"

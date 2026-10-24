@@ -56,7 +56,7 @@ export function canAccess(role: Role, key: ModuleKey): boolean {
 }
 
 /** Which approval kinds each role may decide on. */
-export const APPROVAL_KINDS = ["post", "ad_change", "reply", "listing", "blog"] as const;
+export const APPROVAL_KINDS = ["post", "ad_change", "reply", "listing", "blog", "page"] as const;
 export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
 
 export const APPROVERS: Record<ApprovalKind, readonly Role[]> = {
@@ -65,6 +65,7 @@ export const APPROVERS: Record<ApprovalKind, readonly Role[]> = {
   ad_change: ["admin", "ads_manager"],
   listing: ["admin", "seo_manager"],
   blog: ["admin", "seo_manager"],
+  page: ["admin", "seo_manager"],
 };
 
 export function canApprove(role: Role, kind: ApprovalKind): boolean {

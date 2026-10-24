@@ -1,0 +1,57 @@
+# Extra skills for the agents, installed on the server (not committed: third-party text).
+# Agents see each skill's name and description and read the full text on demand.
+# Format: <source> <path inside it>   (source "local" = ~/.claude/skills)
+# Only *.md files are copied; scripts and other files are left out.
+local humanizer
+local brand
+local linkedin-hook-generator
+local linkedin-post-writer
+local linkedin-carousel-builder
+local linkedin-cta-optimizer
+local linkedin-content-pillars-builder
+AgriciDaniel/claude-seo skills/seo-programmatic
+AgriciDaniel/claude-seo skills/seo-schema
+AgriciDaniel/claude-seo skills/seo-content-brief
+AgriciDaniel/claude-seo skills/seo-content
+AgriciDaniel/claude-seo skills/seo-geo
+AgriciDaniel/claude-seo skills/seo-technical
+AgriciDaniel/claude-seo skills/seo-audit
+AgriciDaniel/claude-seo skills/seo-cluster
+AgriciDaniel/claude-seo skills/seo-page
+AgriciDaniel/claude-seo skills/seo-plan
+AgriciDaniel/claude-blog skills/blog-write
+AgriciDaniel/claude-blog skills/blog-brief
+AgriciDaniel/claude-blog skills/blog-outline
+AgriciDaniel/claude-blog skills/blog-geo
+AgriciDaniel/claude-blog skills/blog-schema
+AgriciDaniel/claude-blog skills/blog-factcheck
+AgriciDaniel/claude-blog skills/blog-strategy
+AgriciDaniel/claude-blog skills/blog-seo-check
+zubair-trabzada/geo-seo-claude skills/geo-content
+zubair-trabzada/geo-seo-claude skills/geo-citability
+zubair-trabzada/geo-seo-claude skills/geo-llmstxt
+zubair-trabzada/geo-seo-claude skills/geo-schema
+zubair-trabzada/geo-seo-claude skills/geo-brand-mentions
+zubair-trabzada/geo-seo-claude skills/geo-platform-optimizer
+aaron-he-zhu/aaron-marketing-skills seo-geo/survey/keyword-research
+aaron-he-zhu/aaron-marketing-skills seo-geo/survey/serp-analysis
+aaron-he-zhu/aaron-marketing-skills seo-geo/survey/content-gap-analysis
+aaron-he-zhu/aaron-marketing-skills seo-geo/evaluate/rank-tracker
+aaron-he-zhu/aaron-marketing-skills seo-geo/implement/geo-content-optimizer
+aaron-he-zhu/aaron-marketing-skills seo-geo/implement/serp-markup-builder
+coreyhaines31/marketingskills skills/copywriting
+coreyhaines31/marketingskills skills/copy-editing
+coreyhaines31/marketingskills skills/content-strategy
+coreyhaines31/marketingskills skills/social
+coreyhaines31/marketingskills skills/marketing-psychology
+coreyhaines31/marketingskills skills/programmatic-seo
+coreyhaines31/marketingskills skills/ai-seo
+coreyhaines31/marketingskills skills/schema
+coreyhaines31/marketingskills skills/video
+coreyhaines31/marketingskills skills/marketing-plan
+charlie947/social-media-skills skills/reels-scripting
+charlie947/social-media-skills skills/hook-generator
+charlie947/social-media-skills skills/post-writer
+charlie947/social-media-skills skills/post-scorer
+charlie947/social-media-skills skills/content-matrix
+charlie947/social-media-skills skills/youtube-thumbnail

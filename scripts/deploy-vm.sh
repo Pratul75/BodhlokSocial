@@ -33,7 +33,10 @@ cid="$(docker create --platform linux/amd64 bodh-worker:vm)"; docker cp "$cid:/r
 # COPYFILE_DISABLE keeps macOS metadata out of the archives.
 TAR_FLAGS=(); tar --no-xattrs --no-mac-metadata -cf /dev/null /dev/null 2>/dev/null && TAR_FLAGS=(--no-xattrs --no-mac-metadata)
 COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -C "$OUT" -czf "$OUT/release.tgz" web worker
-COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -C scripts/vm -czf "$OUT/vm.tgz" .
+# Installer files, plus the extra agent skills from scripts/sync-skills.sh when built.
+rm -rf "$OUT/vm" && cp -R scripts/vm "$OUT/vm"
+if [ -d .skills ]; then cp -R .skills "$OUT/vm/skills"; echo "   skills: $(ls .skills | wc -l | tr -d ' ')"; fi
+COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -C "$OUT/vm" -czf "$OUT/vm.tgz" .
 du -h "$OUT/release.tgz" | cut -f1 | xargs echo "   release size:"
 
 echo "== uploading to $VM"

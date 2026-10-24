@@ -22,7 +22,7 @@ export default async function ChatPage() {
 
   return (
     <>
-      <PageHeader title="Ask the agents" description="Ask about results, ads, the calendar or the plan. Answers use the same data as the scheduled agents." />
+      <PageHeader title="Ask the agents" description="Ask about results, ads, the calendar, SEO or the plan, have it draft hooks and captions, or ask it to run an agent. Answers use the same data as the scheduled agents." />
       <Card>
         {ready ? (
           <ChatPanel examples={EXAMPLES} />
