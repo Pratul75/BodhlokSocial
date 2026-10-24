@@ -21,9 +21,12 @@ SHA="$(git rev-parse --short HEAD)"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
+# Registry and Compute API calls time out now and then on slow networks; retry them.
+retry() { for i in 1 2 3; do "$@" && return 0; echo "   retrying ($i)…"; sleep 10; done; return 1; }
+
 echo "== building linux/amd64 images for $SHA"
-docker build --platform linux/amd64 --target web -t bodh-web:vm .
-docker build --platform linux/amd64 --target worker -t bodh-worker:vm .
+retry docker build --platform linux/amd64 --target web -t bodh-web:vm .
+retry docker build --platform linux/amd64 --target worker -t bodh-worker:vm .
 
 echo "== extracting"
 cid="$(docker create --platform linux/amd64 bodh-web:vm)"; docker cp "$cid:/app" "$OUT/web"; docker rm "$cid" >/dev/null
@@ -33,9 +36,6 @@ TAR_FLAGS=(); tar --no-xattrs --no-mac-metadata -cf /dev/null /dev/null 2>/dev/n
 COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -C "$OUT" -czf "$OUT/release.tgz" web worker
 COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -C scripts/vm -czf "$OUT/vm.tgz" .
 du -h "$OUT/release.tgz" | cut -f1 | xargs echo "   release size:"
-
-# gcloud occasionally times out talking to the Compute API; retry those calls.
-retry() { for i in 1 2 3; do "$@" && return 0; echo "   retrying ($i)…"; sleep 10; done; return 1; }
 
 echo "== uploading to $VM"
 retry gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release"
