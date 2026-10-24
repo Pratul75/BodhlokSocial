@@ -19,7 +19,15 @@ export async function postizApp(): Promise<PostizApp | null> {
 
 /** Postiz Cloud's sign-in page is platform.postiz.com and its API api.postiz.com; self-hosted serves both from one address. */
 export function postizUrls(app: PostizApp) {
-  const custom = app.app_url?.trim().replace(/\/$/, "");
-  if (!custom || /^https:\/\/(platform|app)\.postiz\.com$/.test(custom)) return { frontend: "https://platform.postiz.com", backend: "https://api.postiz.com" };
-  return { frontend: custom, backend: `${custom}/api` };
+  const cloud = { frontend: "https://platform.postiz.com", backend: "https://api.postiz.com" };
+  let custom: URL;
+  try {
+    custom = new URL(app.app_url?.trim() ?? "");
+  } catch {
+    return cloud;
+  }
+  // Our own address (the redirect URL pasted in the wrong box) or Postiz Cloud: use the cloud.
+  const ours = process.env.APP_URL ? new URL(process.env.APP_URL).host : "";
+  if (custom.host === ours || custom.pathname.includes("/api/connect") || /(^|\.)postiz\.com$/.test(custom.host)) return cloud;
+  return { frontend: custom.origin, backend: `${custom.origin}/api` };
 }

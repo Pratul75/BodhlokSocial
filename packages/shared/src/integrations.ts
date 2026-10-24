@@ -65,7 +65,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     fields: [
       { name: "client_id", label: "Client ID (starts pca_)", placeholder: "pca_..." },
       { name: "client_secret", label: "Client secret (starts pcs_)", secret: true },
-      { name: "app_url", label: "Postiz address, if self-hosted", optional: true, placeholder: "https://platform.postiz.com" },
+      { name: "app_url", label: "Your own Postiz server's address (leave empty for postiz.com)", optional: true, placeholder: "Leave empty for Postiz Cloud" },
     ],
   },
   { key: "meta_pages", name: "Instagram + Facebook Pages", usedFor: "Organic posting, connected inside Postiz", method: "none", group: "Social" },

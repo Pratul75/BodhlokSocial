@@ -63,9 +63,11 @@ async function call<T>(creds: PostizCredentials, path: string, init: RequestInit
   if (!res.ok) {
     let detail = "";
     try {
-      const body = (await res.json()) as { message?: string | string[]; error?: string };
-      detail = Array.isArray(body.message) ? body.message.join("; ") : (body.message ?? body.error ?? "");
+      const body = (await res.json()) as { message?: string | string[]; error?: string; msg?: string };
+      detail = Array.isArray(body.message) ? body.message.join("; ") : (body.message ?? body.msg ?? body.error ?? "");
     } catch {}
+    // Postiz Cloud only opens the public API to accounts with an active plan or trial.
+    if (/no subscription/i.test(detail)) detail = `${detail}. The Postiz account needs an active plan or trial for the API to work (Postiz: Settings > Billing).`;
     throw new PostizError(`Postiz ${res.status}${detail ? `: ${detail}` : ""}`, res.status);
   }
   return (await res.json()) as T;

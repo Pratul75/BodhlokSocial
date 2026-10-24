@@ -111,3 +111,12 @@ describe("client", () => {
     await expect(createPost(creds, {})).rejects.toSatisfy((e: unknown) => e instanceof PostizError && !e.retryable);
   });
 });
+
+describe("postiz errors", () => {
+  it("explains a missing Postiz subscription", async () => {
+    const { listIntegrations } = await import("./postiz");
+    vi.stubGlobal("fetch", async () => Response.json({ msg: "No subscription found" }, { status: 401 }));
+    await expect(listIntegrations({ api_url: "https://api.postiz.com/public/v1", api_key: "pos_x" })).rejects.toThrow(/No subscription found\. The Postiz account needs an active plan/);
+    vi.unstubAllGlobals();
+  });
+});
