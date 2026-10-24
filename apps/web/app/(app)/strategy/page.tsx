@@ -2,6 +2,7 @@ import { desc } from "drizzle-orm";
 import { Check } from "lucide-react";
 import { db, strategyPlans } from "@bodh/db";
 import { requireModule } from "@/lib/auth";
+import { AgentRunPanel } from "@/components/agent-run-panel";
 import { Card, CardHeader, EmptyState, PageHeader, StatusPill, btn } from "@/components/ui";
 import { approvePlan } from "./actions";
 
@@ -10,6 +11,15 @@ export const metadata = { title: "Strategy" };
 
 export default async function StrategyPage() {
   const user = await requireModule("strategy");
+  const runPanel = (
+    <AgentRunPanel
+      agent="strategy"
+      title="Strategy agent"
+      sub="Runs on the 25th for next month. Run it now to draft or redo the plan; an approved plan is never replaced."
+      label="Run Strategy agent"
+      placeholder="Optional: anything to focus on, e.g. push the Diwali kundli offer"
+    />
+  );
   const [plan] = await db.select().from(strategyPlans).orderBy(desc(strategyPlans.month)).limit(1);
 
   if (!plan) {
@@ -17,8 +27,9 @@ export default async function StrategyPage() {
       <>
         <PageHeader title="Strategy" />
         <Card>
-          <EmptyState title="No plan yet">The Strategy agent writes next month's plan on the 25th from trends, competitors and this month's results.</EmptyState>
+          <EmptyState title="No plan yet">The Strategy agent writes next month's plan on the 25th from the funnel, ads, keywords and the month's astrological events. You can also run it now.</EmptyState>
         </Card>
+        <Card className="mt-6">{runPanel}</Card>
       </>
     );
   }
@@ -30,7 +41,7 @@ export default async function StrategyPage() {
       <PageHeader
         eyebrow={<span className="flex items-center gap-2">Monthly plan <StatusPill status={plan.status} /></span>}
         title={month}
-        description="Written by the Strategy agent from last month's funnel, trends and competitor activity. Edit or approve it before the Content agent plans the calendar."
+        description="Written by the Strategy agent from the funnel, ads, keywords and the month's astrological events. Approve it before the Content agent plans the calendar."
         actions={
           user.role === "admin" && plan.status === "draft" ? (
             <form action={approvePlan}>
@@ -78,6 +89,8 @@ export default async function StrategyPage() {
           </ul>
         </Card>
       </div>
+
+      <Card className="mt-6">{runPanel}</Card>
     </>
   );
 }

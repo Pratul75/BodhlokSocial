@@ -25,6 +25,8 @@ async function withdrawApprovals(itemId: string, by: string) {
     .where(and(eq(approvals.calendarItemId, itemId), eq(approvals.status, "pending")));
 }
 
+const sorted = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
+
 function readForm(formData: FormData) {
   const date = String(formData.get("date") ?? "");
   const time = String(formData.get("time") ?? "18:30");
@@ -33,6 +35,9 @@ function readForm(formData: FormData) {
     const v = formData.get(`setting_${key}`);
     if (typeof v === "string" && v) settings[key] = v;
   }
+  const brief = String(formData.get("setting_creative_brief") ?? "").trim();
+  if (brief) settings.creative_brief = brief.slice(0, 2000);
+  if (formData.get("setting_needs_jyotish_review") === "on") settings.needs_jyotish_review = true;
   return {
     idea: String(formData.get("idea") ?? "").trim(),
     title: String(formData.get("title") ?? "").trim() || null,
@@ -55,6 +60,8 @@ export async function saveItem(_prev: ItemResult, formData: FormData): Promise<I
   if (LOCKED.includes(item.status)) return { ok: false, error: "Published posts can't be edited." };
 
   const f = readForm(formData);
+  // Keep who drafted it; the form doesn't carry these.
+  for (const key of ["drafted_by", "run_id"]) if (key in item.settings) f.settings[key] = item.settings[key];
   if (f.idea.length < 5) return { ok: false, error: "Describe the idea in a few words." };
   if (!(CHANNELS as readonly string[]).includes(f.channel)) return { ok: false, error: "Pick a channel." };
   if (!(FORMATS as readonly string[]).includes(f.format)) return { ok: false, error: "Pick a format." };
@@ -73,7 +80,7 @@ export async function saveItem(_prev: ItemResult, formData: FormData): Promise<I
     f.format !== item.format ||
     f.scheduledAt.getTime() !== item.scheduledAt.getTime() ||
     JSON.stringify(f.assetIds) !== JSON.stringify(item.assetIds) ||
-    JSON.stringify(f.settings) !== JSON.stringify(item.settings);
+    JSON.stringify(sorted(f.settings)) !== JSON.stringify(sorted(item.settings));
   if (!contentChanged) return { ok: true, message: "No changes to save." };
 
   // Anything approved or scheduled goes back to draft: approval covers the exact post.
@@ -116,7 +123,15 @@ export async function sendForApproval(formData: FormData): Promise<void> {
     title: item.title ? `${item.title}` : item.idea,
     body: item.caption ?? "",
     reason: `Sent for approval by ${user.name}. Scheduled for ${item.scheduledAt.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}.`,
-    payload: { format: item.format, script: item.script, assetIds: item.assetIds, scheduledAt: item.scheduledAt.toISOString(), warnings: check.warnings },
+    payload: {
+      format: item.format,
+      script: item.script,
+      assetIds: item.assetIds,
+      scheduledAt: item.scheduledAt.toISOString(),
+      warnings: check.warnings,
+      needsJyotishReview: item.settings.needs_jyotish_review === true,
+      draftedBy: typeof item.settings.drafted_by === "string" ? item.settings.drafted_by : null,
+    },
   });
   await db.update(calendarItems).set({ status: "in_review", updatedAt: new Date() }).where(eq(calendarItems.id, id));
   await audit({ actor: user.email, actorType: "user", action: "send_for_approval", target: item.idea, result: "in_review" });

@@ -14,7 +14,7 @@ const config: NextConfig = {
   output: "standalone",
   // Trace files from the monorepo root so workspace packages land in the standalone build.
   outputFileTracingRoot: resolve(__dirname, "../.."),
-  transpilePackages: ["@bodh/db", "@bodh/shared", "@bodh/guardrails", "@bodh/integrations"],
+  transpilePackages: ["@bodh/db", "@bodh/shared", "@bodh/guardrails", "@bodh/integrations", "@bodh/agents"],
   serverExternalPackages: ["postgres", "@google-cloud/secret-manager", "@google-cloud/storage", "@google-cloud/bigquery"],
   poweredByHeader: false,
   // Fonts read at runtime by lib/compose.tsx.

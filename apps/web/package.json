@@ -17,6 +17,7 @@
     "vitest": "^5.0.5"
   },
   "dependencies": {
+    "@bodh/agents": "workspace:*",
     "@bodh/db": "workspace:*",
     "@bodh/guardrails": "workspace:*",
     "@bodh/integrations": "workspace:*",
@@ -31,6 +32,7 @@
     "next": "^16.4.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
   }
 }

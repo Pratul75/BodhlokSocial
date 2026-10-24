@@ -6,6 +6,7 @@ import { CHANNEL_LABELS, CHANNELS, FORMAT_LABELS, FORMATS, type Channel, type Fo
 import { requireModule } from "@/lib/auth";
 import { timeLabel, toIsoDate } from "@/lib/format";
 import { Card, CardHeader, PageHeader, StatusPill, statusLabel } from "@/components/ui";
+import { AgentRunPanel } from "@/components/agent-run-panel";
 import { AddIdeaForm } from "./add-idea-form";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +92,16 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
         title="Content calendar"
         description="What goes out on each channel, and where each piece is between idea and published."
       />
+
+      <Card className="mb-6">
+        <AgentRunPanel
+          agent="content"
+          title="Content agent"
+          sub="Drafts captions, scripts and creative briefs for the next 7 days each morning, following the approved plan. Drafts wait here for media and approval."
+          label="Draft next week"
+          placeholder="Optional: e.g. three Reels on Shani's transit, one carousel on nakshatras"
+        />
+      </Card>
 
       <Card className="mb-6">
         <CardHeader title="Add an idea" sub="Ideas start here. Open any item to write the caption, pick media and send it for approval." />

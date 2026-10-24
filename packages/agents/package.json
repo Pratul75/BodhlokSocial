@@ -1,0 +1,29 @@
+{
+  "name": "@bodh/agents",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "skills": "node --experimental-strip-types scripts/bundle-skills.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.2.0",
+    "@bodh/db": "workspace:*",
+    "@bodh/guardrails": "workspace:*",
+    "@bodh/integrations": "workspace:*",
+    "@bodh/shared": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "postgres": "^3.4.9",
+    "vitest": "^5.0.5"
+  }
+}

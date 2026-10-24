@@ -202,6 +202,8 @@ resource "google_cloud_run_v2_service" "worker" {
       }
       resources {
         limits = { cpu = "1", memory = "1Gi" }
+        # Agent runs carry on after the 202, so keep CPU allocated outside requests.
+        cpu_idle = false
       }
       volume_mounts {
         name       = "cloudsql"

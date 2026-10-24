@@ -60,6 +60,9 @@ fi
 
 # The public address follows the host given to this run.
 sed -i "s#^APP_URL=.*#APP_URL=https://$HOST#" "$ENVF"
+# Settings added after the first install.
+grep -q '^WORKER_URL=' "$ENVF" || echo 'WORKER_URL=http://127.0.0.1:8787' >> "$ENVF"
+grep -q '^AI_MONTHLY_BUDGET_USD=' "$ENVF" || echo 'AI_MONTHLY_BUDGET_USD=150' >> "$ENVF"
 
 # Database on the existing Postgres.
 DBPASS="$(sed -n 's#^DATABASE_URL=postgres://bodh_growth:\([^@]*\)@.*#\1#p' "$ENVF")"

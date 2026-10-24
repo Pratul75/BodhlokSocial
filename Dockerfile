@@ -20,6 +20,7 @@ COPY packages/db/package.json packages/db/
 COPY packages/shared/package.json packages/shared/
 COPY packages/guardrails/package.json packages/guardrails/
 COPY packages/integrations/package.json packages/integrations/
+COPY packages/agents/package.json packages/agents/
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
@@ -47,6 +48,7 @@ COPY packages/db/package.json packages/db/
 COPY packages/shared/package.json packages/shared/
 COPY packages/guardrails/package.json packages/guardrails/
 COPY packages/integrations/package.json packages/integrations/
+COPY packages/agents/package.json packages/agents/
 # Only the worker and database packages and their dependencies, not the web app's.
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --filter "@bodh/worker..." --filter "@bodh/db..."

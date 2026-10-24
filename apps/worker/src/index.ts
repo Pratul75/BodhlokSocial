@@ -16,6 +16,7 @@ import {
 } from "@bodh/integrations/pipeline";
 import { runPublisher } from "@bodh/integrations/publisher";
 import { pollVideoJobs } from "@bodh/integrations/creative";
+import { activeRun, anthropicClient, failStaleRuns, isAgentName, queueRun, runAgent } from "@bodh/agents";
 
 /** Agents and their schedules, from the build plan. Cloud Scheduler calls POST /jobs/:agent. */
 export const AGENTS = {
@@ -67,16 +68,30 @@ app.use("/guardrails/*", requireToken);
 app.get("/jobs", (c) => c.json(AGENTS));
 
 /**
- * Queues an agent run. The agent runtime (Claude Agent SDK + skills + MCP tools)
- * is built in Phase 4; until then the run is recorded and marked as queued.
+ * Starts an agent run and returns its id at once; the run carries on in the background
+ * and records its result on the run row. Body (optional JSON): { task, requestedBy }.
+ * Agents not built yet are recorded as queued.
  */
 app.post("/jobs/:agent", async (c) => {
   const agent = c.req.param("agent");
   if (!(agent in AGENTS)) return c.json({ error: `Unknown agent "${agent}"` }, 404);
   const trigger = c.req.query("trigger") === "manual" ? "manual" : "schedule";
+  const body = (await c.req.json().catch(() => ({}))) as { task?: unknown; requestedBy?: unknown };
+  const task = typeof body.task === "string" ? body.task.slice(0, 2000) : undefined;
+  const requestedBy = typeof body.requestedBy === "string" ? body.requestedBy.slice(0, 200) : null;
+
+  if (isAgentName(agent)) {
+    if (!(await anthropicClient())) return c.json({ error: "No Anthropic API key. An admin can add one in Connections." }, 409);
+    const running = await activeRun(agent);
+    if (running) return c.json({ error: `The ${agent} agent is already running.`, runId: running }, 409);
+    const runId = await queueRun(agent, trigger);
+    void runAgent(agent, { trigger, task, requestedBy }, runId).catch((e) => console.error(`${agent} run ${runId} failed`, e));
+    return c.json({ runId, status: "queued" }, 202);
+  }
+
   const [run] = await db
     .insert(agentRuns)
-    .values({ agent, trigger, status: "queued", summary: "Queued. The agent runtime ships in Phase 4." })
+    .values({ agent, trigger, status: "queued", summary: "Queued. This agent isn't built yet." })
     .returning();
   await db.insert(auditLog).values({
     actor: `${agent} agent`,
@@ -174,3 +189,6 @@ const port = Number(process.env.PORT ?? process.env.WORKER_PORT ?? 8787);
 // Cloud Run needs 0.0.0.0; on a shared VM set WORKER_HOST=127.0.0.1 so only local jobs can reach it.
 const hostname = process.env.WORKER_HOST ?? "0.0.0.0";
 serve({ fetch: app.fetch, port, hostname }, (info) => console.log(`worker listening on http://${hostname}:${info.port}`));
+failStaleRuns()
+  .then((n) => n && console.log(`marked ${n} interrupted agent run(s) as failed`))
+  .catch((e) => console.error("failStaleRuns", e));

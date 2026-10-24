@@ -8,6 +8,11 @@ case "$1" in
   tracking-daily)   path=/jobs/tracking/daily ;;
   publisher)        path=/jobs/publishing/run ;;
   creative-poll)    path=/jobs/creative/poll ;;
+  # Agent runs start in the background; a 409 (no API key yet, or already running) is not a failure.
+  agent-strategy|agent-content)
+    curl -sS -m 30 -X POST -H "X-Worker-Token: $TOKEN" "http://127.0.0.1:8787/jobs/${1#agent-}"
+    echo
+    exit 0 ;;
   *) echo "unknown job $1" >&2; exit 2 ;;
 esac
 curl -fsS -m 600 -X POST -H "X-Worker-Token: $TOKEN" "http://127.0.0.1:8787$path"

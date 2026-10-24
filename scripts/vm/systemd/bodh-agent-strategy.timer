@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: Strategy agent writes next month's plan
+
+[Timer]
+OnCalendar=*-*-25 09:00:00 Asia/Kolkata
+Unit=bodh-job@agent-strategy.service
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

@@ -13,6 +13,7 @@
     "tsx": "^4.23.15"
   },
   "dependencies": {
+    "@bodh/agents": "workspace:*",
     "@bodh/db": "workspace:*",
     "@bodh/guardrails": "workspace:*",
     "@bodh/integrations": "workspace:*",

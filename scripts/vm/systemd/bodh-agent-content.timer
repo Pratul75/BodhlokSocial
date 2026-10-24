@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: Content agent drafts the next 7 days
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 Asia/Kolkata
+Unit=bodh-job@agent-content.service
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

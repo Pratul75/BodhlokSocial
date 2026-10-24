@@ -8,7 +8,7 @@ There is no CI/CD: you deploy from a laptop.
 |---|---|
 | Web app | systemd `bodh-web`, Node 24, on 127.0.0.1:3100 behind Caddy |
 | Worker | systemd `bodh-worker`, on 127.0.0.1:8787, not reachable from outside |
-| Scheduled jobs | systemd timers `bodh-*.timer` (tracking, publisher, video checks) |
+| Scheduled jobs | systemd timers `bodh-*.timer` (tracking, publisher, video checks, Content agent daily 06:00 IST, Strategy agent on the 25th at 09:00 IST) |
 | Database | `bodh_growth` on the VM's Postgres 15 |
 | Settings and secrets | `/opt/bodh/shared/bodh.env`, readable by root and the `bodh` user only |
 | Integration keys, uploads | `/opt/bodh/shared/secrets`, `/opt/bodh/shared/uploads` |

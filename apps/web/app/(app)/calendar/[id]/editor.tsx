@@ -108,6 +108,20 @@ export function ItemEditor({
           </label>
         </div>
 
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label className="block text-sm">
+            <span className={label}>Creative brief (what the image or video should show)</span>
+            <textarea name="setting_creative_brief" defaultValue={String(item.settings.creative_brief ?? "")} rows={3} className={`${inputClass} leading-relaxed`} />
+          </label>
+          <label className="flex items-start gap-2 self-end pb-2 text-sm">
+            <input type="checkbox" name="setting_needs_jyotish_review" defaultChecked={item.settings.needs_jyotish_review === true} className="mt-0.5" />
+            <span>
+              Needs Jyotish review
+              <span className="block text-xs text-muted">Tick when the post names a transit date, makes sign-by-sign predictions or explains a yoga, dosha or remedy.</span>
+            </span>
+          </label>
+        </div>
+
         {(channel === "instagram" || channel === "facebook") && (
           <label className="block max-w-xs text-sm">
             <span className={label}>Post as</span>
