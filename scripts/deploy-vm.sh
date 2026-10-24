@@ -29,13 +29,17 @@ echo "== extracting"
 cid="$(docker create --platform linux/amd64 bodh-web:vm)"; docker cp "$cid:/app" "$OUT/web"; docker rm "$cid" >/dev/null
 cid="$(docker create --platform linux/amd64 bodh-worker:vm)"; docker cp "$cid:/repo" "$OUT/worker"; docker rm "$cid" >/dev/null
 # COPYFILE_DISABLE keeps macOS metadata out of the archives.
-COPYFILE_DISABLE=1 tar -C "$OUT" -czf "$OUT/release.tgz" web worker
-COPYFILE_DISABLE=1 tar -C scripts/vm -czf "$OUT/vm.tgz" .
+TAR_FLAGS=(); tar --no-xattrs --no-mac-metadata -cf /dev/null /dev/null 2>/dev/null && TAR_FLAGS=(--no-xattrs --no-mac-metadata)
+COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -C "$OUT" -czf "$OUT/release.tgz" web worker
+COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -C scripts/vm -czf "$OUT/vm.tgz" .
 du -h "$OUT/release.tgz" | cut -f1 | xargs echo "   release size:"
 
+# gcloud occasionally times out talking to the Compute API; retry those calls.
+retry() { for i in 1 2 3; do "$@" && return 0; echo "   retrying ($i)…"; sleep 10; done; return 1; }
+
 echo "== uploading to $VM"
-gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release"
-gcloud compute scp "$OUT/release.tgz" "$OUT/vm.tgz" "$VM:/tmp/bodh-release/" --zone "$ZONE" --project "$PROJECT" --quiet
+retry gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release"
+retry gcloud compute scp "$OUT/release.tgz" "$OUT/vm.tgz" "$VM:/tmp/bodh-release/" --zone "$ZONE" --project "$PROJECT" --quiet
 
 echo "== installing"
 gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command \

@@ -103,7 +103,7 @@ for t in "$HERE"/systemd/*.timer; do systemctl enable --now "$(basename "$t")" >
 BEGIN_MARK="# >>> BODH Growth OS (managed by scripts/vm/install.sh)"
 END_MARK="# <<< BODH Growth OS"
 BLOCK="$(printf '%s\n%s {\n    encode gzip\n    reverse_proxy 127.0.0.1:3100\n}\n%s' "$BEGIN_MARK" "$HOST" "$END_MARK")"
-CURRENT="$(sed -n "/^$BEGIN_MARK\$/,/^$END_MARK\$/p" /etc/caddy/Caddyfile)"
+CURRENT="$(awk -v b="$BEGIN_MARK" -v e="$END_MARK" '$0 == b { p = 1 } p { print } $0 == e { p = 0 }' /etc/caddy/Caddyfile)"
 if [ "$CURRENT" != "$BLOCK" ]; then
   log "setting Caddy site to $HOST"
   cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.bak-$(date -u +%Y%m%dT%H%M%SZ)"
