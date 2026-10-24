@@ -13,7 +13,7 @@ Connections needed: **DataForSEO** (API login, API password, site domain), **Sea
 
 ## Programmatic pages
 
-The catalog (`packages/integrations/src/seo-catalog.ts`) has 210 pages: 108 planets in houses, 27 nakshatras, 12 lagnas, 28 yogas and 25 city Panchang pages. Each page has a meta description, a 40 to 70 word direct answer at the top, the body in Markdown, and 3 to 6 FAQs that become `FAQPage` schema. Pages with astrological claims are flagged for Jyotish review.
+The catalog (`packages/integrations/src/seo-catalog.ts`) has 200 pages: 108 planets in houses, 27 nakshatras, 12 lagnas, 28 yogas and 25 city Panchang pages. Each page has a meta description, a 40 to 70 word direct answer at the top, the body in Markdown, and 3 to 6 FAQs that become `FAQPage` schema. Pages with astrological claims are flagged for Jyotish review.
 
 Statuses: **planned** → **in review** (in Approvals) → **live** (approved, in the feed). Rejecting a page sends it back as **changes asked** with the note, and the agent picks it up again.
 

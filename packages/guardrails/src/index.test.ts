@@ -65,3 +65,40 @@ describe("requiresPublishApproval", () => {
     expect(requiresPublishApproval(launch, new Date("2027-01-15"), false)).toBe(true);
   });
 });
+
+describe("losing ads and committed budgets", () => {
+  const caps = { dailyCap: 5000, monthlyCap: 100000 };
+  it("judges an ad against the best proven peer in its ad set", async () => {
+    const { isLosingAd } = await import("./index");
+    const peers = [{ adId: "a", spend: 3000, activations: 10 }, { adId: "b", spend: 2000, activations: 2 }];
+    expect(isLosingAd({ adId: "x", spend: 1000, activations: 0 }, peers).losing).toBe(false); // under min spend
+    expect(isLosingAd({ adId: "x", spend: 1600, activations: 0 }, peers)).toMatchObject({ losing: true }); // 1600 >= 2 x 300
+    expect(isLosingAd({ adId: "x", spend: 4000, activations: 8 }, peers)).toMatchObject({ losing: true }); // 500 >= 1.5 x 300
+    expect(isLosingAd({ adId: "x", spend: 3000, activations: 8 }, peers).losing).toBe(false); // 375 < 450
+    expect(isLosingAd({ adId: "x", spend: 9000, activations: 0 }, [{ adId: "b", spend: 2000, activations: 2 }]).losing).toBe(false); // no proven peer
+  });
+
+  it("never auto-pauses the last active ad, and checks budgets against everything running", async () => {
+    const { checkAdChange } = await import("./index");
+    const spend = { spentToday: 100, spentThisMonth: 1000, committedDaily: 4000 };
+    expect(checkAdChange({ type: "pause_ad", adId: "x", isLosing: true, lastActiveInAdSet: true }, caps, spend).outcome).toBe("needs_approval");
+    expect(checkAdChange({ type: "budget_change", adSetId: "s", currentDaily: 1000, newDaily: 2100 }, caps, spend)).toMatchObject({ outcome: "block" }); // 4000 - 1000 + 2100 > 5000
+    expect(checkAdChange({ type: "budget_change", adSetId: "s", currentDaily: 1000, newDaily: 1500 }, caps, spend).outcome).toBe("needs_approval");
+    expect(checkAdChange({ type: "new_campaign", name: "n", dailyBudget: 1500 }, caps, spend).outcome).toBe("block");
+    expect(checkAdChange({ type: "ab_test", adSetId: "s", variants: 2 }, caps, spend).outcome).toBe("needs_approval");
+    expect(checkAdChange({ type: "ab_test", adSetId: "s", variants: 2 }, { dailyCap: 0, monthlyCap: 0 }, spend).outcome).toBe("block");
+  });
+});
+
+describe("copy lint disclaimers", () => {
+  it("allows disclaimers and lets pages discuss healing traditions", async () => {
+    const { lintAdCopy } = await import("./index");
+    expect(lintAdCopy("There's no guarantee, and astrology can't guarantee outcomes.")).toEqual([]);
+    expect(lintAdCopy("Results are not guaranteed.")).toEqual([]);
+    expect(lintAdCopy("Guaranteed marriage in 30 days").map((i) => i.why)).toEqual(["Guaranteed outcomes"]);
+    expect(lintAdCopy("Remedies cure your doshas").map((i) => i.why)).toEqual(["Health promises"]);
+    expect(lintAdCopy("Gemstones are not a cure.")).toEqual([]);
+    expect(lintAdCopy("Ayurveda and healing traditions", "page")).toEqual([]);
+    expect(lintAdCopy("A healing reading", "ad").map((i) => i.why)).toEqual(["Health promises"]);
+  });
+});

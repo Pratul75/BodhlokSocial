@@ -1,5 +1,5 @@
 /** SEO jobs: page catalog, keyword sync and the weekly site audit, all through DataForSEO. */
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { connections, db, keywords, seoAudits, seoPages } from "@bodh/db";
 import {
   CHECK_LABELS,
@@ -40,6 +40,13 @@ export async function ensurePageCatalog(): Promise<number> {
     .values(pages.map((p) => ({ ...p, status: "planned", needsReview: p.template !== "panchang_city" })))
     .onConflictDoNothing()
     .returning({ id: seoPages.id });
+  // Keep the catalog's inputs (such as priority) current on pages nobody has written yet.
+  for (const p of pages) {
+    await db
+      .update(seoPages)
+      .set({ params: p.params })
+      .where(and(eq(seoPages.template, p.template), eq(seoPages.slug, p.slug), eq(seoPages.status, "planned"), sql`${seoPages.params} is distinct from ${JSON.stringify(p.params)}::jsonb`));
+  }
   return rows.length;
 }
 
@@ -124,13 +131,23 @@ export async function pageCounts() {
     .groupBy(seoPages.template, seoPages.status);
 }
 
-/** Planned pages, highest-volume keyword first, for the SEO agent to draft. */
-export async function nextPlannedPages(limit: number, template?: string) {
+/** Planned pages (and ones sent back with changes asked), by search volume, then the catalog's priority. */
+export async function nextPlannedPages(limit: number, template?: string, search?: string, offset = 0) {
+  const conds = [inArray(seoPages.status, ["planned", "drafted"])];
+  if (template) conds.push(eq(seoPages.template, template));
+  if (search) conds.push(ilike(seoPages.title, `%${search.replace(/[%_]/g, "")}%`));
   return db
     .select({ page: seoPages, volume: keywords.volume })
     .from(seoPages)
     .leftJoin(keywords, eq(keywords.keyword, seoPages.keyword))
-    .where(template ? and(eq(seoPages.status, "planned"), eq(seoPages.template, template)) : eq(seoPages.status, "planned"))
-    .orderBy(sql`coalesce(${keywords.volume}, 0) desc`, seoPages.template, seoPages.slug)
-    .limit(limit);
+    .where(and(...conds))
+    .orderBy(
+      sql`case when ${seoPages.status} = 'drafted' then 0 else 1 end`,
+      sql`coalesce(${keywords.volume}, 0) desc`,
+      sql`coalesce((${seoPages.params}->>'priority')::int, 0) desc`,
+      seoPages.template,
+      seoPages.slug,
+    )
+    .limit(limit)
+    .offset(offset);
 }

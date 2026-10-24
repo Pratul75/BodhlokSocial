@@ -23,17 +23,22 @@ export interface CatalogPage {
   params: Record<string, unknown>;
 }
 
+/** weight: how much people search for the planet, used to order pages until real volumes arrive. */
 export const PLANETS = [
-  { name: "Sun", sanskrit: "Surya" },
-  { name: "Moon", sanskrit: "Chandra" },
-  { name: "Mars", sanskrit: "Mangal" },
-  { name: "Mercury", sanskrit: "Budh" },
-  { name: "Jupiter", sanskrit: "Guru" },
-  { name: "Venus", sanskrit: "Shukra" },
-  { name: "Saturn", sanskrit: "Shani" },
-  { name: "Rahu", sanskrit: "Rahu" },
-  { name: "Ketu", sanskrit: "Ketu" },
+  { name: "Sun", sanskrit: "Surya", weight: 5 },
+  { name: "Moon", sanskrit: "Chandra", weight: 7 },
+  { name: "Mars", sanskrit: "Mangal", weight: 7 },
+  { name: "Mercury", sanskrit: "Budh", weight: 4 },
+  { name: "Jupiter", sanskrit: "Guru", weight: 8 },
+  { name: "Venus", sanskrit: "Shukra", weight: 7 },
+  { name: "Saturn", sanskrit: "Shani", weight: 10 },
+  { name: "Rahu", sanskrit: "Rahu", weight: 9 },
+  { name: "Ketu", sanskrit: "Ketu", weight: 8 },
 ];
+/** Houses people ask about most: marriage, self, career, children, home, wealth. */
+const HOUSE_WEIGHT = [0, 9, 6, 4, 6, 7, 4, 10, 6, 6, 9, 5, 6];
+const POPULAR_NAKSHATRAS = new Set(["Rohini", "Ashwini", "Pushya", "Mula", "Ashlesha", "Magha", "Revati", "Swati", "Chitra", "Hasta", "Shravana", "Krittika"]);
+const POPULAR_YOGAS = new Set(["Mangal Dosha", "Raja Yoga", "Gajakesari Yoga", "Kala Sarpa Yoga", "Dhana Yoga", "Viparita Raja Yoga", "Neecha Bhanga Raja Yoga", "Budhaditya Yoga", "Guru Chandala Yoga"]);
 
 const ordinal = (n: number) => `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
 const slugify = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -81,12 +86,12 @@ export function pageCatalog(): CatalogPage[] {
         slug: `${slugify(p.name)}-in-${ordinal(h)}-house`,
         title: `${p.name} (${p.sanskrit}) in the ${ordinal(h)} house`,
         keyword: `${p.name.toLowerCase()} in ${ordinal(h)} house`,
-        params: { planet: p.name, sanskrit: p.sanskrit, house: h },
+        params: { planet: p.name, sanskrit: p.sanskrit, house: h, priority: p.weight * HOUSE_WEIGHT[h]! },
       });
     }
   }
   NAKSHATRAS.forEach((n, i) =>
-    pages.push({ template: "nakshatra", slug: `${slugify(n)}-nakshatra`, title: `${n} Nakshatra`, keyword: `${n.toLowerCase()} nakshatra`, params: { nakshatra: n, number: i + 1 } }),
+    pages.push({ template: "nakshatra", slug: `${slugify(n)}-nakshatra`, title: `${n} Nakshatra`, keyword: `${n.toLowerCase()} nakshatra`, params: { nakshatra: n, number: i + 1, priority: POPULAR_NAKSHATRAS.has(n) ? 80 : 50 } }),
   );
   RASHIS.forEach((r, i) =>
     pages.push({
@@ -94,14 +99,14 @@ export function pageCatalog(): CatalogPage[] {
       slug: `${slugify(r)}-lagna`,
       title: `${r} Lagna (${WESTERN_SIGNS[i]} ascendant)`,
       keyword: `${WESTERN_SIGNS[i]!.toLowerCase()} ascendant`,
-      params: { rashi: r, sign: WESTERN_SIGNS[i], number: i + 1 },
+      params: { rashi: r, sign: WESTERN_SIGNS[i], number: i + 1, priority: 60 },
     }),
   );
   for (const y of YOGA_LIST) {
-    pages.push({ template: "yoga", slug: slugify(y.name), title: y.name, keyword: y.name.toLowerCase(), params: { yoga: y.name, rule: y.rule } });
+    pages.push({ template: "yoga", slug: slugify(y.name), title: y.name, keyword: y.name.toLowerCase(), params: { yoga: y.name, rule: y.rule, priority: POPULAR_YOGAS.has(y.name) ? 85 : 45 } });
   }
   for (const c of CITIES) {
-    pages.push({ template: "panchang_city", slug: `panchang-${c.slug}`, title: `Today's Panchang in ${c.name}`, keyword: `panchang today ${c.name.toLowerCase()}`, params: { city: c.slug } });
+    pages.push({ template: "panchang_city", slug: `panchang-${c.slug}`, title: `Today's Panchang in ${c.name}`, keyword: `panchang today ${c.name.toLowerCase()}`, params: { city: c.slug, priority: 40 } });
   }
   return pages;
 }

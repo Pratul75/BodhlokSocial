@@ -65,6 +65,8 @@ grep -q '^WORKER_URL=' "$ENVF" || echo 'WORKER_URL=http://127.0.0.1:8787' >> "$E
 grep -q '^AI_MONTHLY_BUDGET_USD=' "$ENVF" || echo 'AI_MONTHLY_BUDGET_USD=150' >> "$ENVF"
 grep -q '^SKILLS_DIR=' "$ENVF" || echo "SKILLS_DIR=$SHARED/skills" >> "$ENVF"
 grep -q '^SEO_FEED_TOKEN=' "$ENVF" || echo "SEO_FEED_TOKEN=$(openssl rand -hex 24)" >> "$ENVF"
+# Google Ads: fill in once the developer token is approved, then restart bodh-web and bodh-worker.
+grep -q '^GOOGLE_ADS_DEVELOPER_TOKEN=' "$ENVF" || printf 'GOOGLE_ADS_DEVELOPER_TOKEN=\nGOOGLE_ADS_CUSTOMER_ID=\nGOOGLE_ADS_LOGIN_CUSTOMER_ID=\n' >> "$ENVF"
 
 # Extra agent skills (markdown only), replaced on each deploy that brings them.
 if [ -d "$HERE/skills" ]; then

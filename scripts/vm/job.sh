@@ -12,8 +12,9 @@ case "$1" in
   seo-audit-start)  path=/jobs/seo/audit-start ;;
   seo-audit-poll)   path=/jobs/seo/audit-poll ;;
   geo)              path=/jobs/seo/geo ;;
+  ads-sync)         path=/jobs/ads/sync ;;
   # Agent runs start in the background; a 409 (no API key yet, or already running) is not a failure.
-  agent-strategy|agent-content|agent-seo)
+  agent-strategy|agent-content|agent-seo|agent-ads)
     curl -sS -m 30 -X POST -H "X-Worker-Token: $TOKEN" "http://127.0.0.1:8787/jobs/${1#agent-}"
     echo
     exit 0 ;;

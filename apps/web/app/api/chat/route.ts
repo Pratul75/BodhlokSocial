@@ -4,7 +4,7 @@ import { canAccess } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
 import { startAgentRun } from "@/lib/agents";
 
-const MODULE_FOR = { strategy: "strategy", content: "calendar", seo: "seo" } as const;
+const MODULE_FOR = { strategy: "strategy", content: "calendar", seo: "seo", ads: "ads" } as const;
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;

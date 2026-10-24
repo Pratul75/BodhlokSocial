@@ -17,6 +17,7 @@ import {
 import { runPublisher } from "@bodh/integrations/publisher";
 import { pollVideoJobs } from "@bodh/integrations/creative";
 import { activeRun, anthropicClient, failStaleRuns, isAgentName, queueRun, runAgent, runVisibilityChecks } from "@bodh/agents";
+import { syncAdStructure } from "@bodh/integrations/ads";
 import { checkDataForSeoConnection, ensurePageCatalog, pollSiteAudits, startSiteAudit, syncKeywords } from "@bodh/integrations/seo";
 
 /** Agents and their schedules, from the build plan. Cloud Scheduler calls POST /jobs/:agent. */
@@ -204,6 +205,15 @@ app.post("/jobs/seo/:job", async (c) => {
       default:
         return c.json({ error: `Unknown SEO job "${job}"` }, 404);
     }
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+/** Hourly: campaigns, ad sets and ads from Meta and Google Ads, so guardrails see current budgets. */
+app.post("/jobs/ads/sync", async (c) => {
+  try {
+    return c.json({ message: await syncAdStructure() });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }

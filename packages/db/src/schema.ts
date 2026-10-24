@@ -130,23 +130,72 @@ export const campaigns = pgTable("campaigns", {
   activations7d: integer("activations_7d").notNull().default(0),
 });
 
+/**
+ * Campaigns, ad sets (Meta) / ad groups (Google) and ads as they are on the platforms,
+ * synced hourly. Budgets and bids are in INR (the platforms store minor units / micros).
+ */
+export const adEntities = pgTable(
+  "ad_entities",
+  {
+    id: id(),
+    platform: text("platform").notNull(), // google_ads | meta_ads
+    level: text("level").notNull(), // campaign | ad_set | ad
+    platformId: text("platform_id").notNull(),
+    parentId: text("parent_id"), // the ad set for an ad, the campaign for an ad set
+    campaignId: text("campaign_id"),
+    name: text("name").notNull(),
+    status: text("status").notNull(), // active | paused | removed | other
+    objective: text("objective"),
+    /** Daily budget, where this level owns one (Google: campaign; Meta: campaign with CBO, or ad set). */
+    dailyBudget: numeric("daily_budget", { precision: 12, scale: 2 }),
+    /** Manual bid or target CPA, where set. */
+    bid: numeric("bid", { precision: 12, scale: 2 }),
+    bidKind: text("bid_kind"), // cpc | target_cpa | bid_cap | cost_cap
+    /** Ad copy, for ads: { headline, text, link, creativeId }. */
+    details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("ad_entities_platform_id_uq").on(t.platform, t.platformId), index("ad_entities_parent_idx").on(t.parentId)],
+);
+
+/** Every change to ads, by an agent or a person, with what the guardrails decided. */
 export const adChanges = pgTable("ad_changes", {
   id: id(),
   campaignId: uuid("campaign_id").references(() => campaigns.id),
   change: text("change").notNull(),
-  outcome: text("outcome").notNull(), // applied | sent_to_approval | blocked
+  outcome: text("outcome").notNull(), // applied | sent_to_approval | blocked | failed | rejected
   reason: text("reason").notNull(),
   actor: text("actor").notNull(),
   createdAt: createdAt(),
+  platform: text("platform"),
+  /** pause_ad | resume_ad | bid_change | budget_change | new_campaign | ab_test */
+  type: text("type"),
+  level: text("level"),
+  entityId: text("entity_id"),
+  entityName: text("entity_name"),
+  before: jsonb("before").$type<Record<string, unknown>>(),
+  after: jsonb("after").$type<Record<string, unknown>>(),
+  /** The guardrail's reason, separate from the agent's. */
+  guardrail: text("guardrail"),
+  approvalId: uuid("approval_id"),
+  runId: uuid("run_id"),
+  error: text("error"),
+  appliedAt: timestamp("applied_at", { withTimezone: true }),
 });
 
 export const experiments = pgTable("experiments", {
   id: id(),
   platform: text("platform").notNull(),
   hypothesis: text("hypothesis").notNull(),
-  variants: jsonb("variants").$type<{ name: string; cpa: number | null }[]>().notNull().default([]),
-  status: text("status").notNull(), // running | won | lost | stopped
+  variants: jsonb("variants").$type<{ name: string; cpa: number | null; adId?: string }[]>().notNull().default([]),
+  status: text("status").notNull(), // proposed | running | won | lost | stopped
   startedAt: date("started_at").notNull(),
+  /** The ad set or ad group the variants run in. */
+  entityId: text("entity_id"),
+  entityName: text("entity_name"),
+  winnerAdId: text("winner_ad_id"),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  runId: uuid("run_id"),
 });
 
 export const budgets = pgTable("budgets", {

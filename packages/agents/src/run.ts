@@ -5,16 +5,16 @@ import { agentRuns, auditLog, db } from "@bodh/db";
 import { anthropicClient, FALLBACK_BETA, MODEL } from "./client";
 import { addUsage, costUsd, emptyTotals, MONTHLY_BUDGET_USD, spentThisMonthUsd, type RunTotals } from "./cost";
 import { defaultTask, systemPrompt, userMessage, type AgentName } from "./prompts";
-import { contentTools, readTools, seoTools, strategyTools, type ToolContext } from "./tools";
+import { adsTools, contentTools, readTools, seoTools, strategyTools, type ToolContext } from "./tools";
 
-export const AGENT_NAMES: AgentName[] = ["strategy", "content", "seo"];
+export const AGENT_NAMES: AgentName[] = ["strategy", "content", "seo", "ads"];
 export const isAgentName = (a: string): a is AgentName => (AGENT_NAMES as string[]).includes(a);
 
 /** One run may not spend more than this, whatever the monthly budget says. */
 export const RUN_CAP_USD = Number(process.env.AI_RUN_CAP_USD ?? 6);
-const EFFORT = { strategy: "high", content: "medium", seo: "medium" } as const;
-const WEB_SEARCHES = { strategy: 8, content: 4, seo: 6 } as const;
-const TOOLS = { strategy: strategyTools, content: contentTools, seo: seoTools } as const;
+const EFFORT = { strategy: "high", content: "medium", seo: "medium", ads: "high" } as const;
+const WEB_SEARCHES = { strategy: 8, content: 4, seo: 6, ads: 2 } as const;
+const TOOLS = { strategy: strategyTools, content: contentTools, seo: seoTools, ads: adsTools } as const;
 
 export interface RunOptions {
   trigger: "manual" | "schedule";
@@ -120,8 +120,9 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
     }
 
     const text = textOf(last);
-    const unit = { content: "post", seo: "page", strategy: "calendar idea" }[agent];
-    const done = agent === "strategy" && ctx.drafts === 0 ? "" : `${ctx.drafts} ${unit}${ctx.drafts === 1 ? "" : "s"} ${agent === "strategy" ? "added" : "drafted"}. `;
+    const unit = { content: "post", seo: "page", strategy: "calendar idea", ads: "change" }[agent];
+    const verb = { content: "drafted", seo: "drafted", strategy: "added", ads: "requested" }[agent];
+    const done = (agent === "strategy" || agent === "ads") && ctx.drafts === 0 ? "" : `${ctx.drafts} ${unit}${ctx.drafts === 1 ? "" : "s"} ${verb}. `;
     if (stopped) return finish(runId, ctx.drafts > 0 ? "succeeded" : "failed", `${stopped} ${done}${text}`.trim(), totals);
     return finish(runId, "succeeded", `${done}${text}`.trim() || "Finished without a summary.", totals);
   } catch (e) {

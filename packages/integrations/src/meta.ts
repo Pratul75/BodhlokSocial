@@ -83,7 +83,7 @@ export class MetaApiError extends Error {
   }
 }
 
-async function graphError(res: Response): Promise<MetaApiError> {
+export async function graphError(res: Response): Promise<MetaApiError> {
   let detail = "";
   try {
     const body = (await res.json()) as { error?: { message?: string; code?: number } };

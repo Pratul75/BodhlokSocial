@@ -20,11 +20,11 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
   { key: "vertex", name: "Vertex AI (Imagen, Veo, Gemini)", usedFor: "Image and video generation, Gemini visibility checks", method: "service_account", group: "AI" },
   { key: "openai", name: "OpenAI API", usedFor: "Weekly check: does ChatGPT mention Asttrolok", method: "api_key", group: "AI" },
   { key: "perplexity", name: "Perplexity API", usedFor: "Weekly check: does Perplexity mention Asttrolok", method: "api_key", group: "AI" },
-  { key: "google_ads", name: "Google Ads API", usedFor: "Ads management", method: "oauth", prerequisite: "developer token approval", group: "Ads", googleOAuth: { scopes: ["https://www.googleapis.com/auth/adwords"], enabled: false } },
+  { key: "google_ads", name: "Google Ads API", usedFor: "Ads management: spend, pausing ads, bids, budgets, tests", method: "oauth", prerequisite: "developer token approval (set GOOGLE_ADS_DEVELOPER_TOKEN and GOOGLE_ADS_CUSTOMER_ID on the server)", group: "Ads", googleOAuth: { scopes: ["https://www.googleapis.com/auth/adwords"], enabled: true } },
   {
     key: "meta_marketing",
     name: "Meta Marketing API",
-    usedFor: "Daily ad spend, ads, lead forms",
+    usedFor: "Daily ad spend; pausing ads, bids, budgets and tests; lead forms",
     method: "api_key",
     prerequisite: "Meta app review",
     group: "Ads",

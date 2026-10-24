@@ -1,7 +1,8 @@
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
-import { approvals, auditLog, brandKit, calendarItems, creativePerformance, db, keywords, seoPages, strategyPlans } from "@bodh/db";
+import { adEntities, approvals, auditLog, brandKit, calendarItems, creativePerformance, db, keywords, seoPages, strategyPlans } from "@bodh/db";
+import { adResults, JUDGE_DAYS, judgeAd, requestChange, spendNow, testsWithResults } from "@bodh/integrations/ads";
 import { lintAdCopy } from "@bodh/guardrails";
 import { keywordIdeas, searchTrends } from "@bodh/integrations/dataforseo";
 import { dataForSeoCredentials, latestAudit, nextPlannedPages } from "@bodh/integrations/seo";
@@ -412,7 +413,7 @@ function contentProblems(p: { answer: string; body: string; title: string; descr
   if (n < 35 || n > 80) out.push(`The answer block is ${n} words; make it 40 to 70.`);
   if (/^#\s/m.test(p.body)) out.push("Don't use a single-# H1 in the body; start at ##.");
   const all = [p.title, p.description, p.answer, p.body, ...p.faq.flatMap((f) => [f.q, f.a])].join("\n");
-  for (const issue of lintAdCopy(all)) out.push(`"${issue.match}": ${issue.why.toLowerCase()} aren't allowed.`);
+  for (const issue of lintAdCopy(all, "page")) out.push(`"${issue.match}": ${issue.why.toLowerCase()} aren't allowed.`);
   for (const b of banned) if (b && all.toLowerCase().includes(b.toLowerCase())) out.push(`"${b}" is on the brand kit's banned list.`);
   return out;
 }
@@ -437,13 +438,15 @@ async function sendPageForApproval(ctx: ToolContext, page: typeof seoPages.$infe
 export function seoTools(ctx: ToolContext) {
   const listPages = betaZodTool({
     name: "list_pages_to_write",
-    description: "Planned programmatic pages that have no draft yet, highest search volume first: id, template, title, target keyword and the template's inputs (planet and house, nakshatra, yoga rule, lagna, city).",
+    description: "Planned programmatic pages with no live or pending draft, highest search volume first (or, without volume data, the most-searched topics first): id, template, title, target keyword, the template's inputs, and any reviewer's note asking for changes. Filter by template or a word in the title, and page through with offset.",
     inputSchema: z.object({
       template: z.enum(["planet_house", "nakshatra", "yoga", "lagna", "panchang_city"]).optional(),
+      search: z.string().max(60).optional().describe("Only pages whose title contains this, e.g. Saturn or Rohini"),
       limit: z.number().int().min(1).max(30).default(10),
+      offset: z.number().int().min(0).max(300).default(0),
     }),
-    run: async ({ template, limit }) => {
-      const rows = await nextPlannedPages(limit, template);
+    run: async ({ template, search, limit, offset }) => {
+      const rows = await nextPlannedPages(limit, template, search, offset);
       if (!rows.length) return json({ note: "No planned pages left for that template." });
       return json(rows.map(({ page, volume }) => ({ id: page.id, template: page.template, title: page.title, keyword: page.keyword, monthly_searches: volume, inputs: page.params, review_note: page.reviewNote })));
     },
@@ -521,19 +524,161 @@ export function seoTools(ctx: ToolContext) {
 
 /* ---------- chat: start a run ---------- */
 
-export type RunStarter = (agent: "strategy" | "content" | "seo", task: string | undefined) => Promise<{ runId?: string; error?: string }>;
+export type RunStarter = (agent: "strategy" | "content" | "seo" | "ads", task: string | undefined) => Promise<{ runId?: string; error?: string }>;
 
 export function chatTools(start: RunStarter) {
   return [
     betaZodTool({
       name: "start_agent_run",
       description:
-        "Start a Strategy, Content or SEO agent run when the person asks for one (a plan, posts drafted onto the calendar, SEO pages or blogs written). Pass their instructions as the task. It runs in the background for a few minutes; results appear on the Strategy, Calendar, SEO and Approvals pages.",
-      inputSchema: z.object({ agent: z.enum(["strategy", "content", "seo"]), task: z.string().max(2000).optional() }),
+        "Start a Strategy, Content, SEO or Ads agent run when the person asks for one (a plan, posts drafted onto the calendar, SEO pages or blogs written, an ads review). Pass their instructions as the task. It runs in the background for a few minutes; results appear on the Strategy, Calendar, SEO, Ads manager and Approvals pages.",
+      inputSchema: z.object({ agent: z.enum(["strategy", "content", "seo", "ads"]), task: z.string().max(2000).optional() }),
       run: async ({ agent, task }) => {
         const r = await start(agent, task);
         return r.error ? `Couldn't start it: ${r.error}` : `Started the ${agent} agent (run ${r.runId}). It takes a few minutes.`;
       },
     }),
   ];
+}
+
+/* ---------- Ads agent ---------- */
+
+export const MAX_AD_CHANGES_PER_RUN = 20;
+
+export function adsTools(ctx: ToolContext) {
+  const actor = { name: `${ctx.agent} agent`, kind: "agent" as const, runId: ctx.runId };
+  const platform = z.enum(["meta_ads", "google_ads"]);
+  const limit = async <T>(fn: () => Promise<T>) => {
+    if (ctx.drafts >= MAX_AD_CHANGES_PER_RUN) return `Error: this run has requested ${MAX_AD_CHANGES_PER_RUN} changes, the limit. Stop and summarise.`;
+    ctx.drafts++;
+    return fn();
+  };
+
+  const overview = betaZodTool({
+    name: "get_ads_overview",
+    description:
+      "Every campaign, ad set (Google: ad group) and ad on Meta and Google Ads with status, daily budget, bid, and the last N days' spend, registrations and activations (cost per activation in INR). Active ads also carry the guardrail's verdict, over the last 14 days, on whether they count as losing. Also returns each platform's caps, spend today and this month, and the daily budgets committed.",
+    inputSchema: z.object({ days: z.number().int().min(3).max(30).default(14) }),
+    run: async ({ days }) => {
+      const results = await adResults(days);
+      const judged = days === JUDGE_DAYS ? results : await adResults(JUDGE_DAYS);
+      const ents = await db.select().from(adEntities).where(ne(adEntities.status, "removed"));
+      if (!ents.length) return json({ note: "No ad accounts synced yet. Meta Marketing API or Google Ads needs connecting, then the hourly sync fills this." });
+      const caps = await Promise.all((["meta_ads", "google_ads"] as const).map((p) => spendNow(p)));
+      const ads = ents.filter((e) => e.level === "ad");
+      const stat = (e: (typeof ents)[number]) => {
+        const r = results.get(`${e.platform}:${e.platformId}`);
+        return { spend: Math.round(r?.spend ?? 0), registrations: r?.registrations ?? 0, activations: r?.activations ?? 0, cpa: r?.activations ? Math.round(r.spend / r.activations) : null };
+      };
+      const out = [];
+      for (const c of ents.filter((e) => e.level === "campaign")) {
+        const sets = ents.filter((e) => e.level === "ad_set" && e.parentId === c.platformId);
+        out.push({
+          platform: c.platform,
+          campaign: { id: c.platformId, name: c.name, status: c.status, objective: c.objective, daily_budget: c.dailyBudget ? Number(c.dailyBudget) : null, bid: c.bid ? Number(c.bid) : null, bid_kind: c.bidKind },
+          ad_sets: await Promise.all(
+            sets.map(async (s) => ({
+              id: s.platformId,
+              name: s.name,
+              status: s.status,
+              daily_budget: s.dailyBudget ? Number(s.dailyBudget) : null,
+              bid: s.bid ? Number(s.bid) : null,
+              bid_kind: s.bidKind,
+              ads: await Promise.all(
+                ads
+                  .filter((a) => a.parentId === s.platformId)
+                  .map(async (a) => {
+                    const j = a.status === "active" ? await judgeAd(a, judged) : null;
+                    return { id: a.platformId, name: a.name, status: a.status, copy: a.details, ...stat(a), ...(j ? { guardrail_verdict: j.reason, counts_as_losing: j.losing, last_active_in_ad_set: j.lastActiveInAdSet } : {}) };
+                  }),
+              ),
+            })),
+          ),
+        });
+      }
+      return json({ days, caps: caps.filter(Boolean), campaigns: out });
+    },
+  });
+
+  const tests = betaZodTool({
+    name: "get_ab_tests",
+    description: "A/B tests: hypothesis, status, and each variant's spend, activations and cost per activation so far.",
+    inputSchema: z.object({}),
+    run: async () => {
+      const t = await testsWithResults();
+      return json(t.length ? t.map((x) => ({ platform: x.platform, ad_set: x.entityId, hypothesis: x.hypothesis, status: x.status, started: x.startedAt, variants: x.variants })) : { note: "No tests yet." });
+    },
+  });
+
+  const reasonField = z.string().min(20).max(600).describe("Why, with the numbers that justify it. People read this in the change log and in Approvals.");
+
+  const pause = betaZodTool({
+    name: "pause_ad",
+    description: "Pause an ad. Applied at once only if the guardrail's own check finds it losing against its ad set; otherwise it goes to Approvals. Pausing is allowed even when caps are reached.",
+    inputSchema: z.object({ platform, ad_id: z.string(), reason: reasonField }),
+    run: async ({ platform: p, ad_id, reason }) => limit(async () => (await requestChange({ type: "pause_ad", platform: p, adId: ad_id }, reason, actor)).message),
+  });
+
+  const resume = betaZodTool({
+    name: "resume_ad",
+    description: "Ask to resume a paused ad. Always needs a person's approval.",
+    inputSchema: z.object({ platform, ad_id: z.string(), reason: reasonField }),
+    run: async ({ platform: p, ad_id, reason }) => limit(async () => (await requestChange({ type: "resume_ad", platform: p, adId: ad_id }, reason, actor)).message),
+  });
+
+  const bid = betaZodTool({
+    name: "change_bid",
+    description: "Change a manual bid, bid cap or target CPA (INR) on a campaign or ad set. Within ±20% it's applied at once; bigger moves go to Approvals.",
+    inputSchema: z.object({ platform, entity_id: z.string(), new_bid: z.number().positive(), reason: reasonField }),
+    run: async ({ platform: p, entity_id, new_bid, reason }) => limit(async () => (await requestChange({ type: "bid_change", platform: p, entityId: entity_id, newBid: new_bid }, reason, actor)).message),
+  });
+
+  const budget = betaZodTool({
+    name: "change_budget",
+    description: "Change the daily budget (INR) of the campaign or ad set that owns it. Decreases are applied at once; increases always go to Approvals; anything taking the platform's daily budgets over its cap is blocked.",
+    inputSchema: z.object({ platform, entity_id: z.string(), new_daily_budget: z.number().positive(), reason: reasonField }),
+    run: async ({ platform: p, entity_id, new_daily_budget, reason }) =>
+      limit(async () => (await requestChange({ type: "budget_change", platform: p, entityId: entity_id, newDaily: new_daily_budget }, reason, actor)).message),
+  });
+
+  const campaign = betaZodTool({
+    name: "propose_campaign",
+    description: "Propose a new campaign: name, objective, daily budget and a plan (audience, offer, creative, landing page, how it will be judged). It goes to Approvals; once approved, a person builds it in the platform.",
+    inputSchema: z.object({
+      platform,
+      name: z.string().min(5).max(120),
+      objective: z.string().min(3).max(60),
+      daily_budget: z.number().positive(),
+      plan: z.string().min(80).max(2500),
+      reason: reasonField,
+    }),
+    run: async (p) => limit(async () => (await requestChange({ type: "new_campaign", platform: p.platform, name: p.name, objective: p.objective, dailyBudget: p.daily_budget, plan: p.plan }, p.reason, actor)).message),
+  });
+
+  const abTest = betaZodTool({
+    name: "launch_ab_test",
+    description:
+      "Test new copy against a running ad: 1 to 3 variants in the same ad set, reusing the base ad's image or video and link. Meta variants need a headline (60 characters max) and primary text; Google variants need 3 to 15 headlines (30 characters max) and 2 to 4 descriptions (90 characters max). The copy is checked for banned claims, then a person approves it before it goes live. One test per ad set at a time. Judge it later with get_ab_tests and pause the losers with pause_ad.",
+    inputSchema: z.object({
+      platform,
+      base_ad_id: z.string(),
+      hypothesis: z.string().min(20).max(300),
+      variants: z
+        .array(
+          z.object({
+            name: z.string().min(3).max(80),
+            headline: z.string().max(60).optional(),
+            text: z.string().max(1000).optional(),
+            headlines: z.array(z.string().max(30)).max(15).optional(),
+            descriptions: z.array(z.string().max(90)).max(4).optional(),
+          }),
+        )
+        .min(1)
+        .max(3),
+      reason: reasonField,
+    }),
+    run: async (p) => limit(async () => (await requestChange({ type: "ab_test", platform: p.platform, baseAdId: p.base_ad_id, hypothesis: p.hypothesis, variants: p.variants }, p.reason, actor)).message),
+  });
+
+  return [overview, tests, pause, resume, bid, budget, campaign, abTest];
 }

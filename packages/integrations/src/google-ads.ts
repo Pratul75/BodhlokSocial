@@ -28,7 +28,7 @@ export function googleAdsConfigFromEnv(): GoogleAdsConfig | null {
   return { developerToken, customerId, loginCustomerId: process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID?.replace(/-/g, ""), conversionActions };
 }
 
-function headers(cfg: GoogleAdsConfig, accessToken: string): Record<string, string> {
+export function headers(cfg: GoogleAdsConfig, accessToken: string): Record<string, string> {
   const h: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     "developer-token": cfg.developerToken,
@@ -48,7 +48,7 @@ export class GoogleAdsError extends Error {
   }
 }
 
-async function adsError(res: Response) {
+export async function adsError(res: Response) {
   let detail = "";
   try {
     const body = (await res.json()) as { error?: { message?: string } };

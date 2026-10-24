@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: Ads agent daily review
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 Asia/Kolkata
+Unit=bodh-job@agent-ads.service
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

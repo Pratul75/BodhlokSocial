@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: sync campaigns, ad sets and ads
+
+[Timer]
+OnCalendar=*-*-* *:15:00
+Unit=bodh-job@ads-sync.service
+Persistent=true
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

@@ -24,7 +24,9 @@
     "./seo": "./src/seo.ts",
     "./panchang": "./src/panchang.ts",
     "./geo": "./src/geo.ts",
-    "./seo-catalog": "./src/seo-catalog.ts"
+    "./seo-catalog": "./src/seo-catalog.ts",
+    "./ads-platforms": "./src/ads-platforms.ts",
+    "./ads": "./src/ads.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

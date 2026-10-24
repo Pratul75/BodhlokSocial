@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { approvals, calendarItems, db, seoPages } from "@bodh/db";
+import { applyChange, rejectChange } from "@bodh/integrations/ads";
 import { APPROVAL_KINDS, canApprove, type ApprovalKind } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
@@ -81,6 +82,23 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
     revalidatePath("/calendar");
     revalidatePath(`/calendar/${post.id}`);
     revalidatePath("/publishing");
+  }
+
+  // Ad changes: approving applies the change on the platform now; the change log records how it went.
+  const adChangeId = item.kind === "ad_change" ? (item.payload as { adChangeId?: string }).adChangeId : undefined;
+  if (adChangeId) {
+    if (decision === "approve") {
+      const r = await applyChange(adChangeId);
+      revalidatePath("/ads");
+      if (!r.ok) {
+        await audit({ actor: user.email, actorType: "user", action: "approve", target: `${item.kind}: ${item.title}`, reason: note, result: `approved, but applying failed: ${r.error}` });
+        revalidatePath("/approvals");
+        return { ok: false, error: `Approved, but the platform refused it: ${r.error}. It's in the change log as failed.` };
+      }
+    } else {
+      await rejectChange(adChangeId, note);
+      revalidatePath("/ads");
+    }
   }
 
   if (page) {

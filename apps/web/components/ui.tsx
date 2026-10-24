@@ -94,6 +94,11 @@ const STATUS_TONES: Record<string, Tone> = {
   lost: "neutral",
   draft: "turmeric",
   withdrawn: "neutral",
+  other: "neutral",
+  removed: "neutral",
+  stopped: "neutral",
+  proposed: "turmeric",
+  applying: "dusk",
 };
 
 export const statusLabel = (s: string) => {
