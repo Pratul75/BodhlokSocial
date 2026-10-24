@@ -1,0 +1,13 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bodh
+      POSTGRES_PASSWORD: bodh
+      POSTGRES_DB: bodh
+    ports:
+      - "5433:5432"
+    volumes:
+      - bodh-db:/var/lib/postgresql/data
+volumes:
+  bodh-db:

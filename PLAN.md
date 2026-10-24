@@ -4,6 +4,12 @@ Source: the "BODH Growth OS — Fable Build Plan" doc (Claude Docs). This file t
 product plan into a build plan for this repository. Repo: github.com/Pratul75/BodhlokSocial
 (empty at the time of writing, 2026-10-24).
 
+## Progress
+
+| Date | What landed |
+|---|---|
+| 2026-10-24 | Phase 0 scaffold: pnpm + Turborepo monorepo, Postgres schema and seed, guardrails package with tests, worker service, CI. Web UI for all 14 modules on sample data, with working approvals, calendar ideas, connections (API keys), uploads, leads, caps and roles. Dev sign-in only; Google sign-in, OAuth, Secret Manager and Terraform are still open. |
+
 ## 1. What we are building
 
 An internal web app for the Recharge Studio marketing team that runs BODH (Asttrolok)

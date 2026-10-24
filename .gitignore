@@ -9,3 +9,6 @@ dist/
 .DS_Store
 coverage/
 .claude/settings.local.json
+.secrets/
+.uploads/
+*.tsbuildinfo

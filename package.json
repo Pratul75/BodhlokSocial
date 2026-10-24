@@ -1,0 +1,19 @@
+{
+  "name": "bodh-growth-os",
+  "private": true,
+  "packageManager": "pnpm@12.15.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:up": "docker compose up -d db",
+    "db:push": "pnpm --filter @bodh/db push",
+    "db:seed": "pnpm --filter @bodh/db seed"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "turbo": "^2.11.10",
+    "typescript": "^5.9.3"
+  }
+}

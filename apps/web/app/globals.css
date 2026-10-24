@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --color-night: #191c3a;
+  --color-night-2: #252a52;
+  --color-night-3: #8d91b8;
+  --color-paper: #f5f6fa;
+  --color-card: #ffffff;
+  --color-ink: #1a1c2e;
+  --color-muted: #646982;
+  --color-rule: #e2e4ee;
+  --color-turmeric: #e0a21b;
+  --color-turmeric-ink: #8a5f00;
+  --color-turmeric-soft: #fbf1d6;
+  --color-leaf: #2f8f6b;
+  --color-leaf-soft: #e3f2ec;
+  --color-sindoor: #c2412d;
+  --color-sindoor-soft: #f9e5e1;
+  --color-dusk: #4b4f8f;
+  --color-dusk-soft: #e8e9f6;
+
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui;
+  --font-sans: var(--font-plex), ui-sans-serif, system-ui;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+  }
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-turmeric);
+    outline-offset: 2px;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
