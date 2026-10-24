@@ -69,7 +69,7 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
     <>
       <PageHeader
         title="SEO & GEO"
-        description="Search rankings, programmatic pages for BODH's site, the weekly site audit, and whether AI assistants recommend Asttrolok."
+        description="Search rankings, programmatic pages for BODH's site, the weekly site audit, and whether AI assistants recommend Bodhlok."
         actions={<Link href="/seo/pages" className={btn.secondary}>All pages</Link>}
       />
 
@@ -125,7 +125,7 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
         <Card>
           <CardHeader
             title="AI visibility"
-            sub="Share of answers that mention Asttrolok, each Monday"
+            sub="Share of answers that mention Bodhlok, each Monday"
             aside={<JobButton action={seoJobAction} job="geo" label="Check now" pendingLabel="Starting…" />}
           />
           {weeks.length ? (

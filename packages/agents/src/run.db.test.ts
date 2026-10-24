@@ -393,7 +393,7 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
       gemini: async () => null,
       claude: async () => null,
     });
-    expect(msg).toMatch(/^Asked 8 questions on ChatGPT: Asttrolok mentioned in 1 of 8 answers\. Skipped \(no key\): Gemini\.$/);
+    expect(msg).toMatch(/^Asked 8 questions on ChatGPT: Bodhlok mentioned in 1 of 8 answers\. Skipped \(no key\): Gemini\.$/);
     const rows = await m.db.db.select().from(m.db.aiVisibilityChecks);
     expect(rows.filter((r) => r.engine === "chatgpt")).toHaveLength(8);
     expect(rows.find((r) => r.engine === "chatgpt" && r.mentioned)?.competitors).toEqual(["AstroSage"]);

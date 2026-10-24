@@ -27,7 +27,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
           <span className="text-turmeric"><KundliMark className="h-8 w-8" /></span>
           <div className="leading-tight">
             <div className="font-display text-lg font-semibold tracking-tight">BODH Growth</div>
-            <div className="text-xs text-muted">Asttrolok marketing</div>
+            <div className="text-xs text-muted">Bodhlok marketing</div>
           </div>
         </div>
 

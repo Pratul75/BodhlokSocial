@@ -28,7 +28,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           </span>
           <div className="leading-tight">
             <div className="font-display text-[17px] font-semibold tracking-tight">BODH Growth</div>
-            <div className="text-[11px] text-night-3">Asttrolok marketing</div>
+            <div className="text-[11px] text-night-3">Bodhlok marketing</div>
           </div>
         </div>
         <SidebarNav items={nav} />

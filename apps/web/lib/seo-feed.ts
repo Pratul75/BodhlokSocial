@@ -21,7 +21,7 @@ export const SITE_PATHS: Record<string, (slug: string, params: Record<string, un
 export async function siteUrl(): Promise<string> {
   if (process.env.SEO_SITE_URL) return process.env.SEO_SITE_URL.replace(/\/$/, "");
   const creds = await dataForSeoCredentials();
-  return creds ? `https://${normalizeTarget(creds.target)}` : "https://asttrolok.com";
+  return creds ? `https://${normalizeTarget(creds.target)}` : "https://www.bodhlok.com";
 }
 
 /** The feed is off unless SEO_FEED_TOKEN is set; callers send it as a Bearer token or ?token=. */
@@ -51,7 +51,7 @@ export function jsonLd(page: Page, url: string) {
       dateModified: page.updatedAt.toISOString(),
       ...(page.publishedAt ? { datePublished: page.publishedAt.toISOString() } : {}),
       inLanguage: "en-IN",
-      publisher: { "@type": "Organization", name: "Asttrolok", url: url.replace(/^(https?:\/\/[^/]+).*$/, "$1") },
+      publisher: { "@type": "Organization", name: "Bodhlok", url: url.replace(/^(https?:\/\/[^/]+).*$/, "$1") },
     },
   ];
   if (page.faq.length) {
@@ -113,9 +113,9 @@ export async function llmsTxt(): Promise<string> {
   const base = await siteUrl();
   const pages = await livePages();
   const lines = [
-    "# Asttrolok BODH",
+    "# Bodhlok",
     "",
-    "> BODH is Asttrolok's Vedic astrology (Jyotish) app: a free kundli (birth chart) with sidereal Lahiri calculations, dasha timelines, daily Panchang for Indian cities, and readings from trained astrologers. Asttrolok also teaches Vedic astrology courses.",
+    "> Bodhlok is professional Vedic astrology (Jyotish) software in the browser, by Retrograde Technologies, for learners, practising astrologers and institutes. One desk holds chart calculations on the Swiss Ephemeris with a choice of ayanamsa, D1 and divisional charts, KP, Jaimini, Vimshottari, Ashtottari and Yogini dashas, Ashtakavarga, Prashna, Muhurta, client notes, and an AI consult in English or Hindi. Start with a free desk.",
     "",
   ];
   for (const [template, title] of Object.entries(SECTION)) {

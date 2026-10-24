@@ -1,6 +1,6 @@
 /**
  * AI visibility: each week, ask ChatGPT, Gemini, Perplexity and Claude the questions BODH's
- * customers ask, with web search on, and record whether the answer mentions Asttrolok/BODH
+ * customers ask, with web search on, and record whether the answer mentions Bodhlok (or Asttrolok)
  * and which other astrology brands it names. Engines without a key are skipped.
  */
 import Anthropic from "@anthropic-ai/sdk";
@@ -11,14 +11,14 @@ import { vertexAuth, type ServiceAccountKey } from "@bodh/integrations/vertex";
 import { anthropicClient, MODEL } from "./client";
 
 export const DEFAULT_QUESTIONS = [
-  "What is the best app for Vedic astrology in India?",
-  "Which app gives an accurate free kundli?",
-  "Where can I learn Vedic astrology online?",
-  "What is the best online Jyotish course in India?",
-  "Which astrology app explains my birth chart and dasha in simple English?",
-  "Which is the best astrology academy in India?",
-  "How can I make my janam kundli online for free?",
-  "Which app is good for kundli matching before marriage?",
+  "What is the best Vedic astrology software for professional astrologers?",
+  "Which online kundli software supports KP astrology?",
+  "Is there browser-based Jyotish software with Hindi support?",
+  "What software do astrologers use for dasha and transit analysis?",
+  "What is the best astrology software for students learning Vedic astrology?",
+  "Which Vedic astrology software has an AI assistant?",
+  "What are good online alternatives to Jagannatha Hora?",
+  "Which software helps an astrologer keep client charts and consultation notes?",
 ];
 
 export const ENGINES = ["chatgpt", "gemini", "perplexity", "claude"] as const;
@@ -26,7 +26,7 @@ export type Engine = (typeof ENGINES)[number];
 export const ENGINE_LABELS: Record<Engine, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", claude: "Claude" };
 
 const BRAND = /\basttrolok\b|\bbodhlok\b|\bbodh\s+(app|astrology|by\s+asttrolok)\b/i;
-export const COMPETITORS = ["AstroSage", "Astrotalk", "Astroyogi", "Drik Panchang", "GaneshaSpeaks", "Clickastro", "InstaAstro", "Anytime Astro", "mPanchang", "AstroVed", "Kundli GPT", "Vedic Rishi"];
+export const COMPETITORS = ["Jagannatha Hora", "Parashara's Light", "LeoStar", "Astro-Vision", "Kala", "Junior Jyotish", "Shri Jyoti Star", "AstroSage", "Kundli Pro", "Astrotalk", "Clickastro", "Drik Panchang", "Vedic Rishi", "Kundli GPT"];
 
 export function analyse(answer: string): { mentioned: boolean; competitors: string[] } {
   const squash = (s: string) => s.toLowerCase().replace(/[\s-]+/g, "");
@@ -39,7 +39,7 @@ export interface EngineAnswer {
   citations: string[];
 }
 
-const PROMPT = (q: string) => `${q}\n\nAnswer as you would for someone in India, naming specific apps, sites or academies where relevant.`;
+const PROMPT = (q: string) => `${q}\n\nAnswer as you would for someone in India, naming specific software, apps or sites where relevant.`;
 
 async function apiKey(key: string): Promise<string | null> {
   return ((await (await secretStore()).get(secretName(key))) ?? "").trim() || null;
@@ -157,5 +157,5 @@ export async function runVisibilityChecks(engines: readonly Engine[] = ENGINES, 
     }
   }
   const skip = skipped.size ? ` Skipped (no key): ${[...skipped].map((e) => ENGINE_LABELS[e]).join(", ")}.` : "";
-  return `Asked ${questions.length} questions on ${[...used].map((e) => ENGINE_LABELS[e]).join(", ") || "no engines"}: Asttrolok mentioned in ${mentions} of ${total} answers.${skip}`;
+  return `Asked ${questions.length} questions on ${[...used].map((e) => ENGINE_LABELS[e]).join(", ") || "no engines"}: Bodhlok mentioned in ${mentions} of ${total} answers.${skip}`;
 }

@@ -214,7 +214,7 @@ export function readTools(_ctx: ToolContext) {
 
   const visibility = betaZodTool({
     name: "get_ai_visibility",
-    description: "The latest weekly check of whether ChatGPT, Gemini, Perplexity and Claude mention Asttrolok when asked BODH's target questions, with the competitors they named instead.",
+    description: "The latest weekly check of whether ChatGPT, Gemini, Perplexity and Claude mention Bodhlok when asked its target questions, with the competitors they named instead.",
     inputSchema: z.object({}),
     run: async () => {
       const rows = await db.execute(sql`

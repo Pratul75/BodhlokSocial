@@ -3,12 +3,12 @@ name: bodh-funnel-metrics
 description: What BODH's funnel numbers mean and how to judge a channel.
 ---
 
-# BODH funnel metrics
+# Bodhlok funnel metrics
 
 The funnel: **click → registration → activation → paid**.
-- Registration: account created in the BODH app.
-- Activation: the user generated their first kundli (birth chart). This is the north-star metric for marketing, because activated users are the ones who later pay.
-- Paid: first purchase (report, subscription or consultation).
+- Registration: a free Bodhlok desk created.
+- Activation: the user opened their first chart in the desk ("bring your first chart to the desk"). This is the north-star metric for marketing, because people who work with a real chart are the ones who upgrade.
+- Paid: first purchase (a paid plan, institute seats, or AI consult credits).
 
 Attribution is first touch: each user is credited to the channel and campaign of their first tracked visit (UTMs, ad click ids). Organic social without UTMs shows up as Direct or Organic Social, so organic numbers are undercounted.
 

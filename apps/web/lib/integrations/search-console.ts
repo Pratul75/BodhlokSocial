@@ -21,7 +21,7 @@ export async function listSites(accessToken: string): Promise<SiteEntry[]> {
   return (body.siteEntry ?? []).filter((s) => s.permissionLevel !== "siteUnverifiedUser");
 }
 
-/** Pick the site to sync: SEARCH_CONSOLE_SITE if set, else an Asttrolok property, else the first one. */
+/** Pick the site to sync: SEARCH_CONSOLE_SITE if set, else a Bodhlok or Asttrolok property, else the first one. */
 export function pickSite(sites: SiteEntry[]): SiteEntry | undefined {
   const wanted = process.env.SEARCH_CONSOLE_SITE;
   if (wanted) return sites.find((s) => s.siteUrl === wanted);

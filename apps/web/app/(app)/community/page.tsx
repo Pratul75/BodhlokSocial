@@ -25,7 +25,7 @@ export default async function CommunityPage() {
     <>
       <PageHeader
         title="Community"
-        description="Real questions on Reddit, Quora and YouTube where a helpful answer from the Asttrolok team fits. Every answer is posted from a named account and says who we are."
+        description="Real questions on Reddit, Quora and YouTube where a helpful answer from the Bodhlok team fits. Every answer is posted from a named account and says who we are."
       />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {STAGES.map((s) => {

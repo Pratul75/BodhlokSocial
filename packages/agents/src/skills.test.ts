@@ -37,7 +37,7 @@ describe("skills", () => {
     expect(await readSkill("seo-schema", "references/faq.md")).toBe("FAQPage needs mainEntity.");
     expect(await readSkill("seo-schema", "../../../etc/passwd.md")).toMatch(/^(Only markdown|No file)/);
     expect(await readSkill("seo-schema", "SKILL.md/../../bodh-brand-voice.md")).toMatch(/^(Only markdown|No file)/);
-    expect(await readSkill("bodh-brand-voice")).toContain("# BODH brand voice");
+    expect(await readSkill("bodh-brand-voice")).toContain("# Bodhlok brand voice");
     delete process.env.SKILLS_DIR;
   });
 });

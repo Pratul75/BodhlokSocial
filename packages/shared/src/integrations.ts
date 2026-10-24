@@ -18,8 +18,8 @@ export interface IntegrationDef {
 export const INTEGRATIONS: readonly IntegrationDef[] = [
   { key: "anthropic", name: "Anthropic API", usedFor: "All agents", method: "api_key", group: "AI" },
   { key: "vertex", name: "Vertex AI (Imagen, Veo, Gemini)", usedFor: "Image and video generation, Gemini visibility checks", method: "service_account", group: "AI" },
-  { key: "openai", name: "OpenAI API", usedFor: "Weekly check: does ChatGPT mention Asttrolok", method: "api_key", group: "AI" },
-  { key: "perplexity", name: "Perplexity API", usedFor: "Weekly check: does Perplexity mention Asttrolok", method: "api_key", group: "AI" },
+  { key: "openai", name: "OpenAI API", usedFor: "Weekly check: does ChatGPT mention Bodhlok", method: "api_key", group: "AI" },
+  { key: "perplexity", name: "Perplexity API", usedFor: "Weekly check: does Perplexity mention Bodhlok", method: "api_key", group: "AI" },
   { key: "google_ads", name: "Google Ads API", usedFor: "Ads management: spend, pausing ads, bids, budgets, tests", method: "oauth", prerequisite: "developer token approval (set GOOGLE_ADS_DEVELOPER_TOKEN and GOOGLE_ADS_CUSTOMER_ID on the server)", group: "Ads", googleOAuth: { scopes: ["https://www.googleapis.com/auth/adwords"], enabled: true } },
   {
     key: "meta_marketing",

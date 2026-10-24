@@ -5,10 +5,10 @@ description: Rules for making correct, defensible Vedic astrology statements, an
 
 # Jyotish accuracy
 
-BODH's credibility depends on getting the astrology right. Asttrolok has trained astrologers who review flagged posts.
+Bodhlok's audience is astrologers and serious learners: one wrong rule costs more credibility than a dull post. Flagged posts are reviewed by a Jyotish expert before they go out.
 
 **Ground rules**
-- BODH uses the sidereal zodiac (Lahiri ayanamsa). Sidereal dates differ from Western sun-sign dates by about 23 to 24 days; never use Western date ranges for rashis.
+- Bodhlok calculates with the Swiss Ephemeris and lets each user choose the ayanamsa; content assumes Lahiri (Chitrapaksha) unless it says otherwise, and KP content uses the KP ayanamsa. Sidereal dates differ from Western sun-sign dates by about 23 to 24 days; never use Western date ranges for rashis.
 - The Moon sign (rashi) and the ascendant (lagna) matter more than the Sun sign in Jyotish. Say so when it helps.
 - Nine grahas: Surya, Chandra, Mangal, Budh, Guru, Shukra, Shani, Rahu, Ketu. Rahu and Ketu are always opposite each other and move retrograde.
 - Vimshottari dasha totals 120 years: Ketu 7, Shukra 20, Surya 6, Chandra 10, Mangal 7, Rahu 18, Guru 16, Shani 19, Budh 17.
