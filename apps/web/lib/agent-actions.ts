@@ -11,7 +11,7 @@ export interface RunState {
   started?: boolean;
 }
 
-export const MODULE_FOR = { strategy: "strategy", content: "calendar", seo: "seo", ads: "ads" } as const;
+const MODULE_FOR = { strategy: "strategy", content: "calendar", seo: "seo", ads: "ads" } as const;
 const PAGE_FOR = { strategy: "/strategy", content: "/calendar", seo: "/seo", ads: "/ads" } as const;
 
 export async function runAgentAction(_prev: RunState, formData: FormData): Promise<RunState> {
