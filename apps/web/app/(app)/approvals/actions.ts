@@ -106,8 +106,8 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
       .update(seoPages)
       .set(
         decision === "approve"
-          ? { status: "live", body, reviewNote: null, publishedAt: page.publishedAt ?? new Date(), updatedAt: new Date() }
-          : { status: "drafted", reviewNote: note, updatedAt: new Date() },
+          ? { status: "live", body, reviewNote: null, publishedAt: page.publishedAt ?? new Date(), siteStatus: "queued", siteError: null, updatedAt: new Date() }
+          : { status: "drafted", reviewNote: note, siteStatus: ["live", "merged", "pr_open"].includes(page.siteStatus ?? "") ? "remove_queued" : page.siteStatus, updatedAt: new Date() },
       )
       .where(eq(seoPages.id, page.id));
     revalidatePath("/seo");

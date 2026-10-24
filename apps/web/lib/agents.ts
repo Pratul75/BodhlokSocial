@@ -33,12 +33,13 @@ export async function startAgentRun(agent: AgentName, requestedBy: string, task?
  * Runs an SEO job on the worker (WORKER_URL), or in this process without one.
  * Long jobs (geo) start in the background either way.
  */
-export async function runSeoJob(job: "keywords" | "audit-start" | "audit-poll" | "geo" | "catalog"): Promise<{ message?: string; error?: string }> {
+export async function runSeoJob(job: "keywords" | "audit-start" | "audit-poll" | "geo" | "catalog" | "site-publish" | "site-sync"): Promise<{ message?: string; error?: string }> {
   const url = process.env.WORKER_URL;
   const token = process.env.WORKER_TOKEN;
   if (url && token) {
     try {
-      const res = await fetch(`${url.replace(/\/$/, "")}/jobs/seo/${job}`, { method: "POST", headers: { "X-Worker-Token": token }, signal: AbortSignal.timeout(180_000) });
+      const path = job.startsWith("site-") ? `/jobs/site/${job.slice(5)}` : `/jobs/seo/${job}`;
+      const res = await fetch(`${url.replace(/\/$/, "")}${path}`, { method: "POST", headers: { "X-Worker-Token": token }, signal: AbortSignal.timeout(180_000) });
       const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
       return res.ok || res.status === 202 ? { message: body.message } : { error: body.error ?? body.message ?? `The worker answered ${res.status}.` };
     } catch {
@@ -51,6 +52,10 @@ export async function runSeoJob(job: "keywords" | "audit-start" | "audit-poll" |
     if (job === "audit-start") return { message: await seo.startSiteAudit() };
     if (job === "audit-poll") return { message: await seo.pollSiteAudits() };
     if (job === "catalog") return { message: `Added ${await seo.ensurePageCatalog()} planned pages.` };
+    if (job === "site-publish" || job === "site-sync") {
+      const site = await import("@bodh/integrations/site-publisher");
+      return { message: job === "site-sync" ? await site.syncSite() : [await site.publishQueued(), await site.removeQueued()].join(" ") };
+    }
     const { runVisibilityChecks } = await import("@bodh/agents");
     void runVisibilityChecks().catch((e) => console.error("geo failed", e));
     return { message: "Started the AI-visibility checks. They take a few minutes." };

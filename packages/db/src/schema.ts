@@ -277,6 +277,14 @@ export const seoPages = pgTable(
     runId: uuid("run_id"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Publishing to bodhlok.com: null | queued | pr_open | merged | live | remove_queued | removing | removed | failed */
+    siteStatus: text("site_status"),
+    siteCategory: text("site_category"),
+    sitePrNumber: integer("site_pr_number"),
+    sitePrUrl: text("site_pr_url"),
+    siteUrl: text("site_url"),
+    siteError: text("site_error"),
+    sitePublishedAt: timestamp("site_published_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("seo_pages_template_slug_idx").on(t.template, t.slug), index("seo_pages_status_idx").on(t.status)],
 );

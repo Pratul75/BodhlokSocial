@@ -74,6 +74,19 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
   { key: "reddit", name: "Reddit API", usedFor: "Find questions, post approved answers", method: "oauth", group: "Social" },
   { key: "quora", name: "Quora", usedFor: "Find questions (drafts only, a person posts)", method: "none", group: "Social" },
   { key: "gbp", name: "Google Business Profile API", usedFor: "Posts, reviews", method: "oauth", prerequisite: "access request", group: "Search", googleOAuth: { scopes: ["https://www.googleapis.com/auth/business.manage"], enabled: false } },
+  {
+    key: "github_site",
+    name: "GitHub: bodhlok.com site repo",
+    usedFor: "Publishes approved SEO pages as blog posts through pull requests to the website's repo",
+    method: "api_key",
+    group: "Search",
+    fields: [
+      { name: "token", label: "Fine-grained token (Contents and Pull requests: read and write)", secret: true },
+      { name: "repo", label: "Repository (owner/name)", placeholder: "Pratul75/Jyotish-web-app" },
+      { name: "branch", label: "Branch the site deploys from", placeholder: "bodhlok" },
+      { name: "auto_merge", label: "Merge pull requests automatically after approval? (yes or no)", optional: true, placeholder: "no" },
+    ],
+  },
   { key: "search_console", name: "Google Search Console", usedFor: "Search data, keyword positions", method: "oauth", group: "Search", googleOAuth: { scopes: ["https://www.googleapis.com/auth/webmasters.readonly"], enabled: true } },
   {
     key: "dataforseo",

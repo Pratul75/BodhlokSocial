@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { asc, desc, eq, sql } from "drizzle-orm";
-import { aiVisibilityChecks, connections, db, geoQuestions, keywords, seoAudits } from "@bodh/db";
+import { aiVisibilityChecks, connections, db, geoQuestions, keywords, seoAudits, seoPages } from "@bodh/db";
 import { ENGINE_LABELS, ENGINES, ensureGeoQuestions } from "@bodh/agents";
 import { ensurePageCatalog, latestAudit, pageCounts } from "@bodh/integrations/seo";
 import { TEMPLATE_LABELS, type Template } from "@bodh/integrations/seo-catalog";
@@ -50,9 +50,12 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
     db.select().from(geoQuestions).orderBy(desc(geoQuestions.active), asc(geoQuestions.createdAt)),
     latestAudit(),
     db.select().from(seoAudits).where(eq(seoAudits.status, "running")).limit(1),
-    db.select().from(connections).where(sql`${connections.key} in ('dataforseo','search_console','openai','perplexity','vertex','anthropic')`),
+    db.select().from(connections).where(sql`${connections.key} in ('dataforseo','search_console','openai','perplexity','vertex','anthropic','github_site')`),
   ]);
   const connected = (k: string) => conns.find((c) => c.key === k)?.status === "connected";
+  const siteRows = await db.select({ s: seoPages.siteStatus, n: sql<number>`count(*)::int` }).from(seoPages).where(sql`${seoPages.siteStatus} is not null`).groupBy(seoPages.siteStatus);
+  const site = (k: string) => siteRows.find((r) => r.s === k)?.n ?? 0;
+  const [githubSite] = conns.filter((c) => c.key === "github_site");
 
   const total = counts.reduce((s, c) => s + c.n, 0);
   const n = (status: string, template?: string) => counts.filter((c) => c.status === status && (!template || c.template === template)).reduce((s, c) => s + c.n, 0);
@@ -85,7 +88,7 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
 
       <div className="mb-6 grid gap-6 xl:grid-cols-2">
         <Card>
-          <CardHeader title="Programmatic pages" sub={`${num(n("live"))} approved of ${num(total)}. Comparisons and module guides first, then study guides. Approved pages wait in the page feed until bodhlok.com pulls them.`} />
+          <CardHeader title="Programmatic pages" sub={`${num(n("live"))} approved of ${num(total)}. Comparisons and module guides first, then study guides. Approved pages are published to bodhlok.com through pull requests.`} />
           <div className="px-5 py-4">
             <div className="flex h-3 overflow-hidden rounded-full bg-paper" role="img" aria-label="Pages by status">
               {STATUSES.map((s) => (
@@ -190,6 +193,34 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
           </details>
         </Card>
       </div>
+
+      <Card className="mb-6">
+        <CardHeader
+          title="Publishing to bodhlok.com"
+          sub={githubSite?.status === "connected" ? "Approved pages go to the site's repo as a pull request each day at 10:00; merging deploys the site." : "Connect GitHub (site repo) in Connections to publish approved pages as blog posts."}
+          aside={
+            <div className="flex gap-2">
+              <JobButton action={seoJobAction} job="site-publish" label="Open pull request now" pendingLabel="Opening…" />
+              <JobButton action={seoJobAction} job="site-sync" label="Check status" pendingLabel="Checking…" variant="ghost" />
+            </div>
+          }
+        />
+        <div className="grid grid-cols-2 gap-4 px-5 py-4 text-sm sm:grid-cols-5">
+          {[
+            { k: "queued", label: "Waiting for a pull request" },
+            { k: "pr_open", label: "Pull request open" },
+            { k: "merged", label: "Merged, deploying" },
+            { k: "live", label: "Live on bodhlok.com" },
+            { k: "failed", label: "Failed" },
+          ].map((x) => (
+            <div key={x.k}>
+              <div className="font-mono text-[22px] tabular">{site(x.k)}</div>
+              <div className="text-xs text-muted">{x.label}</div>
+            </div>
+          ))}
+        </div>
+        {githubSite?.error && <p className="border-t border-rule px-5 py-3 text-xs text-sindoor">{githubSite.error}</p>}
+      </Card>
 
       <Card className="mb-6">
         <CardHeader

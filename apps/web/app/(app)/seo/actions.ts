@@ -14,7 +14,7 @@ export interface JobState {
   error?: string;
 }
 
-const JOBS = ["keywords", "audit-start", "audit-poll", "geo"] as const;
+const JOBS = ["keywords", "audit-start", "audit-poll", "geo", "site-publish", "site-sync"] as const;
 
 export async function seoJobAction(_prev: JobState, formData: FormData): Promise<JobState> {
   const user = await getCurrentUser();

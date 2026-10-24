@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: follow site pull requests to merge and live
+
+[Timer]
+OnCalendar=*:0/10
+Unit=bodh-job@site-sync.service
+Persistent=true
+RandomizedDelaySec=20
+
+[Install]
+WantedBy=timers.target

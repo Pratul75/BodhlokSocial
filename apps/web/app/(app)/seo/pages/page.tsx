@@ -8,7 +8,8 @@ import { Card, PageHeader, StatusPill, Table } from "@/components/ui";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "SEO pages" };
 
-const STATUS_LABEL: Record<string, string> = { planned: "planned", drafted: "changes asked", in_review: "in_review", live: "live" };
+const STATUS_LABEL: Record<string, string> = { planned: "planned", drafted: "changes asked", in_review: "in_review", live: "approved" };
+const SITE_LABEL: Record<string, string> = { queued: "Waiting for PR", merged: "Merged, deploying", remove_queued: "To be removed", removed: "Removed", failed: "Failed" };
 
 export default async function SeoPagesList({ searchParams }: { searchParams: Promise<{ template?: string; status?: string }> }) {
   await requireModule("seo");
@@ -43,6 +44,7 @@ export default async function SeoPagesList({ searchParams }: { searchParams: Pro
               <th>Template</th>
               <th>Keyword</th>
               <th>Status</th>
+              <th>On bodhlok.com</th>
               <th>Updated</th>
             </tr>
           </thead>
@@ -53,6 +55,12 @@ export default async function SeoPagesList({ searchParams }: { searchParams: Pro
                 <td className="text-muted">{TEMPLATE_LABELS[p.template as Template] ?? p.template}</td>
                 <td className="text-muted">{p.keyword}</td>
                 <td><StatusPill status={STATUS_LABEL[p.status] ?? p.status} /></td>
+                <td className="text-xs">
+                  {p.siteStatus === "live" && p.siteUrl ? <a href={p.siteUrl} className="text-dusk hover:underline" target="_blank" rel="noreferrer">Live</a>
+                    : p.sitePrUrl && ["pr_open", "removing"].includes(p.siteStatus ?? "") ? <a href={p.sitePrUrl} className="text-dusk hover:underline" target="_blank" rel="noreferrer">Pull request</a>
+                    : p.siteStatus ? <span className={p.siteStatus === "failed" ? "text-sindoor" : "text-muted"}>{SITE_LABEL[p.siteStatus] ?? p.siteStatus}</span>
+                    : <span className="text-muted">—</span>}
+                </td>
                 <td className="text-muted">{p.body ? p.updatedAt.toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—"}</td>
               </tr>
             ))}

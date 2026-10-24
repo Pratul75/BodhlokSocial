@@ -18,6 +18,7 @@ import { runPublisher } from "@bodh/integrations/publisher";
 import { pollVideoJobs } from "@bodh/integrations/creative";
 import { activeRun, anthropicClient, failStaleRuns, isAgentName, queueRun, runAgent, runVisibilityChecks } from "@bodh/agents";
 import { syncAdStructure } from "@bodh/integrations/ads";
+import { publishQueued, removeQueued, syncSite } from "@bodh/integrations/site-publisher";
 import { checkDataForSeoConnection, ensurePageCatalog, pollSiteAudits, startSiteAudit, syncKeywords } from "@bodh/integrations/seo";
 
 /** Agents and their schedules, from the build plan. Cloud Scheduler calls POST /jobs/:agent. */
@@ -205,6 +206,22 @@ app.post("/jobs/seo/:job", async (c) => {
       default:
         return c.json({ error: `Unknown SEO job "${job}"` }, 404);
     }
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+/**
+ * Publishing approved pages to bodhlok.com through pull requests:
+ *   publish  opens one pull request with every approved page waiting (daily 10:00 IST, or on demand)
+ *   sync     follows pull requests to merge and merged pages to the live URL (every 10 minutes)
+ */
+app.post("/jobs/site/:job", async (c) => {
+  const job = c.req.param("job");
+  try {
+    if (job === "publish") return c.json({ message: [await publishQueued(), await removeQueued()].join(" ") });
+    if (job === "sync") return c.json({ message: await syncSite() });
+    return c.json({ error: `Unknown site job "${job}"` }, 404);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }

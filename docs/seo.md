@@ -19,6 +19,24 @@ Statuses: **planned** → **in review** (in Approvals) → **live** (approved, i
 
 City Panchang pages are computed, not written: `packages/integrations/src/panchang.ts` gives tithi, nakshatra, yoga, karana and vara at sunrise with end times, plus sunrise, sunset, Rahu Kaal, Yamaganda, Gulika and Abhijit, using the Lahiri ayanamsa. Checked against Drik Panchang for Delhi on 24 Oct 2026: every element matched to within a minute.
 
+## Publishing to bodhlok.com
+
+Approved pages become blog posts on bodhlok.com through pull requests to the site's repo
+(`Pratul75/Jyotish-web-app`, branch `bodhlok`). The site's blog is static HTML baked into its
+Cloud Run image plus a slug allow-list in `backend/app/api/public_site.py`, so each post is
+three changes: `frontend/public/site/blog/<slug>.html` (rendered in the site's own template,
+with Article and FAQ schema), a card on `blog/index.html`, and the slug in `_BLOG_SLUGS`.
+Merging the pull request runs the site's `bodhlok-deploy` build (about 10 minutes).
+
+| When | What |
+|---|---|
+| A page is approved | It is queued for the site |
+| Daily 10:00 IST, or **Open pull request now** on the SEO page | One pull request with every queued page (`growth-os/pages-<stamp>`), merged automatically only if the connection's "auto_merge" is `yes` |
+| Every 10 minutes | Pull requests are followed to merge; merged pages are checked at `https://bodhlok.com/blog/<slug>` and marked live |
+| A live page is sent back with changes | A pull request removes it from the site |
+
+Categories: comparison pages → "Choosing software"; module guides → the site's categories (KP astrology, Jaimini, Ashtakavarga, Dasha periods, Muhurta, Consult) or "Chart methods"; study guides → "Study guides". Connection: **GitHub (site repo)** in Connections, a fine-grained token with Contents and Pull requests read-write on that repo. The site's CMS (off for Bodhlok today) is the planned replacement; the publisher is one module, `packages/integrations/src/site-publisher.ts`.
+
 ## The page feed (for BODH's web team)
 
 Approved pages reach the website through a read-only feed. It needs the token shown to admins at the bottom of the SEO page (`SEO_FEED_TOKEN` on the server), sent as `Authorization: Bearer <token>`. Responses carry `X-Robots-Tag: noindex`, so this app never competes with the site in search.

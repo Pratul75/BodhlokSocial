@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: open the day's pull request of approved pages for bodhlok.com
+
+[Timer]
+OnCalendar=*-*-* 10:00:00 Asia/Kolkata
+Unit=bodh-job@site-publish.service
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
