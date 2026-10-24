@@ -8,7 +8,8 @@ import { basename, join, resolve } from "node:path";
  * - local: <repo>/.uploads (gitignored). Development only.
  * - gcs:   the Cloud Storage bucket in GCS_BUCKET. Files are served through short-lived signed URLs.
  */
-const DIR = resolve(process.cwd(), "../../.uploads");
+// turbopackIgnore keeps Next's file tracer from pulling the whole repo into the server bundle.
+const DIR = resolve(/* turbopackIgnore: true */ process.cwd(), "../../.uploads");
 const useGcs = () => process.env.STORAGE_BACKEND === "gcs";
 
 async function bucket() {

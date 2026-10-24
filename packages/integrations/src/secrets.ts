@@ -19,7 +19,8 @@ function checkName(name: string) {
 }
 
 // Both apps run with their own folder as cwd, so the repo root is two levels up.
-const LOCAL_DIR = process.env.SECRETS_DIR ?? resolve(process.cwd(), "../../.secrets");
+// turbopackIgnore keeps Next's file tracer from pulling the whole repo into the server bundle.
+const LOCAL_DIR = process.env.SECRETS_DIR ?? resolve(/* turbopackIgnore: true */ process.cwd(), "../../.secrets");
 
 export const localStore: SecretStore = {
   async put(name, value) {
