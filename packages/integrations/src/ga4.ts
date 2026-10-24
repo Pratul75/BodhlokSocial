@@ -55,3 +55,11 @@ export async function fetchGa4Sessions(cfg: Ga4Config, day: string) {
   const [rows] = await bq.query({ query: sessionsQuery(cfg.projectId, cfg.dataset), params: { suffix: day.replace(/-/g, "") } });
   return sessionsByChannel(rows as SessionGroup[]);
 }
+
+/** The GA4 export dataset (analytics_<property id>) in a project, if the export has started. */
+export async function findGa4Dataset(projectId: string, credentials?: Ga4Config["credentials"]): Promise<string | null> {
+  const { BigQuery } = await import("@google-cloud/bigquery");
+  const bq = new BigQuery({ projectId, ...(credentials ? { credentials } : {}) });
+  const [datasets] = await bq.getDatasets();
+  return datasets.map((d) => d.id ?? "").find((id) => /^analytics_\d+$/.test(id)) ?? null;
+}

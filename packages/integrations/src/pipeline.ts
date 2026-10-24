@@ -12,7 +12,7 @@ import {
 } from "@bodh/db";
 import { attribute } from "./attribution";
 import type { NormalizedEvent } from "./bodh-events";
-import { fetchGa4Sessions } from "./ga4";
+import { fetchGa4Sessions, findGa4Dataset } from "./ga4";
 import { buildClickConversion, fetchGoogleAdsSpend, googleAdsConfigFromEnv, uploadClickConversions } from "./google-ads";
 import { refreshAccessToken, type StoredGoogleGrant } from "./google-oauth";
 import { fetchMetaSpend, sendCapiEvents, type CapiCredentials, type ConversionForCapi, type MarketingCredentials } from "./meta";
@@ -344,11 +344,12 @@ interface ServiceAccount {
 }
 
 export async function loadGa4Sessions(day: string): Promise<JobResult> {
-  const dataset = process.env.GA4_BQ_DATASET;
-  if (!dataset) return { status: "skipped", detail: "GA4_BQ_DATASET is not set." };
   const sa = await readJsonSecret<ServiceAccount>("ga4");
-  const projectId = process.env.GA4_BQ_PROJECT ?? sa?.project_id ?? process.env.GCP_PROJECT_ID;
+  const projectId = process.env.GA4_BQ_PROJECT || sa?.project_id || process.env.GCP_PROJECT_ID;
   if (!projectId) return { status: "skipped", detail: "No BigQuery project. Set GA4_BQ_PROJECT or connect GA4." };
+  // Without GA4_BQ_DATASET, use the analytics_<property id> dataset once GA4 starts exporting.
+  const dataset = process.env.GA4_BQ_DATASET || (await findGa4Dataset(projectId, sa ? { client_email: sa.client_email, private_key: sa.private_key } : undefined));
+  if (!dataset) return { status: "skipped", detail: `No GA4 export in BigQuery project ${projectId} yet. In GA4: Admin > Product links > BigQuery links.` };
   const byChannel = await fetchGa4Sessions(
     { projectId, dataset, credentials: sa ? { client_email: sa.client_email, private_key: sa.private_key } : undefined },
     day,
