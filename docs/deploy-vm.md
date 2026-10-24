@@ -1,7 +1,8 @@
 # Deploying to the rapido-demo VM
 
 BODH Growth OS runs on the `rapido-demo` VM (project `absolute-water-387410`, zone
-`asia-south1-c`) beside the other apps there, at **https://bodh-growth.sites.rechargestudio.com**.
+`asia-south1-c`) beside the other apps there. It is live at the temporary address
+**https://bodh-growth.8-231-76-36.sslip.io** until `growth.rechargestudio.com` has a DNS record.
 There is no CI/CD: you deploy from a laptop.
 
 | Piece | Where |
@@ -27,6 +28,20 @@ scripts/deploy-vm.sh
 It builds Linux images, uploads only the runnable files, migrates the database, switches
 releases and restarts. It takes about ten minutes on a Mac, mostly the Linux build.
 
+## Move to growth.rechargestudio.com
+
+rechargestudio.com's DNS is at GoDaddy. Add an **A record**: name `growth`, value `8.231.76.36`.
+Once it resolves (`dig +short growth.rechargestudio.com`), redeploy on that name:
+
+```bash
+HOST=growth.rechargestudio.com scripts/deploy-vm.sh
+```
+
+The installer swaps the Caddy site and the app's address. Use that name in the redirect URIs below.
+
+A name under `*.sites.rechargestudio.com` doesn't work: that wildcard issues certificates only
+for sites the sites API approves.
+
 ## Turn on sign-in
 
 The app shows "Sign-in isn't set up yet" until it has a Google OAuth client. Create one in the
@@ -38,9 +53,10 @@ Cloud console for project `absolute-water-387410` (or any project you own):
    Otherwise **External**, leave it in Testing, and add each teammate's email as a test user.
 3. **Data access**: add `openid`, `email`, `profile` and
    `https://www.googleapis.com/auth/webmasters.readonly`.
-4. **Clients > Create client > Web application**, with these authorised redirect URIs:
-   - `https://bodh-growth.sites.rechargestudio.com/api/auth/callback/google`
-   - `https://bodh-growth.sites.rechargestudio.com/api/connect/google/callback`
+4. **Clients > Create client > Web application**, with these authorised redirect URIs, using the
+   app's current address:
+   - `https://growth.rechargestudio.com/api/auth/callback/google`
+   - `https://growth.rechargestudio.com/api/connect/google/callback`
 
 Then, on your Mac:
 
@@ -81,6 +97,5 @@ database.
   `DEMO_DATA=true` from `bodh.env` and clear the sample rows, or ask for a reset script.
 - Keys pasted in Connections are stored as files in `/opt/bodh/shared/secrets`, not in GCP Secret
   Manager, since this VM setup doesn't use Cloud Run. The folder is readable only by the `bodh` user.
-- The address sits under the `*.sites.rechargestudio.com` wildcard. For a dedicated name such as
-  `growth.rechargestudio.com`, add its DNS record, run `HOST=growth.rechargestudio.com scripts/deploy-vm.sh`,
-  and update the redirect URIs and `APP_URL` in `bodh.env`.
+- Deploys default to the sslip.io address. After the move, run deploys with
+  `HOST=growth.rechargestudio.com`, or change the default in `scripts/deploy-vm.sh`.

@@ -3,7 +3,8 @@
 Internal app for the Recharge Studio marketing team to run BODH (Asttrolok) growth
 marketing with Claude agents. Agents plan, draft, publish, run ads and report. People
 approve everything before it goes public. See [PLAN.md](PLAN.md) for the full build plan
-and [infra/README.md](infra/README.md) to deploy to GCP.
+[docs/deploy-vm.md](docs/deploy-vm.md) for the live deployment on the rapido-demo VM, and
+[infra/README.md](infra/README.md) for a full Cloud Run setup.
 
 ## Run it locally
 
