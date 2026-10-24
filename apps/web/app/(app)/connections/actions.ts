@@ -21,13 +21,23 @@ export async function saveKey(_prev: ConnResult, formData: FormData): Promise<Co
   try {
     const user = await requireAdmin();
     const key = String(formData.get("key"));
-    const value = String(formData.get("value") ?? "").trim();
     const label = String(formData.get("label") ?? "").trim() || null;
     const def = getIntegration(key);
     if (!def || (def.method !== "api_key" && def.method !== "service_account")) {
       return { ok: false, error: "This integration doesn't take a pasted key." };
     }
-    if (value.length < 8) return { ok: false, error: "That key looks too short. Paste the full value." };
+    let value = String(formData.get("value") ?? "").trim();
+    if (def.fields) {
+      const parts: Record<string, string> = {};
+      for (const f of def.fields) {
+        const v = String(formData.get(`field_${f.name}`) ?? "").trim();
+        if (!v && !f.optional) return { ok: false, error: `Fill in ${f.label}.` };
+        if (v) parts[f.name] = v;
+      }
+      value = JSON.stringify(parts);
+    } else if (value.length < 8) {
+      return { ok: false, error: "That key looks too short. Paste the full value." };
+    }
     if (def.method === "service_account") {
       try {
         const parsed = JSON.parse(value);

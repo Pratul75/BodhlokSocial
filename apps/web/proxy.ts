@@ -20,6 +20,6 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Everything except sign-in, the auth routes, health check and static files.
-  matcher: ["/((?!signin|api/auth|api/health|_next/static|_next/image|favicon.ico).*)"],
+  // Everything except sign-in, the auth routes, health check, signed BODH events and static files.
+  matcher: ["/((?!signin|api/auth|api/health|api/events|_next/static|_next/image|favicon.ico).*)"],
 };

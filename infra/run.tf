@@ -1,5 +1,11 @@
 locals {
-  app_url = var.app_url != "" ? var.app_url : "https://bodh-web-${data.google_project.this.number}.${var.region}.run.app"
+  app_url       = var.app_url != "" ? var.app_url : "https://bodh-web-${data.google_project.this.number}.${var.region}.run.app"
+  google_ads_on = var.google_ads_customer_id != ""
+  google_ads_env = {
+    GOOGLE_ADS_CUSTOMER_ID        = var.google_ads_customer_id
+    GOOGLE_ADS_LOGIN_CUSTOMER_ID  = var.google_ads_login_customer_id
+    GOOGLE_ADS_CONVERSION_ACTIONS = var.google_ads_conversion_actions
+  }
 }
 
 resource "google_cloud_run_v2_service" "web" {
@@ -101,6 +107,34 @@ resource "google_cloud_run_v2_service" "web" {
           }
         }
       }
+      env {
+        name = "BODH_EVENTS_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.generated["app-bodh-events-secret"].secret_id
+            version = "latest"
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.google_ads_on ? local.google_ads_env : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.google_ads_on ? [1] : []
+        content {
+          name = "GOOGLE_ADS_DEVELOPER_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.google_ads_developer_token.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
 
       startup_probe {
         http_get {
@@ -182,6 +216,50 @@ resource "google_cloud_run_v2_service" "worker" {
         value = var.project_id
       }
       env {
+        name  = "SECRETS_BACKEND"
+        value = "gcp"
+      }
+      env {
+        name  = "GOOGLE_CLIENT_ID"
+        value = var.google_client_id
+      }
+      env {
+        name  = "GA4_BQ_DATASET"
+        value = var.ga4_bq_dataset
+      }
+      env {
+        name  = "GA4_BQ_PROJECT"
+        value = var.ga4_bq_project != "" ? var.ga4_bq_project : var.project_id
+      }
+      env {
+        name = "GOOGLE_CLIENT_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.google_client_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.google_ads_on ? local.google_ads_env : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.google_ads_on ? [1] : []
+        content {
+          name = "GOOGLE_ADS_DEVELOPER_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.google_ads_developer_token.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+      env {
         name = "DATABASE_URL"
         value_source {
           secret_key_ref {
@@ -213,7 +291,11 @@ resource "google_cloud_run_v2_service" "worker" {
     ignore_changes = [template[0].containers[0].image, client, client_version]
   }
 
-  depends_on = [google_secret_manager_secret_iam_member.worker_reads, google_project_iam_member.sql_client]
+  depends_on = [
+    google_secret_manager_secret_iam_member.worker_reads,
+    google_secret_manager_secret_iam_member.worker_reads_client_secret,
+    google_project_iam_member.sql_client,
+  ]
 }
 
 # No public access: only the scheduler's identity can call the worker.

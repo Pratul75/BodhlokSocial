@@ -10,6 +10,7 @@ export interface ConnectionView {
   name: string;
   usedFor: string;
   method: "oauth" | "api_key" | "service_account" | "internal" | "none";
+  fields?: { name: string; label: string; secret?: boolean; optional?: boolean; placeholder?: string }[];
   prerequisite?: string;
   status: string;
   accountLabel: string | null;
@@ -90,7 +91,23 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
           open ? (
             <form action={action} className="space-y-2">
               <input type="hidden" name="key" value={c.key} />
-              {c.method === "api_key" ? (
+              {c.fields ? (
+                c.fields.map((f, i) => (
+                  <label key={f.name} className="block text-xs text-muted">
+                    {f.label}
+                    {f.optional && " (optional)"}
+                    <input
+                      name={`field_${f.name}`}
+                      type={f.secret ? "password" : "text"}
+                      autoComplete="off"
+                      className={`${inputClass} mt-1`}
+                      placeholder={f.placeholder}
+                      required={!f.optional}
+                      autoFocus={i === 0}
+                    />
+                  </label>
+                ))
+              ) : c.method === "api_key" ? (
                 <input name="value" type="password" autoComplete="off" className={inputClass} placeholder="Paste the API key" required autoFocus />
               ) : (
                 <textarea name="value" rows={4} className={`${inputClass} font-mono text-xs`} placeholder='{"type": "service_account", ...}' required autoFocus />
@@ -105,7 +122,7 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
             </form>
           ) : (
             <button className={btn.secondary} onClick={() => setOpen(true)}>
-              <KeyRound size={15} /> {c.method === "api_key" ? "Add API key" : "Add service account"}
+              <KeyRound size={15} /> {c.fields ? "Add credentials" : c.method === "api_key" ? "Add API key" : "Add service account"}
             </button>
           )
         ) : c.method === "oauth" && c.oauthEnabled && c.oauthClientReady ? (
@@ -128,7 +145,9 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
         ) : c.method === "none" ? (
           <p className="text-xs text-muted">Quora has no public API. Agents draft answers and a person posts them.</p>
         ) : (
-          <p className="text-xs text-muted">Connects through the BODH backend's event API.</p>
+          <p className="text-xs text-muted">
+            The BODH backend sends signed events. <a href="/tracking" className="text-dusk hover:underline">Set up on Tracking</a>
+          </p>
         )}
       </div>
     </article>

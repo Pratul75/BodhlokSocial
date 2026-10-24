@@ -53,7 +53,7 @@ resource "google_project_iam_member" "worker_integration_secrets" {
 
 # Runtime config secrets, read at startup.
 resource "google_secret_manager_secret_iam_member" "web_reads" {
-  for_each  = toset(["app-database-url", "app-auth-secret"])
+  for_each  = toset(["app-database-url", "app-auth-secret", "app-bodh-events-secret"])
   secret_id = google_secret_manager_secret.generated[each.value].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.web.email}"
@@ -89,4 +89,36 @@ resource "google_storage_bucket_iam_member" "worker_assets" {
   bucket = google_storage_bucket.assets.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.worker.email}"
+}
+
+# The worker refreshes Google OAuth grants (Google Ads) and reads the developer token.
+resource "google_secret_manager_secret_iam_member" "worker_reads_client_secret" {
+  secret_id = google_secret_manager_secret.google_client_secret.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.worker.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "ads_token_reads" {
+  for_each = {
+    web    = google_service_account.web.email
+    worker = google_service_account.worker.email
+  }
+  secret_id = google_secret_manager_secret.google_ads_developer_token.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${each.value}"
+}
+
+# GA4 sessions: run BigQuery jobs here and read the GA4 export dataset.
+resource "google_project_iam_member" "worker_bq_jobs" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.worker.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "worker_reads_ga4" {
+  count      = var.ga4_bq_dataset != "" ? 1 : 0
+  project    = var.ga4_bq_project != "" ? var.ga4_bq_project : var.project_id
+  dataset_id = var.ga4_bq_dataset
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.worker.email}"
 }

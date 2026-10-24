@@ -1,9 +1,16 @@
 /**
  * Sample data for local development. Every number here is invented; the UI shows
  * a "Sample data" badge while DEMO_DATA=true.
+ *
+ * The funnel is not typed in: the seed generates registration, activation and paid
+ * events, ad spend per ad and organic sessions, then runs the same intake and rebuild
+ * code production uses.
  */
-import { db, sql } from "./client";
-import * as s from "./schema";
+import { createHash } from "node:crypto";
+import { db, sql } from "@bodh/db";
+import * as s from "@bodh/db/schema";
+import type { NormalizedEvent } from "@bodh/integrations/bodh-events";
+import { forwardToGoogle, forwardToMeta, ingestEvents, loadGa4Sessions, loadMetaSpend, rebuild, runJob } from "@bodh/integrations/pipeline";
 
 const DAY = 86_400_000;
 const today = new Date();
@@ -27,7 +34,7 @@ const jitter = (base: number, spread = 0.25) => Math.max(0, Math.round(base * (1
 
 async function main() {
   console.log("Clearing tables…");
-  await sql`TRUNCATE audit_log, leads, community_items, ai_visibility_checks, seo_pages, keywords, funnel_daily,
+  await sql`TRUNCATE pipeline_runs, conversion_forwards, conversion_events, ad_spend_daily, web_sessions_daily, audit_log, leads, community_items, ai_visibility_checks, seo_pages, keywords, funnel_daily,
     budgets, experiments, ad_changes, campaigns, strategy_plans, calendar_items, assets, approvals, agent_runs,
     connections, users RESTART IDENTITY CASCADE`;
 
@@ -188,12 +195,12 @@ async function main() {
   const campaignRows = await db
     .insert(s.campaigns)
     .values([
-      { platform: "google_ads", name: "App — Install + register", objective: "App registrations", status: "active", dailyBudget: 2500, spend7d: 16840, clicks7d: 3120, registrations7d: 412, activations7d: 221 },
-      { platform: "google_ads", name: "YouTube — Astrologer pain", objective: "Video views → registrations", status: "active", dailyBudget: 1200, spend7d: 8210, clicks7d: 1490, registrations7d: 168, activations7d: 92 },
-      { platform: "google_ads", name: "Search — free kundli", objective: "Web registrations", status: "learning", dailyBudget: 800, spend7d: 4930, clicks7d: 860, registrations7d: 97, activations7d: 61 },
-      { platform: "meta_ads", name: "Astrologer pain — video viewers 50%", objective: "Retargeting", status: "active", dailyBudget: 1500, spend7d: 10380, clicks7d: 2640, registrations7d: 331, activations7d: 236 },
-      { platform: "meta_ads", name: "Nakshatra explainers — broad", objective: "Video engagement", status: "active", dailyBudget: 1000, spend7d: 6920, clicks7d: 2210, registrations7d: 118, activations7d: 49 },
-      { platform: "meta_ads", name: "Lead form — teacher program", objective: "Leads", status: "paused", dailyBudget: 600, spend7d: 2100, clicks7d: 340, registrations7d: 22, activations7d: 9 },
+      { platform: "google_ads", platformCampaignId: "g-111", name: "App — Install + register", objective: "App registrations", status: "active", dailyBudget: 2500, spend7d: 16840, clicks7d: 3120, registrations7d: 412, activations7d: 221 },
+      { platform: "google_ads", platformCampaignId: "g-112", name: "YouTube — Astrologer pain", objective: "Video views → registrations", status: "active", dailyBudget: 1200, spend7d: 8210, clicks7d: 1490, registrations7d: 168, activations7d: 92 },
+      { platform: "google_ads", platformCampaignId: "g-113", name: "Search — free kundli", objective: "Web registrations", status: "learning", dailyBudget: 800, spend7d: 4930, clicks7d: 860, registrations7d: 97, activations7d: 61 },
+      { platform: "meta_ads", platformCampaignId: "m-211", name: "Astrologer pain — video viewers 50%", objective: "Retargeting", status: "active", dailyBudget: 1500, spend7d: 10380, clicks7d: 2640, registrations7d: 331, activations7d: 236 },
+      { platform: "meta_ads", platformCampaignId: "m-212", name: "Nakshatra explainers — broad", objective: "Video engagement", status: "active", dailyBudget: 1000, spend7d: 6920, clicks7d: 2210, registrations7d: 118, activations7d: 49 },
+      { platform: "meta_ads", platformCampaignId: "m-213", name: "Lead form — teacher program", objective: "Leads", status: "paused", dailyBudget: 600, spend7d: 2100, clicks7d: 340, registrations7d: 22, activations7d: 9 },
     ])
     .returning();
 
@@ -216,31 +223,8 @@ async function main() {
     { platform: "meta_ads", dailyCap: 3500, monthlyCap: 95000, spentToday: 2020, spentThisMonth: 58610, updatedBy: "kshitij@rechargestudio.com" },
   ]);
 
-  const channelBase: Record<string, [number, number, number, number, number]> = {
-    google_ads: [3500, 780, 96, 54, 2],
-    meta_ads: [2800, 760, 70, 42, 1.2],
-    youtube: [0, 420, 38, 22, 0.6],
-    instagram: [0, 260, 19, 9, 0.2],
-    seo: [0, 380, 44, 29, 0.9],
-    referral: [0, 90, 17, 12, 0.5],
-  };
-  const funnel: (typeof s.funnelDaily.$inferInsert)[] = [];
-  for (let d = -55; d <= -1; d++) {
-    const growth = 1 + (d + 55) * 0.006; // slow upward trend
-    for (const [channel, [spend, clicks, reg, act, paid]] of Object.entries(channelBase)) {
-      const organicGrowth = spend === 0 ? growth * 1.004 ** (d + 55) : growth;
-      funnel.push({
-        day: isoDate(dayOffset(d)),
-        channel,
-        spend: jitter(spend, 0.1),
-        clicks: jitter(clicks * organicGrowth),
-        registrations: jitter(reg * organicGrowth),
-        activations: jitter(act * organicGrowth),
-        paid: Math.round(paid * organicGrowth * (0.5 + rand())),
-      });
-    }
-  }
-  await db.insert(s.funnelDaily).values(funnel);
+  await seedTracking();
+
 
   await db.insert(s.keywords).values([
     { keyword: "free kundli", volume: 201000, difficulty: 72, position: 34, intent: "tool", pageUrl: "/free-kundli" },
@@ -317,6 +301,150 @@ async function main() {
 
   console.log("Seeded.");
   await sql.end();
+}
+
+/* ---------- tracking: events, spend and sessions, through the real pipeline ---------- */
+
+const hash = (v: string) => createHash("sha256").update(v).digest("hex");
+
+interface AdDef {
+  platform: "google_ads" | "meta_ads";
+  campaignId: string;
+  campaign: string;
+  adId: string;
+  ad: string;
+  dailySpend: number;
+  cpc: number; // ₹ per click
+  regRate: number; // registrations per click
+  actRate: number; // activations per registration
+  pausedForLastDays?: number;
+}
+
+const ADS: AdDef[] = [
+  { platform: "google_ads", campaignId: "g-111", campaign: "App — Install + register", adId: "g-901", ad: "Free Kundli in 3 taps", dailySpend: 1500, cpc: 5.2, regRate: 0.135, actRate: 0.55 },
+  { platform: "google_ads", campaignId: "g-111", campaign: "App — Install + register", adId: "g-902", ad: "Manual maths vs BODH", dailySpend: 1000, cpc: 5.6, regRate: 0.12, actRate: 0.5 },
+  { platform: "google_ads", campaignId: "g-112", campaign: "YouTube — Astrologer pain", adId: "g-903", ad: "Notebook opener (in-stream)", dailySpend: 1200, cpc: 5.5, regRate: 0.11, actRate: 0.55 },
+  { platform: "google_ads", campaignId: "g-113", campaign: "Search — free kundli", adId: "g-904", ad: "Free kundli, exact match", dailySpend: 800, cpc: 5.7, regRate: 0.115, actRate: 0.62 },
+  { platform: "meta_ads", campaignId: "m-211", campaign: "Astrologer pain — video viewers 50%", adId: "m-901", ad: "Notebook opener", dailySpend: 1000, cpc: 3.9, regRate: 0.13, actRate: 0.72 },
+  { platform: "meta_ads", campaignId: "m-211", campaign: "Astrologer pain — video viewers 50%", adId: "m-902", ad: "Chart reveal", dailySpend: 500, cpc: 3.9, regRate: 0.09, actRate: 0.6 },
+  { platform: "meta_ads", campaignId: "m-212", campaign: "Nakshatra explainers — broad", adId: "m-903", ad: "Moon Nakshatra reel", dailySpend: 700, cpc: 3.0, regRate: 0.055, actRate: 0.42 },
+  { platform: "meta_ads", campaignId: "m-212", campaign: "Nakshatra explainers — broad", adId: "m-904", ad: "Nakshatra carousel v2", dailySpend: 300, cpc: 3.2, regRate: 0.03, actRate: 0.3, pausedForLastDays: 1 },
+  { platform: "meta_ads", campaignId: "m-213", campaign: "Lead form — teacher program", adId: "m-905", ad: "Teacher program form", dailySpend: 600, cpc: 6, regRate: 0.07, actRate: 0.4, pausedForLastDays: 3 },
+];
+
+/** Organic channels: daily web sessions, registrations per session, activation rate, and how the visit arrives. */
+const ORGANIC: { channel: string; sessions: number; regRate: number; actRate: number; touch: () => NonNullable<NormalizedEvent["attribution"]> }[] = [
+  { channel: "youtube", sessions: 420, regRate: 0.09, actRate: 0.58, touch: () => ({ referrer: "https://www.youtube.com/" }) },
+  { channel: "instagram", sessions: 260, regRate: 0.073, actRate: 0.47, touch: () => ({ referrer: "https://l.instagram.com/" }) },
+  { channel: "seo", sessions: 380, regRate: 0.115, actRate: 0.66, touch: () => ({ referrer: "https://www.google.com/" }) },
+  { channel: "referral", sessions: 90, regRate: 0.19, actRate: 0.7, touch: () => ({ referral_code: ["GURU-ALOK", "JYOTISH-PRIYA", "VEDIC-RAHUL"][Math.floor(rand() * 3)]! }) },
+  { channel: "facebook", sessions: 60, regRate: 0.05, actRate: 0.4, touch: () => ({ referrer: "https://m.facebook.com/" }) },
+  { channel: "direct", sessions: 200, regRate: 0.04, actRate: 0.5, touch: () => ({}) },
+];
+
+const PLANS = [
+  { plan: "chaatra" as const, value: 499, weight: 0.5 },
+  { plan: "jyotish" as const, value: 1999, weight: 0.38 },
+  { plan: "guru" as const, value: 4999, weight: 0.12 },
+];
+
+async function seedTracking() {
+  const DAYS = 55;
+  const endOfYesterday = dayOffset(0).getTime() - 1;
+  const events: NormalizedEvent[] = [];
+  const spend: (typeof s.adSpendDaily.$inferInsert)[] = [];
+  const sessions: (typeof s.webSessionsDaily.$inferInsert)[] = [];
+  let n = 0;
+
+  const addUser = (day: number, attribution: NonNullable<NormalizedEvent["attribution"]>, actRate: number) => {
+    n++;
+    const userRef = `seed_user_${n}`;
+    const regAt = at(day, 7 + Math.floor(rand() * 16), Math.floor(rand() * 60));
+    const platform = rand() < 0.62 ? "android" : rand() < 0.85 ? "web" : "ios";
+    const common = {
+      userRef,
+      emailSha256: hash(`user${n}@example.com`),
+      phoneSha256: rand() < 0.7 ? hash(`9198${String(10000000 + n).slice(-8)}`) : null,
+      platform: platform as NormalizedEvent["platform"],
+      currency: "INR",
+      clientIp: null,
+      userAgent: null,
+    };
+    events.push({ ...common, eventId: `seed_reg_${n}`, type: "registration", occurredAt: regAt, plan: null, value: null, attribution });
+    if (rand() < actRate) {
+      const actAt = new Date(regAt.getTime() + (5 + rand() * 60 * 30) * 60_000 * (rand() < 0.8 ? 0.1 : 1));
+      if (actAt.getTime() > endOfYesterday) return;
+      events.push({ ...common, eventId: `seed_act_${n}`, type: "activation", occurredAt: actAt, plan: null, value: null, attribution: null });
+      if (rand() < 0.035) {
+        const r = rand();
+        const p = r < PLANS[0]!.weight ? PLANS[0]! : r < PLANS[0]!.weight + PLANS[1]!.weight ? PLANS[1]! : PLANS[2]!;
+        const paidAt = new Date(actAt.getTime() + rand() * 4 * 86_400_000);
+        if (paidAt.getTime() > endOfYesterday) return;
+        events.push({ ...common, eventId: `seed_paid_${n}`, type: "paid", occurredAt: paidAt, plan: p.plan, value: p.value, attribution: null });
+      }
+    }
+  };
+
+  for (let d = -DAYS; d <= -1; d++) {
+    const growth = 1 + (d + DAYS) * 0.006;
+    const day = isoDate(dayOffset(d));
+
+    for (const ad of ADS) {
+      if (ad.pausedForLastDays && d > -1 - ad.pausedForLastDays) continue;
+      const daySpend = jitter(ad.dailySpend, 0.12);
+      const clicks = Math.round(daySpend / ad.cpc);
+      spend.push({
+        day,
+        platform: ad.platform,
+        campaignId: ad.campaignId,
+        campaignName: ad.campaign,
+        adId: ad.adId,
+        adName: ad.ad,
+        spend: daySpend.toFixed(2),
+        impressions: clicks * (ad.platform === "meta_ads" ? 55 : 30),
+        clicks,
+      });
+      const regs = Math.round(clicks * ad.regRate * (0.85 + rand() * 0.3));
+      for (let i = 0; i < regs; i++) {
+        const attribution =
+          ad.platform === "google_ads"
+            ? { utm_source: "google", utm_medium: "cpc", utm_campaign: ad.campaignId, utm_content: ad.adId, gclid: `Cj0K${n}${Math.floor(rand() * 1e9)}`, landing_page: "https://asttrolok.com/free-kundli" }
+            : { utm_source: "meta", utm_medium: "paid_social", utm_campaign: ad.campaignId, utm_content: ad.adId, fbclid: `IwAR${n}${Math.floor(rand() * 1e9)}`, fbp: `fb.1.${Date.now()}.${Math.floor(rand() * 1e9)}`, landing_page: "https://asttrolok.com/free-kundli" };
+        addUser(d, attribution, ad.actRate);
+      }
+    }
+
+    for (const o of ORGANIC) {
+      const daySessions = jitter(o.sessions * growth * 1.004 ** (d + DAYS));
+      sessions.push({ day, channel: o.channel, sessions: daySessions });
+      const regs = Math.round(daySessions * o.regRate * (0.85 + rand() * 0.3));
+      for (let i = 0; i < regs; i++) addUser(d, o.touch(), o.actRate);
+    }
+  }
+
+  for (let i = 0; i < spend.length; i += 500) await db.insert(s.adSpendDaily).values(spend.slice(i, i + 500));
+  await db.insert(s.webSessionsDaily).values(sessions);
+
+  events.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+  let accepted = 0;
+  for (let i = 0; i < events.length; i += 2000) accepted += (await ingestEvents(events.slice(i, i + 2000))).accepted;
+  console.log(`Ingested ${accepted} events, ${spend.length} ad-days, ${sessions.length} session-days.`);
+
+  // Meta and Google accept events for 7 and 60 days; older ones would expire unsent.
+  await sql`UPDATE conversion_forwards f SET status = 'skipped', last_error = 'Too old for this destination'
+    FROM conversion_events e WHERE e.event_id = f.event_id AND f.destination = 'meta_capi' AND e.occurred_at < now() - interval '7 days'`;
+
+  // Run the real jobs: nothing is connected, so loaders and forwarders record "skipped".
+  for (const [job, fn] of [
+    ["forward_meta", forwardToMeta],
+    ["forward_google", forwardToGoogle],
+    ["load_meta_spend", () => loadMetaSpend(isoDate(dayOffset(-1)), isoDate(dayOffset(0)))],
+    ["load_ga4_sessions", () => loadGa4Sessions(isoDate(dayOffset(-1)))],
+  ] as const) {
+    await runJob(job, fn);
+  }
+  const r = await runJob("rebuild_funnel", () => rebuild(isoDate(dayOffset(-DAYS)), isoDate(dayOffset(-1))));
+  console.log(r.detail);
 }
 
 main().catch(async (err) => {

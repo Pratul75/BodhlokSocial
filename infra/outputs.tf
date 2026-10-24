@@ -36,3 +36,8 @@ output "github_deployer_email" {
   description = "Set as the GCP_DEPLOYER_SA repository variable in GitHub."
   value       = google_service_account.deployer.email
 }
+
+output "bodh_events_endpoint" {
+  description = "Where the BODH backend sends signed events. The secret is app-bodh-events-secret."
+  value       = "${local.app_url}/api/events/bodh"
+}

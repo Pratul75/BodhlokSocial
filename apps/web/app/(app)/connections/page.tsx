@@ -35,6 +35,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       name: i.name,
       usedFor: i.usedFor,
       method: i.method,
+      fields: i.fields,
       prerequisite: i.prerequisite,
       status: r?.status ?? "not_connected",
       accountLabel: r?.accountLabel ?? null,

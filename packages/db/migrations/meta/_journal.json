@@ -8,6 +8,20 @@
       "when": 1792832296822,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792833510232,
+      "tag": "0001_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792833690517,
+      "tag": "0002_campaign_platform_id",
+      "breakpoints": true
     }
   ]
 }

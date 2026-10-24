@@ -8,6 +8,7 @@ product plan into a build plan for this repository. Repo: github.com/Pratul75/Bo
 
 | Date | What landed |
 |---|---|
+| 2026-10-24 | Phase 2 built: signed event intake from the BODH backend, first-touch attribution, Meta Conversions API and Google Ads click-conversion forwarding with retries, Meta and Google Ads spend loaders, GA4 BigQuery sessions, funnel rebuilt from those sources, Tracking page, per-ad cost per activated user, BODH integration guide. Funnel lives in Postgres; BigQuery feeds web sessions only. Waiting on: BODH backend sending events, Meta credentials, GA4 BigQuery link, Google Ads developer token. |
 | 2026-10-24 | Phase 1 built: Google sign-in (Workspace domain check, signed sessions, removed users locked out), Secret Manager and Cloud Storage backends, Search Console connect flow with keyword sync, SQL migrations with first-admin bootstrap, Docker images, Terraform for the whole GCP stack, deploy workflow. Not yet deployed: needs the GCP project and OAuth client. |
 | 2026-10-24 | Phase 0 scaffold: pnpm + Turborepo monorepo, Postgres schema and seed, guardrails package with tests, worker service, CI. Web UI for all 14 modules on sample data, with working approvals, calendar ideas, connections (API keys), uploads, leads, caps and roles. Dev sign-in only at this point. |
 
@@ -121,6 +122,9 @@ Order follows doc section 11. Durations assume one to two engineers.
   the Anthropic key, and a non-admin cannot see Connections.
 
 ### Phase 2 — Tracking and Analytics dashboard (weeks 3–5)
+- Decision taken while building: the funnel lives in Postgres, built from the BODH backend's own
+  registration events plus platform spend. BigQuery supplies GA4 web sessions for organic channels.
+  First-party events count registrations more reliably than GA4.
 - BigQuery: GA4 export, daily loaders for Google Ads and Meta spend, funnel views.
 - Confirm BODH sends `registration` and `first_chart` events to GA4/Firebase.
 - Meta Conversions API and Google enhanced conversions wired from the BODH backend

@@ -13,7 +13,6 @@
     "typecheck": "tsc --noEmit",
     "push": "drizzle-kit push",
     "generate": "drizzle-kit generate",
-    "seed": "tsx --env-file-if-exists=../../.env src/seed.ts",
     "migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts"
   },
   "dependencies": {

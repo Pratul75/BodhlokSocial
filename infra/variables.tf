@@ -66,3 +66,39 @@ variable "scheduler_enabled" {
   type        = bool
   default     = false
 }
+
+variable "tracking_scheduler_enabled" {
+  description = "Run the tracking jobs: conversion forwarding, spend loading, GA4 sessions and funnel rebuilds."
+  type        = bool
+  default     = true
+}
+
+variable "ga4_bq_dataset" {
+  description = "GA4 BigQuery export dataset, e.g. analytics_123456789. Empty skips GA4 sessions."
+  type        = string
+  default     = ""
+}
+
+variable "ga4_bq_project" {
+  description = "Project holding the GA4 export. Defaults to this project."
+  type        = string
+  default     = ""
+}
+
+variable "google_ads_customer_id" {
+  description = "Google Ads customer ID, digits only. Empty until the developer token is approved."
+  type        = string
+  default     = ""
+}
+
+variable "google_ads_login_customer_id" {
+  description = "Manager account ID used to reach the customer, if any."
+  type        = string
+  default     = ""
+}
+
+variable "google_ads_conversion_actions" {
+  description = "Conversion action IDs per event, as JSON: {\"registration\":\"123\",\"activation\":\"456\",\"paid\":\"789\"}."
+  type        = string
+  default     = "{}"
+}

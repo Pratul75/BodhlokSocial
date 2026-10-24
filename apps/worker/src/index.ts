@@ -4,6 +4,16 @@ import { createHash, timingSafeEqual as nodeTimingSafeEqual } from "node:crypto"
 import { eq } from "drizzle-orm";
 import { agentRuns, auditLog, budgets, db } from "@bodh/db";
 import { checkAdChange, type AdChange } from "@bodh/guardrails";
+import {
+  forwardToGoogle,
+  forwardToMeta,
+  istDate,
+  loadGa4Sessions,
+  loadGoogleSpend,
+  loadMetaSpend,
+  rebuild,
+  runJob,
+} from "@bodh/integrations/pipeline";
 
 /** Agents and their schedules, from the build plan. Cloud Scheduler calls POST /jobs/:agent. */
 export const AGENTS = {
@@ -75,6 +85,56 @@ app.post("/jobs/:agent", async (c) => {
     result: "queued",
   });
   return c.json({ runId: run!.id, status: run!.status }, 202);
+});
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const dateParam = (v: string | undefined, fallback: string) => (v && DATE_RE.test(v) ? v : fallback);
+
+/**
+ * Tracking jobs, called by Cloud Scheduler. Dates are India time and default to
+ * yesterday through today, which covers late-arriving spend and events.
+ *   forward-conversions  every 5 minutes
+ *   hourly               spend for yesterday and today, then rebuild the last 7 days
+ *   daily                GA4 sessions for yesterday, then rebuild the last 35 days
+ */
+app.post("/jobs/tracking/:job", async (c) => {
+  const job = c.req.param("job");
+  const since = dateParam(c.req.query("since"), istDate(new Date(), -1));
+  const until = dateParam(c.req.query("until"), istDate());
+  const results = [];
+  try {
+    switch (job) {
+      case "forward-conversions":
+        results.push(await runJob("forward_meta", forwardToMeta));
+        results.push(await runJob("forward_google", forwardToGoogle));
+        break;
+      case "load-spend":
+        results.push(await runJob("load_meta_spend", () => loadMetaSpend(since, until)));
+        results.push(await runJob("load_google_spend", () => loadGoogleSpend(since, until)));
+        break;
+      case "load-ga4":
+        results.push(await runJob("load_ga4_sessions", () => loadGa4Sessions(dateParam(c.req.query("day"), istDate(new Date(), -1)))));
+        break;
+      case "rebuild-funnel":
+        results.push(await runJob("rebuild_funnel", () => rebuild(dateParam(c.req.query("from"), istDate(new Date(), -7)), until)));
+        break;
+      case "hourly":
+        results.push(await runJob("load_meta_spend", () => loadMetaSpend(since, until)));
+        results.push(await runJob("load_google_spend", () => loadGoogleSpend(since, until)));
+        results.push(await runJob("rebuild_funnel", () => rebuild(istDate(new Date(), -7), until)));
+        break;
+      case "daily":
+        results.push(await runJob("load_ga4_sessions", () => loadGa4Sessions(istDate(new Date(), -1))));
+        results.push(await runJob("rebuild_funnel", () => rebuild(istDate(new Date(), -35), istDate())));
+        break;
+      default:
+        return c.json({ error: `Unknown tracking job "${job}"` }, 404);
+    }
+  } catch (e) {
+    // The failed step is in pipeline_runs; a 500 makes Cloud Scheduler retry.
+    return c.json({ results, error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+  return c.json({ results });
 });
 
 /** Agents call this before any ad change. The caps come from the database, never from the agent. */

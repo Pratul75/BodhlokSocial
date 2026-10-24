@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { adChanges, budgets, campaigns, db, experiments } from "@bodh/db";
 import { AUTO_BID_LIMIT } from "@bodh/guardrails";
 import { CHANNEL_LABELS, type Channel } from "@bodh/shared";
@@ -24,8 +24,32 @@ export default async function AdsPage() {
       .limit(12),
   ]);
   const now = new Date();
-  const totalSpend = camps.reduce((s, c) => s + c.spend7d, 0);
-  const totalAct = camps.reduce((s, c) => s + c.activations7d, 0);
+  // Last 7 days ending yesterday (India time), from the tracking pipeline.
+  const stats = (await db.execute(sql`
+    WITH s AS (
+      SELECT campaign_id, sum(spend)::float AS spend, sum(clicks)::int AS clicks FROM ad_spend_daily
+      WHERE day BETWEEN (now() AT TIME ZONE 'Asia/Kolkata')::date - 7 AND (now() AT TIME ZONE 'Asia/Kolkata')::date - 1
+      GROUP BY 1
+    ),
+    c AS (
+      SELECT utm_campaign AS campaign_id,
+        count(*) FILTER (WHERE type = 'registration')::int AS registrations,
+        count(*) FILTER (WHERE type = 'activation')::int AS activations
+      FROM conversion_events
+      WHERE channel IN ('google_ads', 'meta_ads') AND utm_campaign IS NOT NULL
+        AND (occurred_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN (now() AT TIME ZONE 'Asia/Kolkata')::date - 7 AND (now() AT TIME ZONE 'Asia/Kolkata')::date - 1
+      GROUP BY 1
+    )
+    SELECT coalesce(s.campaign_id, c.campaign_id) AS campaign_id, coalesce(s.spend, 0) AS spend, coalesce(s.clicks, 0) AS clicks,
+      coalesce(c.registrations, 0) AS registrations, coalesce(c.activations, 0) AS activations
+    FROM s FULL JOIN c ON c.campaign_id = s.campaign_id`)) as unknown as { campaign_id: string; spend: number; clicks: number; registrations: number; activations: number }[];
+  const byCampaign = new Map(stats.map((r) => [r.campaign_id, r]));
+  const rows = camps.map((c) => {
+    const st = (c.platformCampaignId && byCampaign.get(c.platformCampaignId)) || { spend: 0, clicks: 0, registrations: 0, activations: 0 };
+    return { ...c, spend7d: st.spend, clicks7d: st.clicks, registrations7d: st.registrations, activations7d: st.activations };
+  });
+  const totalSpend = rows.reduce((s, c) => s + c.spend7d, 0);
+  const totalAct = rows.reduce((s, c) => s + c.activations7d, 0);
   const accountCpa = totalAct ? totalSpend / totalAct : 0;
 
   return (
@@ -82,7 +106,7 @@ export default async function AdsPage() {
             </tr>
           </thead>
           <tbody>
-            {camps.map((c) => {
+            {rows.map((c) => {
               const cpa = c.activations7d ? c.spend7d / c.activations7d : null;
               const good = cpa !== null && cpa < accountCpa * 0.85;
               const bad = cpa !== null && cpa > accountCpa * 1.3;

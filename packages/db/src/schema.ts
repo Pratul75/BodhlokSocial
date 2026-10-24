@@ -1,4 +1,4 @@
-import { boolean, date, index, integer, jsonb, numeric, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, date, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -100,10 +100,13 @@ export const strategyPlans = pgTable("strategy_plans", {
 export const campaigns = pgTable("campaigns", {
   id: id(),
   platform: text("platform").notNull(), // google_ads | meta_ads
+  /** The campaign's ID on the ad platform; joins to ad_spend_daily and utm_campaign. */
+  platformCampaignId: text("platform_campaign_id").unique(),
   name: text("name").notNull(),
   objective: text("objective").notNull(),
   status: text("status").notNull(), // active | paused | learning
   dailyBudget: integer("daily_budget").notNull(),
+  // Superseded by ad_spend_daily and conversion_events; kept until the platform sync owns campaigns.
   spend7d: integer("spend_7d").notNull().default(0),
   clicks7d: integer("clicks_7d").notNull().default(0),
   registrations7d: integer("registrations_7d").notNull().default(0),
@@ -152,7 +155,7 @@ export const funnelDaily = pgTable(
     activations: integer("activations").notNull().default(0),
     paid: integer("paid").notNull().default(0),
   },
-  (t) => [index("funnel_day_idx").on(t.day)],
+  (t) => [index("funnel_day_idx").on(t.day), uniqueIndex("funnel_day_channel_uq").on(t.day, t.channel)],
 );
 
 export const keywords = pgTable("keywords", {
@@ -217,4 +220,114 @@ export const auditLog = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("audit_created_idx").on(t.createdAt)],
+);
+
+/**
+ * Registration, activation (first chart) and paid events sent by the BODH backend.
+ * Contact details arrive raw or hashed and are stored only as SHA-256 hashes.
+ * Activation and paid events take the channel of the same user's registration.
+ */
+export const conversionEvents = pgTable(
+  "conversion_events",
+  {
+    id: id(),
+    eventId: text("event_id").notNull().unique(),
+    type: text("type").notNull(), // registration | activation | paid
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    userRef: text("user_ref").notNull(),
+    platform: text("platform").notNull(), // web | android | ios
+    plan: text("plan"),
+    value: numeric("value", { precision: 12, scale: 2 }),
+    currency: text("currency").notNull().default("INR"),
+    emailSha256: text("email_sha256"),
+    phoneSha256: text("phone_sha256"),
+    channel: text("channel").notNull(), // attributed channel, see packages/integrations/src/attribution.ts
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"), // platform ad ID by convention
+    utmTerm: text("utm_term"),
+    gclid: text("gclid"),
+    gbraid: text("gbraid"),
+    wbraid: text("wbraid"),
+    fbclid: text("fbclid"),
+    fbp: text("fbp"),
+    fbc: text("fbc"),
+    referralCode: text("referral_code"),
+    referrer: text("referrer"),
+    landingPage: text("landing_page"),
+    clientIp: text("client_ip"),
+    userAgent: text("user_agent"),
+  },
+  (t) => [
+    index("conv_occurred_idx").on(t.occurredAt),
+    index("conv_user_idx").on(t.userRef, t.type),
+    index("conv_content_idx").on(t.utmContent),
+  ],
+);
+
+/** One row per event and destination: the queue for server-side conversion uploads. */
+export const conversionForwards = pgTable(
+  "conversion_forwards",
+  {
+    id: id(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => conversionEvents.eventId, { onDelete: "cascade" }),
+    destination: text("destination").notNull(), // meta_capi | google_ads
+    status: text("status").notNull().default("pending"), // pending | sent | failed | skipped
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("forward_event_dest_uq").on(t.eventId, t.destination), index("forward_due_idx").on(t.status, t.nextAttemptAt)],
+);
+
+/** Daily spend, impressions and clicks per ad, loaded from the ad platforms. */
+export const adSpendDaily = pgTable(
+  "ad_spend_daily",
+  {
+    id: id(),
+    day: date("day").notNull(),
+    platform: text("platform").notNull(), // google_ads | meta_ads
+    campaignId: text("campaign_id").notNull(),
+    campaignName: text("campaign_name").notNull(),
+    adId: text("ad_id").notNull(),
+    adName: text("ad_name").notNull(),
+    spend: numeric("spend", { precision: 12, scale: 2 }).notNull(),
+    impressions: integer("impressions").notNull().default(0),
+    clicks: integer("clicks").notNull().default(0),
+    loadedAt: timestamp("loaded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("spend_day_ad_uq").on(t.day, t.platform, t.adId)],
+);
+
+/** Daily web sessions per channel, from the GA4 BigQuery export. */
+export const webSessionsDaily = pgTable(
+  "web_sessions_daily",
+  {
+    day: date("day").notNull(),
+    channel: text("channel").notNull(),
+    sessions: integer("sessions").notNull(),
+    loadedAt: timestamp("loaded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("sessions_day_channel_uq").on(t.day, t.channel)],
+);
+
+/** Each run of a tracking job, shown on the Tracking page. */
+export const pipelineRuns = pgTable(
+  "pipeline_runs",
+  {
+    id: id(),
+    job: text("job").notNull(), // load_meta_spend | load_google_spend | load_ga4_sessions | forward_conversions | rebuild_funnel
+    status: text("status").notNull(), // succeeded | failed | skipped
+    detail: text("detail"),
+    rows: integer("rows").notNull().default(0),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("pipeline_job_idx").on(t.job, t.startedAt)],
 );

@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { CHANNEL_LABELS, type Channel } from "@bodh/shared";
+import { desc, eq } from "drizzle-orm";
+import { creativePerformance, db, pipelineRuns } from "@bodh/db";
+import { channelLabel } from "@bodh/shared";
 import { requireModule } from "@/lib/auth";
-import { inr, num, pct } from "@/lib/format";
+import { ago, daysAgo, inr, num, pct, toIsoDate } from "@/lib/format";
 import { costPerActivated, funnelByChannel, funnelTotals, weeklyActivations } from "@/lib/funnel";
 import { FunnelStrip, PeriodBars } from "@/components/charts";
 import { Card, CardHeader, PageHeader, Pill, Table } from "@/components/ui";
@@ -10,14 +12,25 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Analytics" };
 
 const RANGES = [7, 28] as const;
-const channelName = (c: string) => (c === "referral" ? "Referral codes" : CHANNEL_LABELS[c as Channel] ?? c);
+const channelName = channelLabel;
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
   await requireModule("analytics");
   const { days: d } = await searchParams;
   const days = RANGES.includes(Number(d) as 7 | 28) ? Number(d) : 28;
 
-  const [totals, channels, weeks] = await Promise.all([funnelTotals(days), funnelByChannel(days), weeklyActivations(8)]);
+  const [totals, channels, weeks, ads, [lastRebuild]] = await Promise.all([
+    funnelTotals(days),
+    funnelByChannel(days),
+    weeklyActivations(8),
+    creativePerformance(toIsoDate(daysAgo(days)), toIsoDate(daysAgo(1)), 15),
+    db.select().from(pipelineRuns).where(eq(pipelineRuns.job, "rebuild_funnel")).orderBy(desc(pipelineRuns.startedAt)).limit(1),
+  ]);
+  const now = new Date();
+  // Ads are judged against other ads, not against a blend that includes free organic signups.
+  const adSpend = ads.reduce((t, a) => t + a.spend, 0);
+  const adActivations = ads.reduce((t, a) => t + a.activations, 0);
+  const paidCpa = adActivations ? adSpend / adActivations : null;
   const blended = costPerActivated(totals);
   const paidChannels = channels.filter((c) => c.spend > 0);
   const best = paidChannels.reduce<(typeof channels)[number] | null>(
@@ -83,7 +96,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
             <tr>
               <th>Channel</th>
               <th className="text-right">Spend</th>
-              <th className="text-right">Clicks</th>
+              <th className="text-right" title="Ad clicks for paid channels, web sessions for the rest">Clicks or visits</th>
               <th className="text-right">Registered</th>
               <th className="text-right">Activated</th>
               <th className="text-right">Activation rate</th>
@@ -113,8 +126,55 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         </Table>
       </Card>
 
+      <Card className="mt-6">
+        <CardHeader
+          title="By ad"
+          sub={`Last ${days} days, most spend first. Green and red mark ads well below or above the ${paidCpa ? inr(paidCpa) : "paid"} average cost per activated user across ads.`}
+        />
+        {ads.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-muted">No ad spend loaded yet. Connect Meta Marketing or Google Ads in Connections.</p>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th>Ad</th>
+                <th>Platform</th>
+                <th className="text-right">Spend</th>
+                <th className="text-right">Clicks</th>
+                <th className="text-right">Registered</th>
+                <th className="text-right">Activated</th>
+                <th className="text-right">Cost per activated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ads.map((a) => {
+                const cpa = a.activations ? a.spend / a.activations : null;
+                const ratio = cpa && paidCpa ? cpa / paidCpa : 1;
+                return (
+                  <tr key={`${a.platform}-${a.adId}`}>
+                    <td className="min-w-[220px]">
+                      <div className="font-medium">{a.adName}</div>
+                      <div className="text-xs text-muted">{a.campaignName}</div>
+                    </td>
+                    <td className="whitespace-nowrap text-muted">{channelName(a.platform)}</td>
+                    <td className="text-right font-mono text-[13px] tabular">{inr(a.spend)}</td>
+                    <td className="text-right font-mono text-[13px] tabular">{num(a.clicks)}</td>
+                    <td className="text-right font-mono text-[13px] tabular">{num(a.registrations)}</td>
+                    <td className="text-right font-mono text-[13px] tabular">{num(a.activations)}</td>
+                    <td className={`text-right font-mono text-[13px] tabular ${!cpa ? "text-muted" : ratio > 1.3 ? "text-sindoor" : ratio < 0.85 ? "text-leaf" : ""}`}>
+                      {cpa ? inr(cpa) : "No activations"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
       <p className="mt-4 text-xs text-muted">
-        In production these numbers come from BigQuery: the GA4 export joined with daily Google Ads and Meta spend.
+        Built from BODH registration events, ad platform spend and GA4 sessions.{" "}
+        {lastRebuild ? `Last rebuilt ${ago(lastRebuild.startedAt, now)}.` : "Not rebuilt yet."} Details on the Tracking page.
       </p>
     </>
   );

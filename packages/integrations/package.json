@@ -1,0 +1,34 @@
+{
+  "name": "@bodh/integrations",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./secrets": "./src/secrets.ts",
+    "./attribution": "./src/attribution.ts",
+    "./bodh-events": "./src/bodh-events.ts",
+    "./meta": "./src/meta.ts",
+    "./google-ads": "./src/google-ads.ts",
+    "./ga4": "./src/ga4.ts",
+    "./pipeline": "./src/pipeline.ts",
+    "./google-oauth": "./src/google-oauth.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bodh/db": "workspace:*",
+    "@bodh/shared": "workspace:*",
+    "@google-cloud/bigquery": "^9.5.0",
+    "@google-cloud/secret-manager": "^7.2.0",
+    "drizzle-orm": "^0.45.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.5"
+  }
+}

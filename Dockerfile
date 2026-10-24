@@ -1,4 +1,7 @@
 # syntax=docker/dockerfile:1.7
+# Every workspace package's package.json must be listed in both install steps below,
+# or its dependencies are not installed.
+#
 # One Dockerfile, two images:
 #   docker build --target web    -t bodh-web .
 #   docker build --target worker -t bodh-worker .
@@ -16,6 +19,7 @@ COPY apps/worker/package.json apps/worker/
 COPY packages/db/package.json packages/db/
 COPY packages/shared/package.json packages/shared/
 COPY packages/guardrails/package.json packages/guardrails/
+COPY packages/integrations/package.json packages/integrations/
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
@@ -42,6 +46,7 @@ COPY apps/worker/package.json apps/worker/
 COPY packages/db/package.json packages/db/
 COPY packages/shared/package.json packages/shared/
 COPY packages/guardrails/package.json packages/guardrails/
+COPY packages/integrations/package.json packages/integrations/
 # Only the worker and database packages and their dependencies, not the web app's.
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --filter "@bodh/worker..." --filter "@bodh/db..."

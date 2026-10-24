@@ -11,7 +11,7 @@ Terraform in this folder creates everything the app runs on, in one GCP project:
 | Secret Manager | Database URL, session secret, worker token, OAuth client secret, and every integration key or grant. |
 | Cloud Storage | Uploaded images and videos, private, served through 15-minute signed links. |
 | Artifact Registry `bodh` | Container images. |
-| Cloud Scheduler | One job per agent schedule, in India time. Off until the agent runtime ships. |
+| Cloud Scheduler | Tracking jobs (every 5 minutes, hourly, daily), and one job per agent schedule, off until the agent runtime ships. All in India time. |
 | Workload Identity Federation | Lets GitHub Actions on `main` deploy without a stored key. |
 
 You need `gcloud`, Terraform 1.6 or later, and Docker.
@@ -86,6 +86,23 @@ In the repository's **Settings > Secrets and variables > Actions > Variables**, 
 | `GCP_DEPLOYER_SA` | `terraform output -raw github_deployer_email` |
 
 From then on, every push to `main` that passes CI builds both images, runs migrations, deploys and smoke tests.
+
+## 8. Turn on tracking
+
+Tracking jobs run on their own from the first deploy and skip any source that isn't connected.
+
+- **BODH backend events.** Give the BODH backend's service account read access to the signing secret, then send them [docs/bodh-events.md](../docs/bodh-events.md) and the URL from `terraform output -raw bodh_events_endpoint`:
+
+  ```bash
+  gcloud secrets add-iam-policy-binding app-bodh-events-secret \
+    --member serviceAccount:<bodh-backend-sa> --role roles/secretmanager.secretAccessor
+  ```
+
+- **Meta.** In Connections, add the Conversions API dataset ID and token, and the Marketing API ad account ID and system user token.
+- **GA4.** In GA4, link the property to BigQuery (Admin > BigQuery links, daily export). Set `ga4_bq_dataset` to the dataset it creates (`analytics_<property id>`) and re-apply.
+- **Google Ads**, once the developer token is approved: add it with
+  `printf '%s' '<token>' | gcloud secrets versions add app-google-ads-developer-token --data-file=-`,
+  set `google_ads_customer_id` and `google_ads_conversion_actions`, and re-apply.
 
 ## Notes
 

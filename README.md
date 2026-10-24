@@ -25,6 +25,10 @@ Open http://localhost:3000. `pnpm dev` needs ports 3000 and 8787 free.
 - **Dev mode** (default): with `GOOGLE_CLIENT_ID` empty, every request runs as `DEV_USER_EMAIL`, and **Preview as** in the top bar switches roles. Production refuses to start this way.
 - **Google sign-in**: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `AUTH_SECRET` in `.env`. Only verified Workspace accounts on `ALLOWED_EMAIL_DOMAINS` that an admin has added can sign in.
 
+### Tracking
+
+The funnel is built from events the BODH backend posts to `/api/events/bodh`, ad spend from Meta and Google Ads, and GA4 sessions. `pnpm db:seed` generates sample events and spend and runs them through the same pipeline. See [docs/tracking.md](docs/tracking.md).
+
 ### Changing the database schema
 
 Edit `packages/db/src/schema.ts`, then run `pnpm db:generate` to write a migration and `pnpm db:migrate` to apply it. Commit the migration; CI fails if the schema and migrations disagree.
@@ -34,16 +38,18 @@ Edit `packages/db/src/schema.ts`, then run `pnpm db:generate` to write a migrati
 | Path | What it is |
 |---|---|
 | `apps/web` | Next.js app: sign-in and all modules (Today, Strategy, Calendar, Creative, Approvals, Publishing, Ads, SEO & GEO, Community, Leads, Analytics, Ask the agents, Connections, Admin) |
-| `apps/worker` | Hono service. Cloud Scheduler calls `POST /jobs/:agent`. Agents call `POST /guardrails/ad-change` before any ad change |
+| `apps/worker` | Hono service. Cloud Scheduler calls `POST /jobs/tracking/:job` and `POST /jobs/:agent`. Agents call `POST /guardrails/ad-change` before any ad change. Also holds the sample-data seed |
 | `packages/db` | Drizzle schema, migrations, migrate and seed scripts |
 | `packages/shared` | Roles, module access rules, integrations catalog, channels |
 | `packages/guardrails` | Spend caps, auto-allow rules, ad copy checks, publish-approval rule |
+| `packages/integrations` | Secrets store, attribution, BODH event contract, Meta, Google Ads and GA4 clients, and the tracking pipeline |
+| `docs` | [BODH event integration guide](docs/bodh-events.md) and [how tracking works](docs/tracking.md) |
 | `Dockerfile` | `web` and `worker` images for Cloud Run |
 | `infra` | Terraform for Cloud Run, Cloud SQL, Secret Manager, Storage, Scheduler, GitHub deploys |
 
 ## Tests
 
 ```bash
-pnpm test        # guardrails, auth, secrets store, Search Console client
+pnpm test        # guardrails, auth, attribution, event signing, platform clients, secrets store
 pnpm typecheck
 ```

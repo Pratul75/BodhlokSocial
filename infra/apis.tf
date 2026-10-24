@@ -10,6 +10,7 @@ locals {
     "sts.googleapis.com",
     "storage.googleapis.com",
     "searchconsole.googleapis.com",
+    "bigquery.googleapis.com",
   ]
 }
 
