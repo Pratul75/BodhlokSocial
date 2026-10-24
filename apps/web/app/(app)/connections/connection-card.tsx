@@ -143,7 +143,11 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
             </p>
           </div>
         ) : c.method === "none" ? (
-          <p className="text-xs text-muted">Quora has no public API. Agents draft answers and a person posts them.</p>
+          <p className="text-xs text-muted">
+            {c.key === "quora"
+              ? "Quora has no public API. Agents draft answers and a person posts them."
+              : <>Connect these accounts inside Postiz, then choose them on the <a href="/publishing" className="text-dusk hover:underline">Publishing</a> page.</>}
+          </p>
         ) : (
           <p className="text-xs text-muted">
             The BODH backend sends signed events. <a href="/tracking" className="text-dusk hover:underline">Set up on Tracking</a>

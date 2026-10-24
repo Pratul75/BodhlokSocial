@@ -29,12 +29,12 @@ output "assets_bucket" {
 
 output "github_wif_provider" {
   description = "Set as the GCP_WIF_PROVIDER repository variable in GitHub."
-  value       = google_iam_workload_identity_pool_provider.github.name
+  value       = var.github_deploy_enabled ? google_iam_workload_identity_pool_provider.github[0].name : null
 }
 
 output "github_deployer_email" {
   description = "Set as the GCP_DEPLOYER_SA repository variable in GitHub."
-  value       = google_service_account.deployer.email
+  value       = var.github_deploy_enabled ? google_service_account.deployer[0].email : null
 }
 
 output "bodh_events_endpoint" {

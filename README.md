@@ -29,6 +29,10 @@ Open http://localhost:3000. `pnpm dev` needs ports 3000 and 8787 free.
 
 The funnel is built from events the BODH backend posts to `/api/events/bodh`, ad spend from Meta and Google Ads, and GA4 sessions. `pnpm db:seed` generates sample events and spend and runs them through the same pipeline. See [docs/tracking.md](docs/tracking.md).
 
+### Publishing
+
+Calendar items are written, given media and sent for approval in the calendar. Approved posts go to Postiz through the publisher job, which re-checks the approval and the post rules first. Creative studio generates images, carousels and YouTube thumbnails with Gemini and video with Veo, with the brand kit applied.
+
 ### Changing the database schema
 
 Edit `packages/db/src/schema.ts`, then run `pnpm db:generate` to write a migration and `pnpm db:migrate` to apply it. Commit the migration; CI fails if the schema and migrations disagree.

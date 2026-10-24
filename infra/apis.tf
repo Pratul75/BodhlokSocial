@@ -11,6 +11,7 @@ locals {
     "storage.googleapis.com",
     "searchconsole.googleapis.com",
     "bigquery.googleapis.com",
+    "aiplatform.googleapis.com",
   ]
 }
 

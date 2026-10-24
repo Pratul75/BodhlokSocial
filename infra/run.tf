@@ -81,6 +81,10 @@ resource "google_cloud_run_v2_service" "web" {
         value = var.search_console_site
       }
       env {
+        name  = "VERTEX_USE_ADC"
+        value = "true"
+      }
+      env {
         name = "DATABASE_URL"
         value_source {
           secret_key_ref {
@@ -218,6 +222,18 @@ resource "google_cloud_run_v2_service" "worker" {
       env {
         name  = "SECRETS_BACKEND"
         value = "gcp"
+      }
+      env {
+        name  = "VERTEX_USE_ADC"
+        value = "true"
+      }
+      env {
+        name  = "STORAGE_BACKEND"
+        value = "gcs"
+      }
+      env {
+        name  = "GCS_BUCKET"
+        value = google_storage_bucket.assets.name
       }
       env {
         name  = "GOOGLE_CLIENT_ID"

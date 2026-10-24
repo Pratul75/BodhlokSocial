@@ -162,7 +162,27 @@ async function main() {
       error: status === "failed" ? "Instagram rejected the upload: video longer than 90 seconds" : null,
     });
   }
-  await db.insert(s.calendarItems).values(items);
+  // Nothing in Postiz yet, so sample posts that were "scheduled" are approved and waiting.
+  for (const it of items) if (it.status === "scheduled") it.status = "approved";
+  const inserted = await db.insert(s.calendarItems).values(items).returning();
+  // Every approved post has the approval that let it through, as the publisher requires.
+  const approved = inserted.filter((it) => it.status === "approved" || it.status === "published");
+  if (approved.length) {
+    await db.insert(s.approvals).values(
+      approved.map((it) => ({
+        kind: "post",
+        channel: it.channel,
+        agent: "content",
+        calendarItemId: it.id,
+        title: it.idea,
+        body: it.caption ?? "",
+        reason: "Sample approved post",
+        status: "approved",
+        decidedBy: userRows[3]!.id,
+        decidedAt: new Date(it.scheduledAt.getTime() - 2 * DAY),
+      })),
+    );
+  }
 
   await db.insert(s.assets).values([
     { name: "drishti-notebook.jpg", type: "image", source: "upload", storagePath: "assets/drishti-notebook.jpg", width: 1080, height: 1350 },

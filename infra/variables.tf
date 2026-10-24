@@ -102,3 +102,45 @@ variable "google_ads_conversion_actions" {
   type        = string
   default     = "{}"
 }
+
+variable "postiz_domain" {
+  description = "Public hostname for Postiz, e.g. postiz.rechargestudio.com. Empty skips the Postiz VM."
+  type        = string
+  default     = ""
+}
+
+variable "postiz_version" {
+  description = "Postiz image tag (github.com/gitroomhq/postiz-app/releases)."
+  type        = string
+  default     = "v2.25.1"
+}
+
+variable "postiz_compose_commit" {
+  description = "Commit of github.com/gitroomhq/postiz-docker-compose to run."
+  type        = string
+  default     = "dd4969e5e694cd009619a0d53cff14c21104580b"
+}
+
+variable "postiz_machine_type" {
+  description = "Postiz runs Temporal and Elasticsearch beside it; 8 GB is the comfortable minimum."
+  type        = string
+  default     = "e2-standard-2"
+}
+
+variable "postiz_disable_registration" {
+  description = "Set true after creating the team's Postiz account, so nobody else can sign up."
+  type        = bool
+  default     = false
+}
+
+variable "publishing_scheduler_enabled" {
+  description = "Run the publisher every 5 minutes and check video generation every minute."
+  type        = bool
+  default     = true
+}
+
+variable "github_deploy_enabled" {
+  description = "Let GitHub Actions deploy through Workload Identity Federation. Off: deploy from a laptop with scripts/deploy.sh."
+  type        = bool
+  default     = false
+}

@@ -10,7 +10,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { eq } from "drizzle-orm";
 import { INTEGRATIONS } from "@bodh/shared";
 import { db, sql } from "./client";
-import { budgets, connections, users } from "./schema";
+import { brandKit, budgets, connections, users } from "./schema";
 
 async function main() {
   const migrationsFolder = fileURLToPath(new URL("../migrations", import.meta.url));
@@ -28,7 +28,8 @@ async function main() {
       { platform: "meta_ads", dailyCap: 0, monthlyCap: 0, updatedBy: "setup" },
     ])
     .onConflictDoNothing();
-  console.log("Connection rows and spend caps present.");
+  await db.insert(brandKit).values({ id: 1 }).onConflictDoNothing();
+  console.log("Connection rows, spend caps and brand kit present.");
 
   const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
   if (email) {

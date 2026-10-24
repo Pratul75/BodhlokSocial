@@ -122,3 +122,21 @@ resource "google_bigquery_dataset_iam_member" "worker_reads_ga4" {
   role       = "roles/bigquery.dataViewer"
   member     = "serviceAccount:${google_service_account.worker.email}"
 }
+
+# Image and video generation with Vertex AI, using each service's own identity.
+resource "google_project_iam_member" "vertex_users" {
+  for_each = {
+    web    = google_service_account.web.email
+    worker = google_service_account.worker.email
+  }
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${each.value}"
+}
+
+# The worker stores finished videos in the assets bucket.
+resource "google_storage_bucket_iam_member" "worker_writes_assets" {
+  bucket = google_storage_bucket.assets.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.worker.email}"
+}

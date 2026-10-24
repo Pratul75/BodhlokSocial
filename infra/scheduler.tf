@@ -77,3 +77,33 @@ resource "google_cloud_scheduler_job" "tracking" {
 
   depends_on = [google_cloud_run_v2_service_iam_member.worker_scheduler]
 }
+
+resource "google_cloud_scheduler_job" "publishing" {
+  for_each = var.publishing_scheduler_enabled ? {
+    "publisher"     = { path = "/jobs/publishing/run", cron = "*/5 * * * *" }
+    "creative-poll" = { path = "/jobs/creative/poll", cron = "* * * * *" }
+  } : {}
+  name             = "bodh-${each.key}"
+  region           = var.region
+  schedule         = each.value.cron
+  time_zone        = "Asia/Kolkata"
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count = 1
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${google_cloud_run_v2_service.worker.uri}${each.value.path}"
+    headers = {
+      "X-Worker-Token" = random_password.worker_token.result
+    }
+    oidc_token {
+      service_account_email = google_service_account.scheduler.email
+      audience              = google_cloud_run_v2_service.worker.uri
+    }
+  }
+
+  depends_on = [google_cloud_run_v2_service_iam_member.worker_scheduler]
+}

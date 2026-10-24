@@ -48,6 +48,8 @@ export const approvals = pgTable(
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
     status: text("status").notNull().default("pending"), // pending | approved | rejected
     agent: text("agent").notNull(),
+    /** For posts: the calendar item this approval decides. */
+    calendarItemId: uuid("calendar_item_id"),
     sourceRunId: uuid("source_run_id").references(() => agentRuns.id),
     decidedBy: uuid("decided_by").references(() => users.id),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
@@ -63,8 +65,14 @@ export const assets = pgTable("assets", {
   type: text("type").notNull(), // image | video
   source: text("source").notNull(), // upload | imagen | veo
   storagePath: text("storage_path").notNull(),
+  contentType: text("content_type"),
+  sizeBytes: integer("size_bytes"),
   width: integer("width"),
   height: integer("height"),
+  /** For generated assets: the prompt and the job that made it. */
+  prompt: text("prompt"),
+  jobId: uuid("job_id"),
+  createdBy: text("created_by"),
   createdAt: createdAt(),
 });
 
@@ -80,8 +88,17 @@ export const calendarItems = pgTable(
     assetIds: jsonb("asset_ids").$type<string[]>().notNull().default([]),
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
     status: text("status").notNull().default("idea"), // idea | drafted | in_review | approved | scheduled | published | failed
+    /** Title for YouTube and blogs; also the overlay on generated thumbnails. */
+    title: text("title"),
+    /** Per-channel options, e.g. { "post_type": "story" } or { "visibility": "unlisted" }. */
+    settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),
+    /** Postiz post ID once scheduled there. The post's Postiz group is always this item's ID. */
     postizId: text("postiz_id"),
+    publishedUrl: text("published_url"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    publishAttempts: integer("publish_attempts").notNull().default(0),
     error: text("error"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: createdAt(),
   },
   (t) => [index("calendar_scheduled_idx").on(t.scheduledAt)],
@@ -330,4 +347,64 @@ export const pipelineRuns = pgTable(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t) => [index("pipeline_job_idx").on(t.job, t.startedAt)],
+);
+
+/** One row: the brand rules applied to generated creative and checked on captions. */
+export const brandKit = pgTable("brand_kit", {
+  id: integer("id").primaryKey().default(1),
+  palette: jsonb("palette").$type<{ name: string; hex: string }[]>().notNull().default([]),
+  logoAssetId: uuid("logo_asset_id"),
+  /** Visual style added to every image prompt. */
+  imageStyle: text("image_style").notNull().default(""),
+  /** How captions should sound, for the Content agent. */
+  voice: text("voice").notNull().default(""),
+  bannedPhrases: jsonb("banned_phrases").$type<string[]>().notNull().default([]),
+  defaultHashtags: jsonb("default_hashtags").$type<string[]>().notNull().default([]),
+  /** Stamp the logo on generated images and thumbnails. */
+  stampLogo: boolean("stamp_logo").notNull().default(true),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Image and video generation requests sent to Vertex AI. */
+export const creativeJobs = pgTable(
+  "creative_jobs",
+  {
+    id: id(),
+    kind: text("kind").notNull(), // image | carousel | thumbnail | video
+    prompt: text("prompt").notNull(),
+    params: jsonb("params").$type<Record<string, unknown>>().notNull().default({}),
+    status: text("status").notNull().default("queued"), // queued | running | succeeded | failed
+    operationName: text("operation_name"), // Veo long-running operation
+    assetIds: jsonb("asset_ids").$type<string[]>().notNull().default([]),
+    error: text("error"),
+    requestedBy: text("requested_by").notNull(),
+    createdAt: createdAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("creative_jobs_status_idx").on(t.status, t.createdAt)],
+);
+
+/** Which Postiz channel each of our channels publishes to. */
+export const publishingChannels = pgTable("publishing_channels", {
+  channel: text("channel").primaryKey(), // instagram | facebook | linkedin | youtube
+  postizIntegrationId: text("postiz_integration_id").notNull(),
+  postizIdentifier: text("postiz_identifier").notNull(), // instagram | instagram-standalone | facebook | linkedin | linkedin-page | youtube
+  name: text("name").notNull(),
+  picture: text("picture"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Calls to Postiz's rate-limited create-post endpoint, to stay under its hourly limit. */
+export const postizCalls = pgTable(
+  "postiz_calls",
+  {
+    id: id(),
+    endpoint: text("endpoint").notNull(),
+    calendarItemId: uuid("calendar_item_id"),
+    ok: boolean("ok").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("postiz_calls_at_idx").on(t.at)],
 );

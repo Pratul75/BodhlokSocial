@@ -17,6 +17,8 @@ const config: NextConfig = {
   transpilePackages: ["@bodh/db", "@bodh/shared", "@bodh/guardrails", "@bodh/integrations"],
   serverExternalPackages: ["postgres", "@google-cloud/secret-manager", "@google-cloud/storage", "@google-cloud/bigquery"],
   poweredByHeader: false,
+  // Fonts read at runtime by lib/compose.tsx.
+  outputFileTracingIncludes: { "/*": ["./assets/fonts/**"] },
   // Local-only folders and repo files the server never reads in production.
   outputFileTracingExcludes: {
     "/*": ["../../.secrets/**", "../../.uploads/**", "../../infra/**", "../../docs/**", "../../.git/**", "../../packages/*/src/**/*.test.ts"],

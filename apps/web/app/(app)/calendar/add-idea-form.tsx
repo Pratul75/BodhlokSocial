@@ -50,7 +50,11 @@ export function AddIdeaForm({
         <Plus size={16} /> Add idea
       </button>
       {state && !state.ok && <p className="text-sm text-sindoor sm:col-span-2 md:col-span-5" role="alert">{state.error}</p>}
-      {state?.ok && <p className="text-sm text-leaf sm:col-span-2 md:col-span-5" role="status">Added to the calendar.</p>}
+      {state?.ok && (
+        <p className="text-sm text-leaf sm:col-span-2 md:col-span-5" role="status">
+          Added to the calendar. <a href={`/calendar/${state.id}`} className="underline">Write the caption</a>
+        </p>
+      )}
     </form>
   );
 }

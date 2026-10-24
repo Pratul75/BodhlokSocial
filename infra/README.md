@@ -74,7 +74,9 @@ gcloud run jobs execute bodh-migrate --region asia-south1 --wait
 
 Open `terraform output -raw app_url` and sign in with the `bootstrap_admin_email` account. Add the rest of the team in **Admin**.
 
-## 7. Turn on deploys from GitHub
+## 7. Optional: deploys from GitHub
+
+Off by default. Set `github_deploy_enabled = true` to create the keyless GitHub access, then:
 
 In the repository's **Settings > Secrets and variables > Actions > Variables**, add:
 
@@ -103,6 +105,16 @@ Tracking jobs run on their own from the first deploy and skip any source that is
 - **Google Ads**, once the developer token is approved: add it with
   `printf '%s' '<token>' | gcloud secrets versions add app-google-ads-developer-token --data-file=-`,
   set `google_ads_customer_id` and `google_ads_conversion_actions`, and re-apply.
+
+## 9. Postiz, for publishing
+
+Set `postiz_domain` (e.g. `postiz.rechargestudio.com`) and re-apply. Terraform creates a VM running Postiz with HTTPS.
+
+1. Point an A record for the domain at `terraform output -raw postiz_ip`. HTTPS starts once DNS resolves.
+2. Add the social platforms' app keys: write a `postiz.env` with `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, then `gcloud secrets versions add postiz-env --data-file=postiz.env` and restart: `gcloud compute ssh bodh-postiz --tunnel-through-iap -- sudo google_metadata_script_runner startup`.
+3. Open `https://<domain>`, create the team account, connect Instagram, Facebook, LinkedIn and YouTube, and create an API key under Settings.
+4. Set `postiz_disable_registration = true` and re-apply.
+5. In Growth OS: Connections > Postiz takes `terraform output -raw postiz_api_url` and the key. Publishing then lists the Postiz channels to choose from.
 
 ## Notes
 

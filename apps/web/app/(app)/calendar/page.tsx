@@ -93,7 +93,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
       />
 
       <Card className="mb-6">
-        <CardHeader title="Add an idea" sub="Ideas start here. The Content agent turns them into scripts and captions for approval." />
+        <CardHeader title="Add an idea" sub="Ideas start here. Open any item to write the caption, pick media and send it for approval." />
         <AddIdeaForm
           channels={CHANNELS.map((c) => ({ value: c, label: CHANNEL_LABELS[c] }))}
           formats={FORMATS.map((f) => ({ value: f, label: FORMAT_LABELS[f] }))}
@@ -151,12 +151,18 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
                   </div>
                   <ul className="space-y-1">
                     {list.slice(0, 4).map((it) => (
-                      <li key={it.id} className="flex items-start gap-1.5 text-[12px] leading-tight" title={`${CHANNEL_LABELS[it.channel as Channel]} · ${it.idea} · ${statusLabel(it.status)}`}>
-                        <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[it.status] ?? "bg-muted"}`} />
-                        <span className="line-clamp-2">
-                          <span className="font-medium text-muted">{CHANNEL_SHORT[it.channel] ?? CHANNEL_LABELS[it.channel as Channel]} </span>
-                          {it.idea}
-                        </span>
+                      <li key={it.id}>
+                        <Link
+                          href={`/calendar/${it.id}`}
+                          className="-mx-1 flex items-start gap-1.5 rounded px-1 text-[12px] leading-tight hover:bg-paper"
+                          title={`${CHANNEL_LABELS[it.channel as Channel]} · ${it.idea} · ${statusLabel(it.status)}`}
+                        >
+                          <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[it.status] ?? "bg-muted"}`} />
+                          <span className="line-clamp-2">
+                            <span className="font-medium text-muted">{CHANNEL_SHORT[it.channel] ?? CHANNEL_LABELS[it.channel as Channel]} </span>
+                            {it.idea}
+                          </span>
+                        </Link>
                       </li>
                     ))}
                     {list.length > 4 && <li className="text-[11px] text-muted">+{list.length - 4} more</li>}
@@ -179,7 +185,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
                 <div className="space-y-2">
                   {list.length === 0 && <div className="rounded-lg border border-dashed border-rule px-2 py-3 text-center text-xs text-muted">Free</div>}
                   {list.map((it) => (
-                    <div key={it.id} className="rounded-lg border border-rule bg-card p-2.5">
+                    <Link key={it.id} href={`/calendar/${it.id}`} className="block rounded-lg border border-rule bg-card p-2.5 hover:border-dusk/40">
                       <div className="text-[11px] text-muted">
                         {timeLabel(it.scheduledAt)} · {CHANNEL_LABELS[it.channel as Channel] ?? it.channel}
                       </div>
@@ -189,7 +195,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
                         <StatusPill status={it.status} />
                       </div>
                       {it.error && <p className="mt-1.5 text-[11px] text-sindoor">{it.error}</p>}
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </div>

@@ -9,5 +9,6 @@ export default defineConfig({
       "server-only": fileURLToPath(new URL("./test/empty.ts", import.meta.url)),
     },
   },
-  test: { include: ["**/*.test.ts"], exclude: ["node_modules/**", ".next/**"] },
+  oxc: { jsx: { runtime: "automatic" } },
+  test: { include: ["**/*.test.ts", "**/*.test.tsx"], exclude: ["node_modules/**", ".next/**"] },
 });

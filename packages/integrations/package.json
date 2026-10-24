@@ -14,7 +14,12 @@
     "./google-ads": "./src/google-ads.ts",
     "./ga4": "./src/ga4.ts",
     "./pipeline": "./src/pipeline.ts",
-    "./google-oauth": "./src/google-oauth.ts"
+    "./google-oauth": "./src/google-oauth.ts",
+    "./storage": "./src/storage.ts",
+    "./vertex": "./src/vertex.ts",
+    "./creative": "./src/creative.ts",
+    "./postiz": "./src/postiz.ts",
+    "./publisher": "./src/publisher.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -22,13 +27,17 @@
   },
   "dependencies": {
     "@bodh/db": "workspace:*",
+    "@bodh/guardrails": "workspace:*",
     "@bodh/shared": "workspace:*",
     "@google-cloud/bigquery": "^9.5.0",
     "@google-cloud/secret-manager": "^7.2.0",
+    "@google-cloud/storage": "^8.4.0",
     "drizzle-orm": "^0.45.4",
+    "google-auth-library": "^11.3.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "postgres": "^3.4.9",
     "vitest": "^5.0.5"
   }
 }

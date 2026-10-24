@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { Check, Pencil, X } from "lucide-react";
 import { decide, type DecideResult } from "./actions";
 import { btn, inputClass, Pill } from "@/components/ui";
+import { AssetThumb, type ThumbAsset } from "@/components/asset-thumb";
 
 export interface ApprovalView {
   id: string;
@@ -18,6 +19,12 @@ export interface ApprovalView {
   flags: string[];
   copyIssues: { match: string; why: string }[];
   canDecide: boolean;
+  /** Calendar posts: media in posting order, the schedule, and rule checks. */
+  assets?: ThumbAsset[];
+  scheduledLabel?: string;
+  calendarItemId?: string | null;
+  checkErrors?: string[];
+  checkWarnings?: string[];
 }
 
 export function ApprovalCard({ item }: { item: ApprovalView }) {
@@ -54,6 +61,33 @@ export function ApprovalCard({ item }: { item: ApprovalView }) {
           />
         ) : (
           <p className="mt-2.5 text-sm leading-relaxed whitespace-pre-wrap text-ink/90">{item.body}</p>
+        )}
+
+        {item.assets && item.assets.length > 0 && (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {item.assets.map((a, i) => (
+              <div key={a.id} className="w-24 shrink-0">
+                <AssetThumb a={a} className="aspect-[4/5] rounded-lg" />
+                <div className="mt-0.5 truncate text-[10px] text-muted">{i + 1}. {a.name}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {item.scheduledLabel && (
+          <p className="mt-2 text-xs text-muted">
+            Goes out {item.scheduledLabel}.{" "}
+            {item.calendarItemId && <a href={`/calendar/${item.calendarItemId}`} className="text-dusk hover:underline">Open in calendar</a>}
+          </p>
+        )}
+        {item.checkErrors && item.checkErrors.length > 0 && (
+          <div className="mt-3 rounded-lg bg-sindoor-soft px-3 py-2 text-sm text-sindoor" role="note">
+            {item.checkErrors.map((e) => <p key={e}>{e}</p>)}
+          </div>
+        )}
+        {item.checkWarnings && item.checkWarnings.length > 0 && (
+          <div className="mt-3 rounded-lg bg-turmeric-soft px-3 py-2 text-sm text-turmeric-ink" role="note">
+            {item.checkWarnings.map((w) => <p key={w}>{w}</p>)}
+          </div>
         )}
 
         <p className="mt-3 rounded-lg bg-paper px-3 py-2 text-sm text-muted">

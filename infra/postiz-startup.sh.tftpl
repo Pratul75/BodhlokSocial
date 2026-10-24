@@ -1,0 +1,79 @@
+#!/bin/bash
+# Postiz VM startup. Runs on every boot; safe to re-run with:
+#   sudo google_metadata_script_runner startup
+set -euo pipefail
+exec > >(tee -a /var/log/postiz-startup.log) 2>&1
+echo "== $(date -Is) postiz startup"
+
+if ! command -v docker >/dev/null; then
+  apt-get update
+  apt-get install -y docker.io docker-compose-v2 git
+  systemctl enable --now docker
+fi
+
+secret() { gcloud secrets versions access latest --secret="$1" --project="${project}" 2>/dev/null || true; }
+
+mkdir -p /opt/postiz
+cd /opt/postiz
+if [ ! -d stack/.git ]; then
+  git clone https://github.com/gitroomhq/postiz-docker-compose.git stack
+fi
+git -C stack fetch --quiet origin
+git -C stack checkout --quiet "${compose_commit}"
+
+JWT="$(secret postiz-jwt)"
+PGPASS="$(secret postiz-postgres)"
+if [ -z "$JWT" ] || [ -z "$PGPASS" ]; then
+  echo "Postiz secrets are missing; check the VM's access to Secret Manager." >&2
+  exit 1
+fi
+secret postiz-env > /opt/postiz/postiz.env
+chmod 600 /opt/postiz/postiz.env
+
+cat > /opt/postiz/Caddyfile <<CADDY
+${domain} {
+  encode gzip
+  reverse_proxy postiz:5000
+}
+CADDY
+
+cat > stack/docker-compose.override.yaml <<YAML
+services:
+  postiz:
+    image: ${image}
+    env_file:
+      - /opt/postiz/postiz.env
+    environment:
+      MAIN_URL: "https://${domain}"
+      FRONTEND_URL: "https://${domain}"
+      NEXT_PUBLIC_BACKEND_URL: "https://${domain}/api"
+      JWT_SECRET: "$JWT"
+      DATABASE_URL: "postgresql://postiz-user:$PGPASS@postiz-postgres:5432/postiz-db-local"
+      DISABLE_REGISTRATION: "${disable_registration}"
+      API_LIMIT: "30"
+    ports: !reset []
+  postiz-postgres:
+    environment:
+      POSTGRES_PASSWORD: "$PGPASS"
+  caddy:
+    image: caddy:2.8
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/postiz/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    networks:
+      - postiz-network
+    depends_on:
+      - postiz
+volumes:
+  caddy-data: {}
+YAML
+chmod 600 stack/docker-compose.override.yaml
+
+cd stack
+docker compose pull --quiet
+docker compose up -d --remove-orphans
+echo "== $(date -Is) postiz started for https://${domain}"

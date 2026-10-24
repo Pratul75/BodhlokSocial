@@ -93,6 +93,7 @@ const STATUS_TONES: Record<string, Tone> = {
   won: "ink",
   lost: "neutral",
   draft: "turmeric",
+  withdrawn: "neutral",
 };
 
 export const statusLabel = (s: string) => {

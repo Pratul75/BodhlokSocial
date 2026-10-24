@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
-import { approvals, db } from "@bodh/db";
+import { approvals, calendarItems, db } from "@bodh/db";
 import { APPROVAL_KINDS, canApprove, type ApprovalKind } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
+import { checkItem } from "@/lib/posts";
 
 export type DecideResult = { ok: true } | { ok: false; error: string };
 
@@ -33,6 +34,19 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
   const body = typeof editedBody === "string" && editedBody.trim() ? editedBody : item.body;
   const edited = body !== item.body;
 
+  // Posts from the calendar: the approval covers the item exactly as it was sent.
+  const [post] = item.calendarItemId
+    ? await db.select().from(calendarItems).where(eq(calendarItems.id, item.calendarItemId)).limit(1)
+    : [];
+  if (item.calendarItemId) {
+    if (!post) return { ok: false, error: "The calendar item was deleted." };
+    if (post.status !== "in_review") return { ok: false, error: "The calendar item changed after it was sent. It needs a fresh approval request." };
+    if (decision === "approve") {
+      const check = await checkItem({ ...post, caption: body });
+      if (check.errors.length) return { ok: false, error: `Can't approve yet: ${check.errors.join(" ")}` };
+    }
+  }
+
   // Only update while still pending, so two people can't decide the same item.
   const updated = await db
     .update(approvals)
@@ -46,6 +60,20 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
     .where(and(eq(approvals.id, id), eq(approvals.status, "pending")))
     .returning({ id: approvals.id });
   if (updated.length === 0) return { ok: false, error: "Someone decided this item a moment ago." };
+
+  if (post) {
+    await db
+      .update(calendarItems)
+      .set(
+        decision === "approve"
+          ? { status: "approved", caption: body, error: null, updatedAt: new Date() }
+          : { status: "drafted", updatedAt: new Date() },
+      )
+      .where(eq(calendarItems.id, post.id));
+    revalidatePath("/calendar");
+    revalidatePath(`/calendar/${post.id}`);
+    revalidatePath("/publishing");
+  }
 
   await audit({
     actor: user.email,

@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { and, asc, count, desc, eq, ne } from "drizzle-orm";
-import { approvals, db, users } from "@bodh/db";
+import { and, asc, count, desc, eq, inArray, ne } from "drizzle-orm";
+import { approvals, calendarItems, db, users } from "@bodh/db";
 import { APPROVAL_KINDS, canApprove, CHANNEL_LABELS, type ApprovalKind, type Channel } from "@bodh/shared";
 import { lintAdCopy } from "@bodh/guardrails";
 import { requireModule } from "@/lib/auth";
 import { ago } from "@/lib/format";
+import { checkItem, itemAssets } from "@/lib/posts";
 import { Card, CardHeader, EmptyState, PageHeader, StatusPill, Table } from "@/components/ui";
 import { ApprovalCard, type ApprovalView } from "./approval-card";
 
@@ -42,7 +43,18 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
 
   const total = counts.reduce((s, c) => s + c.n, 0);
   const now = new Date();
+  const itemIds = pending.map((a) => a.calendarItemId).filter((x): x is string => Boolean(x));
+  const items = itemIds.length ? await db.select().from(calendarItems).where(inArray(calendarItems.id, itemIds)) : [];
+  const postInfo = new Map(
+    await Promise.all(
+      items.map(async (it) => {
+        const list = await itemAssets(it);
+        return [it.id, { item: it, assets: list, check: await checkItem(it, list) }] as const;
+      }),
+    ),
+  );
   const views: ApprovalView[] = pending.map((a) => {
+    const post = a.calendarItemId ? postInfo.get(a.calendarItemId) : undefined;
     const payload = a.payload as Record<string, unknown>;
     const flags: string[] = [];
     if (payload.needsJyotishReview) flags.push("Needs Jyotish review");
@@ -57,8 +69,14 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
       reason: a.reason,
       createdLabel: ago(a.createdAt, now),
       flags,
-      copyIssues: a.kind === "ad_change" || a.kind === "post" ? lintAdCopy(`${a.title}\n${a.body}`) : [],
+      // Calendar posts get the full post check, which includes these copy rules.
+      copyIssues: post ? [] : a.kind === "ad_change" || a.kind === "post" ? lintAdCopy(`${a.title}\n${a.body}`) : [],
       canDecide: canApprove(user.role, a.kind as ApprovalKind),
+      assets: post?.assets,
+      calendarItemId: a.calendarItemId,
+      scheduledLabel: post ? post.item.scheduledAt.toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : undefined,
+      checkErrors: post?.check.errors,
+      checkWarnings: post?.check.warnings,
     };
   });
 

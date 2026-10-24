@@ -6,7 +6,7 @@ import { CHANNELS, FORMATS, canAccess } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 
-export type AddResult = { ok: true } | { ok: false; error: string } | null;
+export type AddResult = { ok: true; id: string } | { ok: false; error: string } | null;
 
 export async function addIdea(_prev: AddResult, formData: FormData): Promise<AddResult> {
   const user = await getCurrentUser();
@@ -24,8 +24,8 @@ export async function addIdea(_prev: AddResult, formData: FormData): Promise<Add
   const scheduledAt = new Date(`${date}T${time}`);
   if (Number.isNaN(scheduledAt.getTime())) return { ok: false, error: "Pick a date and time." };
 
-  await db.insert(calendarItems).values({ channel, format, idea, scheduledAt, status: "idea" });
+  const [row] = await db.insert(calendarItems).values({ channel, format, idea, scheduledAt, status: "idea" }).returning({ id: calendarItems.id });
   await audit({ actor: user.email, actorType: "user", action: "add_calendar_item", target: idea, result: "created" });
   revalidatePath("/calendar");
-  return { ok: true };
+  return { ok: true, id: row!.id };
 }

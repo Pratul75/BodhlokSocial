@@ -14,6 +14,8 @@ import {
   rebuild,
   runJob,
 } from "@bodh/integrations/pipeline";
+import { runPublisher } from "@bodh/integrations/publisher";
+import { pollVideoJobs } from "@bodh/integrations/creative";
 
 /** Agents and their schedules, from the build plan. Cloud Scheduler calls POST /jobs/:agent. */
 export const AGENTS = {
@@ -135,6 +137,24 @@ app.post("/jobs/tracking/:job", async (c) => {
     return c.json({ results, error: e instanceof Error ? e.message : String(e) }, 500);
   }
   return c.json({ results });
+});
+
+/** Publisher: every 5 minutes. Hands approved posts to Postiz and reads back results. */
+app.post("/jobs/publishing/run", async (c) => {
+  try {
+    return c.json(await runJob("publisher", () => runPublisher()));
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+/** Video generation: every minute while any Veo job is running. */
+app.post("/jobs/creative/poll", async (c) => {
+  try {
+    return c.json(await pollVideoJobs());
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
 });
 
 /** Agents call this before any ad change. The caps come from the database, never from the agent. */
