@@ -87,7 +87,8 @@ database.
 
 ## Notes
 
-- The first deploy loaded sample data and shows a "Sample data" badge. To start clean, remove
-  `DEMO_DATA=true` from `bodh.env` and clear the sample rows, or ask for a reset script.
+- The first deploy loaded sample data. It was removed on 24 Oct 2026 with
+  `scripts/vm/remove-sample-data.sql`, which keeps the admin, real sign-ins, connections and the
+  brand kit. Spend caps were reset to ₹0; set real ones in **Admin** before connecting ad accounts.
 - Keys pasted in Connections are stored as files in `/opt/bodh/shared/secrets`, not in GCP Secret
   Manager, since this VM setup doesn't use Cloud Run. The folder is readable only by the `bodh` user.
