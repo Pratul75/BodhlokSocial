@@ -11,8 +11,7 @@ set -euo pipefail
 PROJECT="${PROJECT:-absolute-water-387410}"
 ZONE="${ZONE:-asia-south1-c}"
 VM="${VM:-rapido-demo}"
-# Until growth.rechargestudio.com has a DNS record, sslip.io maps this name to the VM IP.
-HOST="${HOST:-bodh-growth.8-231-76-36.sslip.io}"
+HOST="${HOST:-growth.rechargestudio.com}"
 SEED="${SEED:-0}"
 
 cd "$(dirname "$0")/.."

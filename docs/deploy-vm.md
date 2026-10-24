@@ -1,8 +1,7 @@
 # Deploying to the rapido-demo VM
 
 BODH Growth OS runs on the `rapido-demo` VM (project `absolute-water-387410`, zone
-`asia-south1-c`) beside the other apps there. It is live at the temporary address
-**https://bodh-growth.8-231-76-36.sslip.io** until `growth.rechargestudio.com` has a DNS record.
+`asia-south1-c`) beside the other apps there, at **https://growth.rechargestudio.com**.
 There is no CI/CD: you deploy from a laptop.
 
 | Piece | Where |
@@ -28,24 +27,19 @@ scripts/deploy-vm.sh
 It builds Linux images, uploads only the runnable files, migrates the database, switches
 releases and restarts. It takes about ten minutes on a Mac, mostly the Linux build.
 
-## Move to growth.rechargestudio.com
+## Address
 
-rechargestudio.com's DNS is at GoDaddy. Add an **A record**: name `growth`, value `8.231.76.36`.
-Once it resolves (`dig +short growth.rechargestudio.com`), redeploy on that name:
+DNS for rechargestudio.com is at GoDaddy, with an A record `growth` pointing to `8.231.76.36`.
+To move to another name, add its record, then run `HOST=<name> scripts/deploy-vm.sh`: the installer
+swaps the Caddy site and the app's address. Add the new redirect URIs to the Google client too.
+A name under `*.sites.rechargestudio.com` doesn't work: that wildcard issues certificates only for
+sites the sites API approves.
 
-```bash
-HOST=growth.rechargestudio.com scripts/deploy-vm.sh
-```
+## Sign-in
 
-The installer swaps the Caddy site and the app's address. Use that name in the redirect URIs below.
-
-A name under `*.sites.rechargestudio.com` doesn't work: that wildcard issues certificates only
-for sites the sites API approves.
-
-## Turn on sign-in
-
-The app shows "Sign-in isn't set up yet" until it has a Google OAuth client. Create one in the
-Cloud console for project `absolute-water-387410` (or any project you own):
+Sign-in uses the OAuth client **BODH Growth web** in project `absolute-water-387410`. That project's
+consent screen (branding "Bodhlok", External, In production) is shared with other apps, so leave its
+audience and branding alone. To recreate the client in a project of its own:
 
 1. **Google Auth Platform > Branding**: app name "BODH Growth", your support email, and
    `rechargestudio.com` under authorised domains.
@@ -97,5 +91,3 @@ database.
   `DEMO_DATA=true` from `bodh.env` and clear the sample rows, or ask for a reset script.
 - Keys pasted in Connections are stored as files in `/opt/bodh/shared/secrets`, not in GCP Secret
   Manager, since this VM setup doesn't use Cloud Run. The folder is readable only by the `bodh` user.
-- Deploys default to the sslip.io address. After the move, run deploys with
-  `HOST=growth.rechargestudio.com`, or change the default in `scripts/deploy-vm.sh`.
