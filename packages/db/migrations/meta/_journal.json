@@ -50,6 +50,20 @@
       "when": 1792861484034,
       "tag": "0006_site_publishing",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792916615382,
+      "tag": "0007_cms_publishing",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792916615683,
+      "tag": "0008_drop_site_pr_columns",
+      "breakpoints": true
     }
   ]
 }

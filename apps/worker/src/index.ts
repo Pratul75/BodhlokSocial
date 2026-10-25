@@ -212,9 +212,9 @@ app.post("/jobs/seo/:job", async (c) => {
 });
 
 /**
- * Publishing approved pages to bodhlok.com through pull requests:
- *   publish  opens one pull request with every approved page waiting (daily 10:00 IST, or on demand)
- *   sync     follows pull requests to merge and merged pages to the live URL (every 10 minutes)
+ * Publishing approved pages to bodhlok.com through the site's CMS:
+ *   publish  publishes every approved page waiting and takes withdrawn ones down (right after an approval, and a sweep every 30 minutes)
+ *   sync     compares what is live here with the CMS (hourly)
  */
 app.post("/jobs/site/:job", async (c) => {
   const job = c.req.param("job");

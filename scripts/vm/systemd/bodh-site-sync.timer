@@ -1,8 +1,8 @@
 [Unit]
-Description=BODH Growth OS: follow site pull requests to merge and live
+Description=BODH Growth OS: compare published pages with bodhlok.com's CMS
 
 [Timer]
-OnCalendar=*:0/10
+OnCalendar=hourly
 Unit=bodh-job@site-sync.service
 Persistent=true
 RandomizedDelaySec=20

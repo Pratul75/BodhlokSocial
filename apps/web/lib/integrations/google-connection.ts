@@ -39,6 +39,10 @@ export interface SyncResult {
 
 /** Pull data for a connected integration. Search Console updates keyword positions. */
 export async function syncIntegration(key: string): Promise<SyncResult> {
+  if (key === "bodhlok_cms") {
+    const { checkCmsConnection } = await import("@bodh/integrations/site-publisher");
+    return { message: await checkCmsConnection() };
+  }
   const token = await accessTokenFor(key);
   if (key !== "search_console") {
     await db.update(connections).set({ lastSyncAt: new Date(), error: null }).where(eq(connections.key, key));

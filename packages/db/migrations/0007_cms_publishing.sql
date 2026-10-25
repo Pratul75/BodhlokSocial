@@ -1,0 +1,1 @@
+ALTER TABLE "seo_pages" ADD COLUMN "site_document_id" integer;

@@ -21,21 +21,35 @@ City Panchang pages are computed, not written: `packages/integrations/src/pancha
 
 ## Publishing to bodhlok.com
 
-Approved pages become blog posts on bodhlok.com through pull requests to the site's repo
-(`Pratul75/Jyotish-web-app`, branch `bodhlok`). The site's blog is static HTML baked into its
-Cloud Run image plus a slug allow-list in `backend/app/api/public_site.py`, so each post is
-three changes: `frontend/public/site/blog/<slug>.html` (rendered in the site's own template,
-with Article and FAQ schema), a card on `blog/index.html`, and the slug in `_BLOG_SLUGS`.
-Merging the pull request runs the site's `bodhlok-deploy` build (about 10 minutes).
+Approved pages become blog posts on bodhlok.com through the site's own CMS (the FastAPI backend
+behind bodhlok.com, `/api/cms/*`; `CMS_ENABLED=true` on the `bodhlok-deploy` trigger). Growth OS
+signs in with a Bodhlok account that is a CMS member with blog publishing, writes the page as a
+post document (title, excerpt, the body as the CMS's rich-text JSON with an article block, SEO
+fields with Article and FAQ schema, a cover from the site's own images, the site's category and
+"Bodhlok" as author) and publishes it. The CMS renders the page in the site's template, runs its
+own checks (title, 50–155 character description, one H1, social image, alt text) and serves it at
+`https://bodhlok.com/blog/<slug>` at once: no build, no deploy.
 
 | When | What |
 |---|---|
-| A page is approved | It is queued for the site |
-| Daily 10:00 IST, or **Open pull request now** on the SEO page | One pull request with every queued page (`growth-os/pages-<stamp>`), merged automatically only if the connection's "auto_merge" is `yes` |
-| Every 10 minutes | Pull requests are followed to merge; merged pages are checked at `https://bodhlok.com/blog/<slug>` and marked live |
-| A live page is sent back with changes | A pull request removes it from the site |
+| A page is approved | It is published to the CMS right after the approval is saved (`site-publish`) |
+| Every 30 minutes, or **Publish waiting pages** on the SEO page | A sweep retries pages that failed (the CMS's error list is shown on the page) |
+| Hourly, or **Check status** | What Growth OS thinks is live is compared with the CMS; a post taken down in the CMS panel shows as taken down here |
+| A live page is sent back with changes | It is unpublished (the CMS answers 410 at the old address) |
 
-Categories: comparison pages → "Choosing software"; module guides → the site's categories (KP astrology, Jaimini, Ashtakavarga, Dasha periods, Muhurta, Consult) or "Chart methods"; study guides → "Study guides". Connection: **GitHub (site repo)** in Connections, a fine-grained token with Contents and Pull requests read-write on that repo. The site's CMS (off for Bodhlok today) is the planned replacement; the publisher is one module, `packages/integrations/src/site-publisher.ts`.
+Categories: comparison pages → "Choosing software"; module guides → the site's categories (KP
+astrology, Jaimini, Ashtakavarga, Dasha periods, Muhurta, Consult) or "Chart methods"; study
+guides → "Study guides". Missing categories and the "Bodhlok" author are created on first use.
+
+Connection: **bodhlok.com CMS** in Connections, the account's e-mail and password (the password is
+kept in Secret Manager like every other key). The sign-in is `POST /api/cms/token`, added to the
+site for automation because the ordinary login needs a browser reCAPTCHA; it is rate limited and
+answers only for accounts that hold CMS access on the site. Setup on the Bodhlok side, once:
+a Bodhlok account for Growth OS, the `blog_publisher` preset on the site (CMS → Members), and
+`self_approval_allowed` on in the site's settings (a platform admin), since approval already
+happened in Growth OS. "Sync now" on the connection card checks the sign-in and the access.
+The publisher is one module, `packages/integrations/src/site-publisher.ts`, on the client in
+`bodhlok-cms.ts` (`markdownToRichText` turns the agents' Markdown into the CMS's format).
 
 ## The page feed (for BODH's web team)
 

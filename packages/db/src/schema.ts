@@ -277,11 +277,11 @@ export const seoPages = pgTable(
     runId: uuid("run_id"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-    /** Publishing to bodhlok.com: null | queued | pr_open | merged | live | remove_queued | removing | removed | failed */
+    /** Publishing to bodhlok.com's CMS: null | queued | live | remove_queued | removed | failed */
     siteStatus: text("site_status"),
     siteCategory: text("site_category"),
-    sitePrNumber: integer("site_pr_number"),
-    sitePrUrl: text("site_pr_url"),
+    /** The CMS document (cms_documents.id) this page is published as. */
+    siteDocumentId: integer("site_document_id"),
     siteUrl: text("site_url"),
     siteError: text("site_error"),
     sitePublishedAt: timestamp("site_published_at", { withTimezone: true }),

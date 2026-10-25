@@ -39,9 +39,9 @@ export default async function SeoPagePreview({ params }: { params: Promise<{ id:
         <p className={`mb-5 rounded-xl px-5 py-3 text-sm ${page.siteStatus === "failed" ? "bg-sindoor-soft text-sindoor" : "bg-paper text-ink"}`}>
           <span className="font-medium">bodhlok.com:</span>{" "}
           {page.siteStatus === "live" && page.siteUrl ? <>live at <a href={page.siteUrl} className="underline" target="_blank" rel="noreferrer">{page.siteUrl}</a></>
-            : page.siteStatus === "pr_open" ? <>waiting for the <a href={page.sitePrUrl ?? "#"} className="underline" target="_blank" rel="noreferrer">pull request</a> to be merged</>
-            : page.siteStatus === "merged" ? "merged; the site is deploying (about 10 minutes)"
-            : page.siteStatus === "queued" ? "approved; goes into the next pull request (daily at 10:00, or from the SEO page now)"
+            : page.siteStatus === "queued" ? "approved; publishing to the site's CMS now (or from the SEO page with Publish waiting pages)"
+            : page.siteStatus === "remove_queued" ? "sent back with changes; being taken down from the site"
+            : page.siteStatus === "removed" ? `taken down${page.siteError ? ` (${page.siteError})` : ""}`
             : page.siteStatus === "failed" ? `publishing failed: ${page.siteError ?? "unknown error"}`
             : page.siteStatus}
         </p>

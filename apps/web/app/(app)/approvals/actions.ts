@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { approvals, calendarItems, db, seoPages } from "@bodh/db";
 import { applyChange, rejectChange } from "@bodh/integrations/ads";
 import { APPROVAL_KINDS, canApprove, type ApprovalKind } from "@bodh/shared";
+import { runSeoJob } from "@/lib/agents";
 import { getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { checkItem } from "@/lib/posts";
@@ -107,9 +109,14 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
       .set(
         decision === "approve"
           ? { status: "live", body, reviewNote: null, publishedAt: page.publishedAt ?? new Date(), siteStatus: "queued", siteError: null, updatedAt: new Date() }
-          : { status: "drafted", reviewNote: note, siteStatus: ["live", "merged", "pr_open"].includes(page.siteStatus ?? "") ? "remove_queued" : page.siteStatus, updatedAt: new Date() },
+          : { status: "drafted", reviewNote: note, siteStatus: ["live", "queued", "failed"].includes(page.siteStatus ?? "") ? "remove_queued" : page.siteStatus, updatedAt: new Date() },
       )
       .where(eq(seoPages.id, page.id));
+    // The site publisher runs after the reply is sent: publish the approved page, or take a withdrawn one down.
+    after(async () => {
+      const r = await runSeoJob("site-publish");
+      if (r.error) console.error("site publish after approval failed:", r.error);
+    });
     revalidatePath("/seo");
   }
 

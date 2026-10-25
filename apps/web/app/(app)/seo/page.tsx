@@ -50,12 +50,12 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
     db.select().from(geoQuestions).orderBy(desc(geoQuestions.active), asc(geoQuestions.createdAt)),
     latestAudit(),
     db.select().from(seoAudits).where(eq(seoAudits.status, "running")).limit(1),
-    db.select().from(connections).where(sql`${connections.key} in ('dataforseo','search_console','openai','perplexity','vertex','anthropic','github_site')`),
+    db.select().from(connections).where(sql`${connections.key} in ('dataforseo','search_console','openai','perplexity','vertex','anthropic','bodhlok_cms')`),
   ]);
   const connected = (k: string) => conns.find((c) => c.key === k)?.status === "connected";
   const siteRows = await db.select({ s: seoPages.siteStatus, n: sql<number>`count(*)::int` }).from(seoPages).where(sql`${seoPages.siteStatus} is not null`).groupBy(seoPages.siteStatus);
   const site = (k: string) => siteRows.find((r) => r.s === k)?.n ?? 0;
-  const [githubSite] = conns.filter((c) => c.key === "github_site");
+  const [cmsConn] = conns.filter((c) => c.key === "bodhlok_cms");
 
   const total = counts.reduce((s, c) => s + c.n, 0);
   const n = (status: string, template?: string) => counts.filter((c) => c.status === status && (!template || c.template === template)).reduce((s, c) => s + c.n, 0);
@@ -197,20 +197,20 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
       <Card className="mb-6">
         <CardHeader
           title="Publishing to bodhlok.com"
-          sub={githubSite?.status === "connected" ? "Approved pages go to the site's repo as a pull request each day at 10:00; merging deploys the site." : "Connect GitHub (site repo) in Connections to publish approved pages as blog posts."}
+          sub={cmsConn?.status === "connected" ? `Approved pages go to the site's blog through its CMS as soon as they are approved (signed in as ${cmsConn.accountLabel ?? "the CMS account"}); a sweep every 30 minutes retries anything that failed.` : "Connect bodhlok.com CMS in Connections to publish approved pages as blog posts."}
           aside={
             <div className="flex gap-2">
-              <JobButton action={seoJobAction} job="site-publish" label="Open pull request now" pendingLabel="Opening…" />
+              <JobButton action={seoJobAction} job="site-publish" label="Publish waiting pages" pendingLabel="Publishing…" />
               <JobButton action={seoJobAction} job="site-sync" label="Check status" pendingLabel="Checking…" variant="ghost" />
             </div>
           }
         />
         <div className="grid grid-cols-2 gap-4 px-5 py-4 text-sm sm:grid-cols-5">
           {[
-            { k: "queued", label: "Waiting for a pull request" },
-            { k: "pr_open", label: "Pull request open" },
-            { k: "merged", label: "Merged, deploying" },
+            { k: "queued", label: "Waiting to publish" },
             { k: "live", label: "Live on bodhlok.com" },
+            { k: "remove_queued", label: "To be taken down" },
+            { k: "removed", label: "Taken down" },
             { k: "failed", label: "Failed" },
           ].map((x) => (
             <div key={x.k}>
@@ -219,7 +219,7 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
             </div>
           ))}
         </div>
-        {githubSite?.error && <p className="border-t border-rule px-5 py-3 text-xs text-sindoor">{githubSite.error}</p>}
+        {cmsConn?.error && <p className="border-t border-rule px-5 py-3 text-xs text-sindoor">{cmsConn.error}</p>}
       </Card>
 
       <Card className="mb-6">
