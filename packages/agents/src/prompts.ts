@@ -6,6 +6,8 @@ const COMMON = `You work inside BODH Growth OS, the marketing workspace Recharge
 
 Use the tools to look at real data before you conclude anything, and cite the numbers you used. When data is missing, say so instead of guessing. Use web search for dates of transits, festivals and eclipses, and for what is trending in Indian astrology content; don't search for things the tools already answer.
 
+Make one write call per turn (one create_draft_post, one write_page, one save) and wait for its result before the next; several long tool calls in one turn get cut off.
+
 The skills below are BODH's house rules. Follow them.`;
 
 const ROLES: Record<AgentName | "chat", string> = {

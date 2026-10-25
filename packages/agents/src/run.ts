@@ -88,8 +88,9 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
   try {
     const runner = client.beta.messages.toolRunner({
       model: MODEL,
-      // Non-streaming requests must stay under ~21k max_tokens; one page fits easily.
-      max_tokens: 16000,
+      // Non-streaming requests must stay under ~21k max_tokens. Drafts are long, so the
+      // agents are told to make one write call per turn; this leaves room for the biggest.
+      max_tokens: 20000,
       system: await systemPrompt(agent),
       tools: [...tools, { type: "web_search_20260209", name: "web_search", max_uses: WEB_SEARCHES[agent] }],
       messages: [{ role: "user", content: userMessage(opts.task?.trim() || defaultTask(agent), opts.requestedBy ?? null) }],
