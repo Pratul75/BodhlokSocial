@@ -1,7 +1,7 @@
 # Extra skills for the agents, installed on the server (not committed: third-party text).
 # Agents see each skill's name and description and read the full text on demand.
 # Format: <source> <path inside it>   (source "local" = ~/.claude/skills)
-# Only *.md files are copied; scripts and other files are left out.
+# Only *.md and *.json (data) files are copied; scripts and other files are left out.
 local humanizer
 local brand
 local linkedin-hook-generator
@@ -55,3 +55,17 @@ charlie947/social-media-skills skills/post-writer
 charlie947/social-media-skills skills/post-scorer
 charlie947/social-media-skills skills/content-matrix
 charlie947/social-media-skills skills/youtube-thumbnail
+# Instagram (MIT): writing skills only. Left out: ig-viral (browses Instagram), ig-comment,
+# ig-dm, ig-reply (engaging as the account), ig-human (humanizer covers it), ig-profile.
+# Their Python scorers are not copied; the agents use the formulas in hooks.json by hand.
+Jakeschincariol/instagram-agent-skill skills/ig-reel
+Jakeschincariol/instagram-agent-skill skills/ig-caption
+Jakeschincariol/instagram-agent-skill skills/ig-carousel
+Jakeschincariol/instagram-agent-skill skills/ig-story
+Jakeschincariol/instagram-agent-skill skills/ig-plan
+Jakeschincariol/instagram-agent-skill skills/ig-repurpose
+Jakeschincariol/instagram-agent-skill skills/ig-audit
+# Paid media (MIT): the conductor and its platform references (Meta, Google, YouTube, LinkedIn
+# audits, bidding, budgets, tracking). Read-only guidance; changes still go through Growth OS's
+# guarded pipeline and approvals.
+AgriciDaniel/claude-ads ads

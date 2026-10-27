@@ -164,8 +164,8 @@ export function readTools(_ctx: ToolContext) {
 
   const readSkillTool = betaZodTool({
     name: "read_skill",
-    description: "Read one of the available skills in full (listed in the system prompt), or one of its other markdown files. Read a skill before a task it covers.",
-    inputSchema: z.object({ name: z.string().min(1).max(80), file: z.string().max(200).optional().describe("A file inside the skill, e.g. references/checklist.md") }),
+    description: "Read one of the available skills in full (listed in the system prompt), or one of its other files (markdown, or JSON data such as hook formulas). Read a skill before a task it covers.",
+    inputSchema: z.object({ name: z.string().min(1).max(80), file: z.string().max(200).optional().describe("A file inside the skill, e.g. references/checklist.md or hooks.json") }),
     run: async ({ name, file }) => readSkill(name, file),
   });
 

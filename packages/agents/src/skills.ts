@@ -79,8 +79,10 @@ ${list}
 }
 
 const MAX_SKILL_CHARS = 40_000;
+/** Text a skill ships with: its markdown and its JSON data (e.g. hook formulas). Never scripts. */
+const DATA_FILE = /\.(md|json)$/;
 
-/** A skill's SKILL.md, or one of its other markdown files. */
+/** A skill's SKILL.md, or one of its other markdown or JSON data files. */
 export async function readSkill(name: string, file?: string): Promise<string> {
   const bundled = bundledSkills().find((s) => s.name === name);
   if (bundled) return file ? "Bundled skills have no other files." : bundled.body;
@@ -94,7 +96,7 @@ export async function readSkill(name: string, file?: string): Promise<string> {
   if (!s.dir) return "This skill has no other files.";
   const rel = normalize(file).replace(/^(\.\.(\/|\\|$))+/, "");
   const path = join(s.dir, rel);
-  if (!path.startsWith(s.dir + sep) || !rel.endsWith(".md")) return "Only markdown files inside the skill can be read.";
+  if (!path.startsWith(s.dir + sep) || !DATA_FILE.test(rel)) return "Only markdown and JSON files inside the skill can be read.";
   return ((await readFile(path, "utf8").catch(() => null)) ?? `No file ${rel} in ${name}.`).slice(0, MAX_SKILL_CHARS);
 }
 
@@ -103,7 +105,7 @@ async function listMarkdown(dir: string, prefix = ""): Promise<string[]> {
   for (const e of await readdir(join(dir, prefix), { withFileTypes: true }).catch(() => [])) {
     const rel = prefix ? `${prefix}/${e.name}` : e.name;
     if (e.isDirectory()) out.push(...(await listMarkdown(dir, rel)));
-    else if (e.name.endsWith(".md")) out.push(rel);
+    else if (DATA_FILE.test(e.name)) out.push(rel);
   }
   return out.slice(0, 60);
 }

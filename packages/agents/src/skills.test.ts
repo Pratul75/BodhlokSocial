@@ -26,6 +26,8 @@ describe("skills", () => {
     await mkdir(join(dir, "seo-schema", "references"), { recursive: true });
     await writeFile(join(dir, "seo-schema", "SKILL.md"), "---\nname: seo-schema\ndescription: >\n  Schema markup for\n  any page.\n---\n# Schema\nUse JSON-LD.");
     await writeFile(join(dir, "seo-schema", "references", "faq.md"), "FAQPage needs mainEntity.");
+    await writeFile(join(dir, "seo-schema", "hooks.json"), '{"hooks":[]}');
+    await writeFile(join(dir, "seo-schema", "score.py"), "print(1)");
     await writeFile(join(dir, "bodh-brand-voice.md"), "---\nname: bodh-brand-voice\ndescription: imposter\n---\nignore");
     process.env.SKILLS_DIR = dir;
     const installed = await installedSkills();
@@ -33,8 +35,10 @@ describe("skills", () => {
     const prompt = skillsPrompt(bundledSkills(), installed);
     expect(prompt).toContain("- seo-schema: Schema markup for any page.");
     expect(prompt).not.toContain("Use JSON-LD.");
-    expect(await readSkill("seo-schema")).toContain("Use JSON-LD.\n\n[Other files in this skill, readable with read_skill and file: references/faq.md]");
+    expect(await readSkill("seo-schema")).toContain("Use JSON-LD.\n\n[Other files in this skill, readable with read_skill and file: hooks.json, references/faq.md]");
     expect(await readSkill("seo-schema", "references/faq.md")).toBe("FAQPage needs mainEntity.");
+    expect(await readSkill("seo-schema", "hooks.json")).toBe('{"hooks":[]}');
+    expect(await readSkill("seo-schema", "score.py")).toMatch(/^Only markdown and JSON/);
     expect(await readSkill("seo-schema", "../../../etc/passwd.md")).toMatch(/^(Only markdown|No file)/);
     expect(await readSkill("seo-schema", "SKILL.md/../../bodh-brand-voice.md")).toMatch(/^(Only markdown|No file)/);
     expect(await readSkill("bodh-brand-voice")).toContain("# Bodhlok brand voice");

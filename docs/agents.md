@@ -25,9 +25,9 @@ pnpm --filter @bodh/agents skills
 
 to refresh `src/skills.generated.ts` (a test fails if you forget).
 
-The other skills from the build plan (section 7) are installed on the server, not committed: `scripts/skills.txt` lists them (the local humanizer, brand and LinkedIn skills, and the SEO, blog, GEO, marketing and social-media skills from GitHub). `scripts/sync-skills.sh` copies only their markdown into `.skills/`, and `deploy-vm.sh` uploads that to `SKILLS_DIR` on the VM. Agents see each one's name and description and read the full text with the `read_skill` tool when a task calls for it, so they don't inflate every request. Review what changed after a sync: these files become part of the agents' instructions.
+The other skills from the build plan (section 7) are installed on the server, not committed: `scripts/skills.txt` lists them (the local humanizer, brand and LinkedIn skills, the SEO, blog, GEO, marketing and social-media skills from GitHub, seven Instagram writing skills from `Jakeschincariol/instagram-agent-skill` and the paid-media conductor `ads` from `AgriciDaniel/claude-ads`). `scripts/sync-skills.sh` copies only their markdown and JSON data (such as the 26 Reel hook formulas in `ig-reel/hooks.json`) into `.skills/`, never scripts or eval files,, and `deploy-vm.sh` uploads that to `SKILLS_DIR` on the VM. Agents see each one's name and description and read the full text with the `read_skill` tool when a task calls for it, so they don't inflate every request. Review what changed after a sync: these files become part of the agents' instructions.
 
-Left out on purpose: last30days and scrapling (they run local scripts and browsers the server agents don't have; web search and DataForSEO Trends cover the research), and hallmark, banner-design, slides and diagram-design (visual tools for the Creative studio, not text agents).
+Left out on purpose: the Instagram pack's ig-viral (it browses Instagram), ig-comment, ig-dm and ig-reply (engaging as the account; Phase 8), ig-human and ig-profile; last30days and scrapling (they run local scripts and browsers the server agents don't have; web search and DataForSEO Trends cover the research), and hallmark, banner-design, slides and diagram-design (visual tools for the Creative studio, not text agents).
 
 ## Key, costs and limits
 
