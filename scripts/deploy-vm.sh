@@ -4,6 +4,8 @@
 #
 #   scripts/deploy-vm.sh            # deploy
 #   SEED=1 scripts/deploy-vm.sh     # first deploy: also load sample data
+#   IAP=1 scripts/deploy-vm.sh      # go through Google's IAP tunnel (HTTPS) when a network
+#                                   # throttles or resets uploads over SSH (port 22)
 #
 # Defaults target the rapido-demo VM; override with PROJECT, ZONE, VM, HOST.
 set -euo pipefail
@@ -13,6 +15,9 @@ ZONE="${ZONE:-asia-south1-c}"
 VM="${VM:-rapido-demo}"
 HOST="${HOST:-growth.rechargestudio.com}"
 SEED="${SEED:-0}"
+# Every gcloud compute ssh/scp below takes these (the tunnel, when IAP=1).
+VIA=(--zone "$ZONE" --project "$PROJECT" --quiet)
+[ "${IAP:-0}" = 1 ] && VIA+=(--tunnel-through-iap)
 
 cd "$(dirname "$0")/.."
 SHA="$(git rev-parse --short HEAD)"
@@ -44,17 +49,17 @@ echo "== uploading to $VM"
 # parts, each retried on its own, and the VM checks the reassembled checksum.
 # -O: the classic scp protocol. The SFTP mode (macOS scp's default) gets its session closed the
 # moment it starts on some networks, while plain ssh and classic scp go through.
-retry gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release/parts"
+retry gcloud compute ssh "$VM" "${VIA[@]}" --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release/parts"
 (cd "$OUT" && split -b 4m release.tgz release.tgz.part- && shasum -a 256 release.tgz > release.tgz.sha256)
 parts=("$OUT"/release.tgz.part-*)
 n=0
 for part in "${parts[@]}" "$OUT/release.tgz.sha256" "$OUT/vm.tgz"; do
   n=$((n + 1)); echo "   part $n of $(( ${#parts[@]} + 2 ))"
-  retry gcloud compute scp "$part" "$VM:/tmp/bodh-release/parts/" --zone "$ZONE" --project "$PROJECT" --quiet --scp-flag=-O
+  retry gcloud compute scp "$part" "$VM:/tmp/bodh-release/parts/" "${VIA[@]}" --scp-flag=-O
 done
-retry gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command \
+retry gcloud compute ssh "$VM" "${VIA[@]}" --command \
   "cd /tmp/bodh-release && cat parts/release.tgz.part-* > release.tgz && mv parts/vm.tgz parts/release.tgz.sha256 . && sha256sum -c release.tgz.sha256 && rm -rf parts"
 
 echo "== installing"
-gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command \
+gcloud compute ssh "$VM" "${VIA[@]}" --command \
   "cd /tmp/bodh-release && tar -xzf vm.tgz && sudo bash install.sh '$SHA' '$HOST' '$SEED'"
