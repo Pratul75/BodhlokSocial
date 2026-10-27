@@ -41,13 +41,20 @@ Categories: comparison pages → "Choosing software"; module guides → the site
 astrology, Jaimini, Ashtakavarga, Dasha periods, Muhurta, Consult) or "Chart methods"; study
 guides → "Study guides". Missing categories and the "Bodhlok" author are created on first use.
 
-Connection: **bodhlok.com CMS** in Connections, the account's e-mail and password (the password is
-kept in Secret Manager like every other key). The sign-in is `POST /api/cms/token`, added to the
-site for automation because the ordinary login needs a browser reCAPTCHA; it is rate limited and
-answers only for accounts that hold CMS access on the site. Setup on the Bodhlok side, once:
-a Bodhlok account for Growth OS, the `blog_publisher` preset on the site (CMS → Members), and
-`self_approval_allowed` on in the site's settings (a platform admin), since approval already
-happened in Growth OS. "Sync now" on the connection card checks the sign-in and the access.
+Connection: **bodhlok.com CMS** in Connections, a **sign-in key**. Every Bodhlok sign-in,
+including the CMS's own `POST /api/cms/token` since the Bodhlok team's 27 Oct change, needs a
+browser reCAPTCHA, so a person verifies and Growth OS keeps the session: log in at bodhlok.com
+as the Growth OS account in a private window, run `copy(localStorage.refresh_token)` in the
+browser console there, paste it into the card, and close the window without logging out
+(logging out only clears the browser; nothing is revoked). Growth OS trades the key at
+`/api/auth/refresh` (no reCAPTCHA) for a 30-minute access token and a fresh 7-day key, stores
+the fresh key, and does so every hour (`site-sync`), so it never runs out. If it does (the
+server was off for a week, or the account's password changed), the card shows "The bodhlok.com
+sign-in has run out" and the steps above verify again. The key is kept with the other
+integration keys. Setup on the Bodhlok side, once: a Bodhlok account for Growth OS, the
+`blog_publisher` preset on the site (CMS → Members), and `self_approval_allowed` on in the site's
+settings (a platform admin), since approval already happened in Growth OS. "Sync now" on the
+connection card checks the sign-in and the access.
 The publisher is one module, `packages/integrations/src/site-publisher.ts`, on the client in
 `bodhlok-cms.ts` (`markdownToRichText` turns the agents' Markdown into the CMS's format).
 

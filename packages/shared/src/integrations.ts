@@ -81,8 +81,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     method: "api_key",
     group: "Search",
     fields: [
-      { name: "email", label: "Bodhlok account e-mail (a CMS member with blog publishing)", placeholder: "growth@bodhlok.com" },
-      { name: "password", label: "That account's password", secret: true },
+      { name: "refresh_token", label: "Sign-in key from bodhlok.com (see the steps on this card)", secret: true },
       { name: "site_url", label: "Site address", optional: true, placeholder: "https://bodhlok.com" },
     ],
   },

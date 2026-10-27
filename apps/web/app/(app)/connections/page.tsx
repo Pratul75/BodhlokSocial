@@ -13,6 +13,12 @@ export const metadata = { title: "Connections" };
 /** Pasted-key connections that "Sync now" can check or pull (see lib/integrations/google-connection.ts). */
 const SYNCABLE = new Set(["bodhlok_cms", "crm_billing", "crm_leads"]);
 
+const NOTES: Record<string, string> = {
+  postiz_app: `Redirect URL for the Postiz app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/postiz/callback`,
+  bodhlok_cms:
+    "To verify: in a private browser window, log in at bodhlok.com as the Growth OS account (you pass reCAPTCHA there). Then open the browser console on bodhlok.com (Cmd+Option+J in Chrome), type copy(localStorage.refresh_token) and press Enter: the sign-in key is now on your clipboard. Paste it here and close the window without logging out. Growth OS renews the key every hour; if it ever lapses, this card asks you to do this again.",
+};
+
 const MESSAGES: Record<string, string> = {
   admin_only: "Only admins can connect accounts.",
   no_oauth_client: "Google sign-in isn't configured, so Google accounts can't be connected yet.",
@@ -50,7 +56,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       hasCredential: Boolean(r?.secretRef),
       oauthClientReady: authEnabled(),
       postizSignIn: i.key === "postiz" && byKey.get("postiz_app")?.status === "connected",
-      note: i.key === "postiz_app" ? `Redirect URL for the Postiz app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/postiz/callback` : undefined,
+      note: NOTES[i.key],
     };
   });
   const groups = [...new Set(INTEGRATIONS.map((i) => i.group))];

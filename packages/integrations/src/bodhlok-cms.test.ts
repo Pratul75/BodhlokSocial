@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { allows, BodhlokCms, CmsError, markdownToRichText, plain, slugifyId } from "./bodhlok-cms";
+import { allows, BodhlokCms, CmsError, markdownToRichText, plain, SIGN_IN_AGAIN, slugifyId, tokenExpiry } from "./bodhlok-cms";
 
 type Node = { type: string; attrs?: Record<string, unknown>; content?: Node[]; text?: string; marks?: { type: string; attrs?: Record<string, unknown> }[] };
 
@@ -84,6 +84,47 @@ function fakeFetch(handlers: Record<string, (init: RequestInit, n: number) => Re
 }
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+const jwt = (exp: number) => `x.${Buffer.from(JSON.stringify({ sub: "growth@bodhlok.com", exp, type: "refresh" })).toString("base64url")}.sig`;
+
+describe("signing in with a bodhlok.com sign-in key", () => {
+  it("trades the key at /api/auth/refresh, uses the access token, and hands back the rotated key", async () => {
+    const rotated: string[] = [];
+    const { fetchImpl, calls } = fakeFetch({
+      "/api/auth/refresh": (init) => {
+        expect(JSON.parse(String(init.body))).toEqual({ refresh_token: "rt_1" });
+        return json({ access_token: "at_1", refresh_token: "rt_2", token_type: "bearer" });
+      },
+      "/api/cms/me": (init) => {
+        expect((init.headers as Record<string, string>).authorization).toBe("Bearer at_1");
+        return json({ user: { id: 1, email: "growth@bodhlok.com" }, site: { key: "bodhlok", name: "Bodhlok" }, features: { blog: "publish" }, is_platform_admin: false });
+      },
+    });
+    const cms = new BodhlokCms({ refresh_token: " rt_1 " }, fetchImpl, async (rt) => void rotated.push(rt));
+    await cms.me();
+    expect(calls.map((c) => c.url)).toEqual(["https://bodhlok.com/api/auth/refresh", "https://bodhlok.com/api/cms/me"]);
+    expect(rotated).toEqual(["rt_2"]);
+  });
+
+  it("asks for a new key when the old one has run out", async () => {
+    const { fetchImpl } = fakeFetch({ "/api/auth/refresh": () => json({ detail: "Refresh token is invalid or has expired" }, 401) });
+    const cms = new BodhlokCms({ refresh_token: "old" }, fetchImpl);
+    const err = await cms.me().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CmsError);
+    expect((err as CmsError).message).toBe(SIGN_IN_AGAIN);
+  });
+
+  it("asks to verify when neither a key nor a password is saved", async () => {
+    const { fetchImpl, calls } = fakeFetch({});
+    await expect(new BodhlokCms({}, fetchImpl).me()).rejects.toThrow(SIGN_IN_AGAIN);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("reads a key's expiry", () => {
+    expect(tokenExpiry(jwt(1_800_000_000))?.toISOString()).toBe("2027-01-15T08:00:00.000Z");
+    expect(tokenExpiry("not-a-jwt")).toBeNull();
+  });
+});
 
 describe("BodhlokCms", () => {
   it("signs in with a form post, sends the bearer token, and signs in again after a 401", async () => {

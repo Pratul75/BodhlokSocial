@@ -6,20 +6,31 @@
  * once. A page sent back with changes is unpublished the same way.
  *
  * The connection is `bodhlok_cms`: a Bodhlok account that is a CMS member with blog publishing
- * (preset "blog_publisher"). The site must allow that account to approve its own drafts
- * (site setting `self_approval_allowed`); approval already happened here.
+ * (preset "blog_publisher"), signed in by a person at bodhlok.com (reCAPTCHA) and handed over
+ * as the browser's sign-in key. Each use stores the fresh key the site hands back, and the hourly
+ * sync uses it even when nothing is waiting, so it never reaches its 7 days. The site must allow
+ * that account to approve its own drafts (site setting `self_approval_allowed`); approval
+ * already happened here.
  */
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { auditLog, connections, db, seoPages, type FaqItem } from "@bodh/db";
-import { allows, BodhlokCms, CmsError, markdownToRichText, type CmsCredentials, type CmsTaxonomy, type PostFields } from "./bodhlok-cms";
-import { readJsonSecret } from "./secrets";
+import { allows, BodhlokCms, CmsError, markdownToRichText, tokenExpiry, type CmsCredentials, type CmsTaxonomy, type PostFields } from "./bodhlok-cms";
+import { readJsonSecret, secretName, secretStore } from "./secrets";
 
 export const SITE = process.env.SEO_SITE_URL?.replace(/\/$/, "") ?? "https://bodhlok.com";
 export const AUTHOR_NAME = "Bodhlok";
 
 export async function siteCredentials(): Promise<CmsCredentials | null> {
   const c = await readJsonSecret<CmsCredentials>("bodhlok_cms");
-  return c?.email && c.password ? c : null;
+  return c?.refresh_token || (c?.email && c.password) ? c : null;
+}
+
+/** A CMS client that stores each fresh sign-in key in place of the old one. */
+export function cmsClient(creds: CmsCredentials): BodhlokCms {
+  return new BodhlokCms(creds, fetch, async (refresh_token) => {
+    const current = (await readJsonSecret<CmsCredentials>("bodhlok_cms")) ?? creds;
+    await (await secretStore()).put(secretName("bodhlok_cms"), JSON.stringify({ ...current, refresh_token }));
+  });
 }
 
 /* ---------- categories and images: the site's own vocabulary ---------- */
@@ -152,12 +163,14 @@ const SELF_APPROVAL_HINT = " The site requires a second person to approve: a Bod
 
 /** Signs in and checks that the account can publish posts. Used by the jobs and the Connections page. */
 export async function openCms(creds: CmsCredentials): Promise<{ cms: BodhlokCms; label: string }> {
-  const cms = new BodhlokCms(creds);
+  const cms = cmsClient(creds);
   const me = await cms.me();
   if (!allows(me.features, "blog:publish") && !me.is_platform_admin) {
     throw new CmsError(`${me.user.email} can sign in but has no blog publishing on ${me.site.name} (CMS access: ${Object.entries(me.features).map(([k, v]) => `${k}:${v}`).join(", ") || "none"}). Ask a CMS admin for the "blog_publisher" preset.`, 403);
   }
-  return { cms, label: `${me.user.email} · ${me.site.name}${me.is_platform_admin ? " (platform admin)" : ""}` };
+  const until = creds.refresh_token ? tokenExpiry(creds.refresh_token) : null;
+  const keyNote = until ? `, sign-in key good until ${until.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })} and renewed hourly` : "";
+  return { cms, label: `${me.user.email} · ${me.site.name}${me.is_platform_admin ? " (platform admin)" : ""}${keyNote}` };
 }
 
 export async function checkCmsConnection(): Promise<string> {
@@ -260,7 +273,7 @@ export async function removeQueued(): Promise<string> {
   if (!creds) return "";
   const pages = await db.select().from(seoPages).where(eq(seoPages.siteStatus, "remove_queued")).limit(20);
   if (!pages.length) return "";
-  const cms = new BodhlokCms(creds);
+  const cms = cmsClient(creds);
   const notes: string[] = [];
   for (const p of pages) {
     try {
@@ -278,12 +291,14 @@ export async function removeQueued(): Promise<string> {
   return notes.join("; ");
 }
 
-/** Compares what Growth OS thinks is live with the CMS (a post unpublished in the CMS panel shows up here). */
+/**
+ * Hourly. Signs in first, even with nothing published, which renews the sign-in key so it never
+ * reaches its 7 days; then compares what Growth OS thinks is live with the CMS (a post
+ * unpublished in the CMS panel shows up here).
+ */
 export async function syncSite(): Promise<string> {
   const creds = await siteCredentials();
   if (!creds) return "bodhlok.com CMS isn't connected.";
-  const pages = await db.select().from(seoPages).where(inArray(seoPages.siteStatus, ["live", "removed"]));
-  if (!pages.length) return "Nothing published yet.";
   let cms: BodhlokCms;
   try {
     const opened = await openCms(creds);
@@ -294,6 +309,8 @@ export async function syncSite(): Promise<string> {
     await markConnection(msg);
     throw new Error(msg);
   }
+  const pages = await db.select().from(seoPages).where(inArray(seoPages.siteStatus, ["live", "removed"]));
+  if (!pages.length) return "Signed in; nothing published yet.";
   const notes: string[] = [];
   let checked = 0;
   for (const p of pages) {

@@ -4,17 +4,37 @@
  * create (or save a new draft), then publish. The CMS renders the page in the site's template,
  * runs its own SEO checks and serves it at /blog/<slug>.
  *
- * Sign-in is `POST /api/cms/token`, the automation sign-in (the ordinary login needs a browser
- * reCAPTCHA). Access tokens last 30 minutes; the client signs in again when one expires.
+ * Signing in: every Bodhlok sign-in passes reCAPTCHA, which only a person in a browser can do.
+ * So a person logs in at bodhlok.com as the Growth OS account and pastes that browser's sign-in
+ * key (the 7-day refresh token) into Connections. The client trades it at `/api/auth/refresh`
+ * (no reCAPTCHA) for a 30-minute access token and a fresh 7-day key, and hands the fresh key to
+ * `onRotate` to store; used at least weekly, it never runs out. When it has run out, the error
+ * asks for a new one. (`POST /api/cms/token` with email and password is kept for a site that
+ * lets servers sign in without reCAPTCHA.)
  * The rich-text format is the CMS's constrained ProseMirror JSON (backend/app/cms/richtext.py):
  * `markdownToRichText` turns the agents' Markdown into it.
  */
 import { marked, type Token, type Tokens } from "marked";
 
 export interface CmsCredentials {
-  email: string;
-  password: string;
+  /** The sign-in key from a bodhlok.com browser session (localStorage "refresh_token"). */
+  refresh_token?: string;
+  email?: string;
+  password?: string;
   site_url?: string;
+}
+
+export const SIGN_IN_AGAIN =
+  "The bodhlok.com sign-in has run out. Log in at bodhlok.com as the Growth OS account, then paste the new sign-in key into bodhlok.com CMS in Connections.";
+
+/** When a JWT expires (its exp claim), without checking the signature; null if unreadable. */
+export function tokenExpiry(jwt: string): Date | null {
+  try {
+    const payload = JSON.parse(Buffer.from(jwt.split(".")[1] ?? "", "base64url").toString("utf8")) as { exp?: number };
+    return typeof payload.exp === "number" ? new Date(payload.exp * 1000) : null;
+  } catch {
+    return null;
+  }
 }
 
 export class CmsError extends Error {
@@ -108,6 +128,8 @@ export class BodhlokCms {
   constructor(
     private readonly creds: CmsCredentials,
     private readonly fetchImpl: typeof fetch = fetch,
+    /** Called with each fresh sign-in key, so the caller can store it in place of the old one. */
+    private readonly onRotate?: (refreshToken: string) => Promise<void>,
   ) {}
 
   /** The site's origin, no trailing slash. */
@@ -116,6 +138,8 @@ export class BodhlokCms {
   }
 
   async signIn(): Promise<void> {
+    if (this.creds.refresh_token) return this.refresh();
+    if (!this.creds.email || !this.creds.password) throw new CmsError(SIGN_IN_AGAIN, 401);
     const body = new URLSearchParams({ username: this.creds.email.trim().toLowerCase(), password: this.creds.password });
     const res = await this.fetchImpl(`${this.site}/api/cms/token`, {
       method: "POST",
@@ -131,6 +155,29 @@ export class BodhlokCms {
     if (!json.access_token) throw new CmsError("The CMS sign-in returned no token.", 502);
     this.token = json.access_token;
     this.tokenAt = Date.now();
+  }
+
+  /** Trades the stored sign-in key for an access token and a fresh key (the site rotates it). */
+  private async refresh(): Promise<void> {
+    const res = await this.fetchImpl(`${this.site}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refresh_token: this.creds.refresh_token!.trim() }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (res.status === 401) throw new CmsError(SIGN_IN_AGAIN, 401);
+    if (!res.ok) {
+      const { message } = await readError(res);
+      throw new CmsError(`bodhlok.com refused the sign-in key: ${message}`, res.status);
+    }
+    const json = (await res.json()) as { access_token?: string; refresh_token?: string };
+    if (!json.access_token) throw new CmsError("bodhlok.com returned no access token.", 502);
+    this.token = json.access_token;
+    this.tokenAt = Date.now();
+    if (json.refresh_token && json.refresh_token !== this.creds.refresh_token) {
+      this.creds.refresh_token = json.refresh_token;
+      await this.onRotate?.(json.refresh_token);
+    }
   }
 
   private async request<T>(method: string, path: string, body?: unknown, retry = true): Promise<T> {
