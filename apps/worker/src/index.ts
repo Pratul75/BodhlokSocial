@@ -19,6 +19,7 @@ import { pollVideoJobs } from "@bodh/integrations/creative";
 import { activeRun, anthropicClient, failStaleRuns, isAgentName, queueRun, runAgent, runVisibilityChecks } from "@bodh/agents";
 import { syncAdStructure } from "@bodh/integrations/ads";
 import { publishQueued, removeQueued, syncSite } from "@bodh/integrations/site-publisher";
+import { pullLeads, reconcileBilling } from "@bodh/integrations/crm";
 import { checkDataForSeoConnection, ensurePageCatalog, pollSiteAudits, startSiteAudit, syncKeywords } from "@bodh/integrations/seo";
 
 /** Agents and their schedules, from the build plan. Cloud Scheduler calls POST /jobs/:agent. */
@@ -225,6 +226,34 @@ app.post("/jobs/site/:job", async (c) => {
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
+});
+
+/**
+ * Agentic CRM, nightly at 02:30 IST (the webhooks carry the day):
+ *   sync  re-read every billing account's invoices (catches refunds and missed webhooks),
+ *         pull the last 30 days of leads, then rebuild the funnel's last 35 days
+ */
+app.post("/jobs/crm/sync", async (c) => {
+  const results = [];
+  try {
+    results.push(
+      await runJob("crm_billing", async () => {
+        const r = await reconcileBilling();
+        if (r.failed && !r.payments) throw new Error(r.detail);
+        return { status: r.accounts ? "succeeded" : "skipped", detail: r.detail, rows: r.payments };
+      }),
+    );
+    results.push(
+      await runJob("crm_leads", async () => {
+        const r = await pullLeads();
+        return { status: /isn't connected|no API key/.test(r.detail) ? "skipped" : "succeeded", detail: r.detail, rows: r.added + r.updated };
+      }),
+    );
+    results.push(await runJob("rebuild_funnel", () => rebuild(istDate(new Date(), -35), istDate())));
+  } catch (e) {
+    return c.json({ results, error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+  return c.json({ results });
 });
 
 /** Hourly: campaigns, ad sets and ads from Meta and Google Ads, so guardrails see current budgets. */

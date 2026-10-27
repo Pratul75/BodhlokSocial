@@ -28,7 +28,8 @@
     "./ads-platforms": "./src/ads-platforms.ts",
     "./ads": "./src/ads.ts",
     "./site-publisher": "./src/site-publisher.ts",
-    "./bodhlok-cms": "./src/bodhlok-cms.ts"
+    "./bodhlok-cms": "./src/bodhlok-cms.ts",
+    "./crm": "./src/crm.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

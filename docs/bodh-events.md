@@ -8,7 +8,7 @@ Bodhlok backend, sent server to server as they happen:
 |---|---|---|
 | `registration` | A person finishes creating a free desk (account) | Counts the signup and records where it came from |
 | `activation` | The same person opens their **first** chart in the desk (birth details entered, or a sample chart opened) | The North Star metric: people who work with a chart are the ones who upgrade |
-| `paid` | The person's first successful payment: a paid plan, institute seats or AI consult credits | Conversion |
+| `paid` | The person's first successful payment: a paid plan, institute seats or AI consult credits | Conversion. **Not needed once the CRM billing feed is connected** (`docs/crm.md`): Growth OS then takes payments from the CRM, which runs Bodhlok's billing, and skips a duplicate `paid` |
 
 Send each event once per person. Later charts and renewals are not needed. (A fourth event,
 `return`, for a second session three or more days after the first, is planned; don't send it yet.)

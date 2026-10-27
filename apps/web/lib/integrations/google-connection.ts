@@ -43,6 +43,16 @@ export async function syncIntegration(key: string): Promise<SyncResult> {
     const { checkCmsConnection } = await import("@bodh/integrations/site-publisher");
     return { message: await checkCmsConnection() };
   }
+  if (key === "crm_billing") {
+    const { reconcileBilling } = await import("@bodh/integrations/crm");
+    const r = await reconcileBilling();
+    if (r.failed && !r.payments) throw new Error(r.detail);
+    return { message: `Billing: ${r.detail}` };
+  }
+  if (key === "crm_leads") {
+    const { pullLeads } = await import("@bodh/integrations/crm");
+    return { message: `Leads: ${(await pullLeads()).detail}` };
+  }
   const token = await accessTokenFor(key);
   if (key !== "search_console") {
     await db.update(connections).set({ lastSyncAt: new Date(), error: null }).where(eq(connections.key, key));

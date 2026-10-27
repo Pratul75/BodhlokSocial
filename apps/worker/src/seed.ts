@@ -298,16 +298,16 @@ async function main() {
     { platform: "reddit", url: "https://www.reddit.com/r/vedicastrology/", question: "Free tools for Muhurat?", status: "skipped", foundAt: at(-2, 10, 0) },
   ]);
 
-  const leadNames = ["Priya Sharma", "Rahul Verma", "Anjali Gupta", "Vikram Singh", "Neha Joshi", "Suresh Iyer", "Kavita Rao"];
+  // Leads as the CRM mirror holds them: no names or contact details.
   await db.insert(s.leads).values(
-    leadNames.map((name, i) => ({
-      source: i % 3 === 0 ? "google_lead_form" : "meta_lead_form",
-      name,
-      phone: `+91 98${String(10000000 + i * 7919).slice(0, 8)}`,
-      interest: ["Teacher program", "Guru plan for my institute", "Jyotish plan", "Student discount"][i % 4]!,
-      status: ["new", "new", "contacted", "qualified", "new", "won", "lost"][i]!,
-      assignedTo: i % 2 === 0 ? sales.id : null,
-      createdAt: at(-Math.floor(i / 2), 10 + i, 15),
+    Array.from({ length: 7 }, (_, i) => ({
+      crmLeadId: `sample-lead-${i + 1}`,
+      source: i % 3 === 0 ? "Website" : "Facebook Lead Ads",
+      channel: i % 3 === 0 ? "seo" : "meta_ads",
+      fbAdId: i % 3 === 0 ? null : `sample-ad-${(i % 2) + 1}`,
+      status: ["open", "open", "open", "converted", "open", "converted", "lost"][i]!,
+      crmCreatedAt: at(-Math.floor(i / 2), 10 + i, 15),
+      lastEvent: "lead.created",
     })),
   );
 

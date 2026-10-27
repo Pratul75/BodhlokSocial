@@ -15,6 +15,7 @@ case "$1" in
   ads-sync)         path=/jobs/ads/sync ;;
   site-publish)     path=/jobs/site/publish ;;
   site-sync)        path=/jobs/site/sync ;;
+  crm-sync)         path=/jobs/crm/sync ;;
   # Agent runs start in the background; a 409 (no API key yet, or already running) is not a failure.
   agent-strategy|agent-content|agent-seo|agent-ads)
     curl -sS -m 30 -X POST -H "X-Worker-Token: $TOKEN" "http://127.0.0.1:8787/jobs/${1#agent-}"

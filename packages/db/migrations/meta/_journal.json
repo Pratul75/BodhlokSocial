@@ -64,6 +64,20 @@
       "when": 1792916615683,
       "tag": "0008_drop_site_pr_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793091513982,
+      "tag": "0009_drop_old_leads",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793091535386,
+      "tag": "0010_crm_mirror",
+      "breakpoints": true
     }
   ]
 }

@@ -86,6 +86,32 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
       { name: "site_url", label: "Site address", optional: true, placeholder: "https://bodhlok.com" },
     ],
   },
+  {
+    key: "crm_billing",
+    name: "Agentic CRM: billing",
+    usedFor:
+      "Paid invoices and subscriptions from the CRM's Monetization API (project bodhlok), for revenue per channel and the paid conversion. Webhook URL: https://growth.rechargestudio.com/api/events/crm-billing",
+    method: "api_key",
+    group: "Internal",
+    fields: [
+      { name: "webhook_secret", label: "Webhook signing secret (whsec_…, shown once when the endpoint is created)", secret: true },
+      { name: "api_key", label: "Project API key with entitlements:read, to read invoice amounts", secret: true },
+      { name: "base_url", label: "CRM address", optional: true, placeholder: "https://agentic.rechargestudio.com" },
+    ],
+  },
+  {
+    key: "crm_leads",
+    name: "Agentic CRM: leads",
+    usedFor:
+      "Leads from lead forms, web forms and WhatsApp, counted per channel and ad. Webhook URL: https://growth.rechargestudio.com/api/events/crm-leads",
+    method: "api_key",
+    group: "Internal",
+    fields: [
+      { name: "webhook_secret", label: "Webhook signing secret (shown once when the webhook is created)", secret: true },
+      { name: "api_key", label: "API key with read:leads, for the nightly catch-up", secret: true, optional: true },
+      { name: "base_url", label: "CRM address", optional: true, placeholder: "https://agentic.rechargestudio.com" },
+    ],
+  },
   { key: "search_console", name: "Google Search Console", usedFor: "Search data, keyword positions", method: "oauth", group: "Search", googleOAuth: { scopes: ["https://www.googleapis.com/auth/webmasters.readonly"], enabled: true } },
   {
     key: "dataforseo",

@@ -220,6 +220,10 @@ export const funnelDaily = pgTable(
     registrations: integer("registrations").notNull().default(0),
     activations: integer("activations").notNull().default(0),
     paid: integer("paid").notNull().default(0),
+    /** Enquiries from the CRM (lead forms, web forms, WhatsApp), not product signups. */
+    leads: integer("leads").notNull().default(0),
+    /** Rupees collected that day, net of GST, refunds and chargebacks taken out. */
+    revenue: integer("revenue").notNull().default(0),
   },
   (t) => [index("funnel_day_idx").on(t.day), uniqueIndex("funnel_day_channel_uq").on(t.day, t.channel)],
 );
@@ -341,17 +345,90 @@ export const communityItems = pgTable("community_items", {
   foundAt: timestamp("found_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const leads = pgTable("leads", {
-  id: id(),
-  source: text("source").notNull(), // meta_lead_form | google_lead_form
-  name: text("name").notNull(),
-  phone: text("phone"),
-  email: text("email"),
-  interest: text("interest").notNull(),
-  assignedTo: uuid("assigned_to").references(() => users.id),
-  status: text("status").notNull().default("new"), // new | contacted | qualified | won | lost
-  createdAt: createdAt(),
+/**
+ * Leads mirrored from the Agentic CRM (agentic.rechargestudio.com), which owns them: lead
+ * forms, web forms, WhatsApp. Kept for counting and attribution only, so no names or raw
+ * contact details: email and phone are SHA-256 hashes, and the CRM link opens the lead.
+ * Product signups the CRM mirrors as leads are kept with kind "signup" and not counted as
+ * leads (they are registrations, from the BODH events).
+ */
+export const leads = pgTable(
+  "leads",
+  {
+    id: id(),
+    crmLeadId: text("crm_lead_id").notNull().unique(),
+    kind: text("kind").notNull().default("lead"), // lead | signup
+    source: text("source"), // the CRM's own source label, e.g. "Facebook Lead Ads"
+    channel: text("channel").notNull(), // attributed channel, see packages/integrations/src/attribution.ts
+    status: text("status").notNull(), // open | converted | lost | deleted
+    stageId: text("stage_id"),
+    value: numeric("value", { precision: 12, scale: 2 }),
+    fbCampaignId: text("fb_campaign_id"),
+    fbAdsetId: text("fb_adset_id"),
+    fbAdId: text("fb_ad_id"),
+    fbFormId: text("fb_form_id"),
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"),
+    userRef: text("user_ref"), // the BODH user ID, for signups mirrored from billing
+    emailSha256: text("email_sha256"),
+    phoneSha256: text("phone_sha256"),
+    crmCreatedAt: timestamp("crm_created_at", { withTimezone: true }).notNull(),
+    crmUpdatedAt: timestamp("crm_updated_at", { withTimezone: true }),
+    convertedAt: timestamp("converted_at", { withTimezone: true }),
+    lastEvent: text("last_event"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("leads_created_idx").on(t.crmCreatedAt), index("leads_ad_idx").on(t.fbAdId)],
+);
+
+/** Billing accounts from the CRM's Monetization API: which BODH user each account is. */
+export const billingAccounts = pgTable("billing_accounts", {
+  mpAccountId: text("mp_account_id").primaryKey(),
+  userRef: text("user_ref"), // the BODH user ID (the account's externalRef)
+  subscriptionId: text("subscription_id"),
+  status: text("status"), // the subscription's status, e.g. ACTIVE, TRIALING, PAST_DUE
+  plan: text("plan"),
+  syncedAt: timestamp("synced_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Paid invoices from the CRM's Monetization API. Amounts in paise, as the CRM keeps them. */
+export const payments = pgTable(
+  "payments",
+  {
+    invoiceId: text("invoice_id").primaryKey(),
+    mpAccountId: text("mp_account_id").notNull(),
+    userRef: text("user_ref"),
+    number: text("number"),
+    kind: text("kind").notNull(), // first | repeat (the billing API does not say renewal or add-on)
+    status: text("status").notNull(), // paid | refunded | chargeback
+    totalPaise: integer("total_paise").notNull(),
+    gstPaise: integer("gst_paise").notNull().default(0),
+    currency: text("currency").notNull().default("INR"),
+    plan: text("plan"),
+    paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("payments_paid_idx").on(t.paidAt), index("payments_user_idx").on(t.userRef)],
+);
+
+/** Every webhook delivery from the CRM, with personal fields stripped, for the Tracking page. */
+export const webhookDeliveries = pgTable(
+  "webhook_deliveries",
+  {
+    id: id(),
+    source: text("source").notNull(), // crm_billing | crm_leads
+    deliveryKey: text("delivery_key").notNull(), // the CRM's event ID, or a hash of the body
+    event: text("event").notNull(),
+    status: text("status").notNull(), // processed | ignored | waiting | failed
+    detail: text("detail"),
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("webhook_source_key_uq").on(t.source, t.deliveryKey), index("webhook_received_idx").on(t.receivedAt)],
+);
 
 export const auditLog = pgTable(
   "audit_log",

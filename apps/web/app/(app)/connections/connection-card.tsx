@@ -19,6 +19,8 @@ export interface ConnectionView {
   error: string | null;
   /** Google OAuth flow is switched on for this integration. */
   oauthEnabled: boolean;
+  /** "Sync now" checks or pulls this integration (Google OAuth ones, the CMS, the CRM). */
+  canSync: boolean;
   /** A key or OAuth grant is stored for this integration. */
   hasCredential: boolean;
   /** The app has a Google OAuth client configured. */
@@ -71,7 +73,7 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
         {connected ? (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
-              {c.oauthEnabled && (
+              {c.canSync && (
                 <form action={syncAction}>
                   <input type="hidden" name="key" value={c.key} />
                   <button className={btn.secondary} disabled={syncing}>

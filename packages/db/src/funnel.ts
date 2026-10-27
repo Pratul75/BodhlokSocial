@@ -26,6 +26,9 @@ export async function reconcileAttribution(): Promise<number> {
  *   paid channels    spend and clicks from ad_spend_daily
  *   organic channels clicks = web sessions from web_sessions_daily
  *   every channel    registrations, activations and paid from conversion_events
+ *                    leads from the CRM mirror (enquiries, not product signups)
+ *                    revenue from paid CRM invoices, net of GST, under the channel of
+ *                    the payer's registration ("direct" when there is none)
  * Returns the number of funnel rows written.
  */
 export async function rebuildFunnel(from: string, to: string): Promise<number> {
@@ -49,18 +52,37 @@ export async function rebuildFunnel(from: string, to: string): Promise<number> {
         WHERE (occurred_at AT TIME ZONE ${TZ})::date BETWEEN ${from}::date AND ${to}::date
         GROUP BY 1, 2
       ),
+      lead AS (
+        SELECT (crm_created_at AT TIME ZONE ${TZ})::date AS day, channel, count(*)::int AS leads
+        FROM leads
+        WHERE kind = 'lead' AND status <> 'deleted'
+          AND (crm_created_at AT TIME ZONE ${TZ})::date BETWEEN ${from}::date AND ${to}::date
+        GROUP BY 1, 2
+      ),
+      rev AS (
+        SELECT (p.paid_at AT TIME ZONE ${TZ})::date AS day, coalesce(r.channel, 'direct') AS channel,
+          round(sum(p.total_paise - p.gst_paise) / 100.0)::int AS revenue
+        FROM payments p
+        LEFT JOIN conversion_events r ON r.user_ref = p.user_ref AND r.type = 'registration'
+        WHERE p.status = 'paid' AND (p.paid_at AT TIME ZONE ${TZ})::date BETWEEN ${from}::date AND ${to}::date
+        GROUP BY 1, 2
+      ),
       keys AS (
         SELECT day, channel FROM spend UNION SELECT day, channel FROM sessions UNION SELECT day, channel FROM conv
+        UNION SELECT day, channel FROM lead UNION SELECT day, channel FROM rev
       )
-      INSERT INTO funnel_daily (day, channel, spend, clicks, registrations, activations, paid)
+      INSERT INTO funnel_daily (day, channel, spend, clicks, registrations, activations, paid, leads, revenue)
       SELECT k.day, k.channel,
         coalesce(s.spend, 0),
         coalesce(s.clicks, ws.sessions, 0),
-        coalesce(c.registrations, 0), coalesce(c.activations, 0), coalesce(c.paid, 0)
+        coalesce(c.registrations, 0), coalesce(c.activations, 0), coalesce(c.paid, 0),
+        coalesce(l.leads, 0), coalesce(rv.revenue, 0)
       FROM keys k
       LEFT JOIN spend s ON s.day = k.day AND s.channel = k.channel
       LEFT JOIN sessions ws ON ws.day = k.day AND ws.channel = k.channel
-      LEFT JOIN conv c ON c.day = k.day AND c.channel = k.channel`);
+      LEFT JOIN conv c ON c.day = k.day AND c.channel = k.channel
+      LEFT JOIN lead l ON l.day = k.day AND l.channel = k.channel
+      LEFT JOIN rev rv ON rv.day = k.day AND rv.channel = k.channel`);
     return (res as unknown as { count?: number }).count ?? 0;
   });
 }
@@ -75,9 +97,16 @@ export interface CreativeRow {
   clicks: number;
   registrations: number;
   activations: number;
+  /** CRM leads from this ad (Facebook Lead Ads carry the ad ID; others match on utm_content). */
+  leads: number;
+  /** Rupees from users who registered from this ad, net of GST. */
+  revenue: number;
 }
 
-/** Per-ad results for [from, to]: platform spend joined to registrations whose utm_content is the ad ID. */
+/**
+ * Per-ad results for [from, to]: platform spend joined to registrations whose utm_content is
+ * the ad ID, CRM leads from the ad, and revenue from the users it brought in.
+ */
 export async function creativePerformance(from: string, to: string, limit = 20): Promise<CreativeRow[]> {
   const res = await db.execute(sql`
     WITH s AS (
@@ -93,11 +122,29 @@ export async function creativePerformance(from: string, to: string, limit = 20):
       WHERE channel IN ('google_ads', 'meta_ads') AND utm_content IS NOT NULL
         AND (occurred_at AT TIME ZONE ${TZ})::date BETWEEN ${from}::date AND ${to}::date
       GROUP BY 1, 2
+    ),
+    l AS (
+      SELECT channel AS platform, coalesce(fb_ad_id, utm_content) AS ad_id, count(*)::int AS leads
+      FROM leads
+      WHERE kind = 'lead' AND status <> 'deleted' AND coalesce(fb_ad_id, utm_content) IS NOT NULL
+        AND (crm_created_at AT TIME ZONE ${TZ})::date BETWEEN ${from}::date AND ${to}::date
+      GROUP BY 1, 2
+    ),
+    rv AS (
+      SELECT r.channel AS platform, r.utm_content AS ad_id, round(sum(p.total_paise - p.gst_paise) / 100.0)::float AS revenue
+      FROM payments p JOIN conversion_events r ON r.user_ref = p.user_ref AND r.type = 'registration'
+      WHERE p.status = 'paid' AND r.channel IN ('google_ads', 'meta_ads') AND r.utm_content IS NOT NULL
+        AND (p.paid_at AT TIME ZONE ${TZ})::date BETWEEN ${from}::date AND ${to}::date
+      GROUP BY 1, 2
     )
     SELECT s.platform, s.ad_id AS "adId", s.ad_name AS "adName", s.campaign_name AS "campaignName",
       s.spend, s.impressions, s.clicks,
-      coalesce(c.registrations, 0) AS registrations, coalesce(c.activations, 0) AS activations
-    FROM s LEFT JOIN c ON c.platform = s.platform AND c.ad_id = s.ad_id
+      coalesce(c.registrations, 0) AS registrations, coalesce(c.activations, 0) AS activations,
+      coalesce(l.leads, 0) AS leads, coalesce(rv.revenue, 0) AS revenue
+    FROM s
+    LEFT JOIN c ON c.platform = s.platform AND c.ad_id = s.ad_id
+    LEFT JOIN l ON l.platform = s.platform AND l.ad_id = s.ad_id
+    LEFT JOIN rv ON rv.platform = s.platform AND rv.ad_id = s.ad_id
     WHERE s.spend > 0
     ORDER BY s.spend DESC
     LIMIT ${limit}`);

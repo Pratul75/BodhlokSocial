@@ -1,0 +1,11 @@
+[Unit]
+Description=BODH Growth OS: re-read CRM invoices and leads, then rebuild the funnel
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Kolkata
+Unit=bodh-job@crm-sync.service
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

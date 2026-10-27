@@ -4,7 +4,7 @@ import { creativePerformance, db, pipelineRuns } from "@bodh/db";
 import { channelLabel } from "@bodh/shared";
 import { requireModule } from "@/lib/auth";
 import { ago, daysAgo, inr, num, pct, toIsoDate } from "@/lib/format";
-import { costPerActivated, funnelByChannel, funnelTotals, weeklyActivations } from "@/lib/funnel";
+import { costPerActivated, funnelByChannel, funnelTotals, returnOnSpend, weeklyActivations } from "@/lib/funnel";
 import { FunnelStrip, PeriodBars } from "@/components/charts";
 import { Card, CardHeader, PageHeader, Pill, Table } from "@/components/ui";
 
@@ -76,6 +76,17 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
               <span className="font-mono font-medium tabular">{blended ? inr(blended) : "—"}</span> over the last {days} days,
               counting organic activations.
             </p>
+            {totals.revenue > 0 && (
+              <p>
+                Revenue was <span className="font-mono font-medium tabular">{inr(totals.revenue)}</span> net of GST
+                {totals.spend > 0 && (
+                  <>
+                    , <span className="font-mono font-medium tabular">{returnOnSpend(totals)!.toFixed(1)}×</span> the ad spend
+                  </>
+                )}
+                .
+              </p>
+            )}
             {best && costPerActivated(best) && (
               <p>
                 <span className="font-medium">{channelName(best.channel)}</span> is the cheapest paid channel at{" "}
@@ -97,10 +108,12 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
               <th>Channel</th>
               <th className="text-right">Spend</th>
               <th className="text-right" title="Ad clicks for paid channels, web sessions for the rest">Clicks or visits</th>
+              <th className="text-right" title="Enquiries in the CRM: lead forms, web forms, WhatsApp">Leads</th>
               <th className="text-right">Registered</th>
               <th className="text-right">Activated</th>
               <th className="text-right">Activation rate</th>
               <th className="text-right">Paid</th>
+              <th className="text-right" title="Paid invoices from the CRM, net of GST and refunds">Revenue</th>
               <th className="text-right">Cost per activated</th>
             </tr>
           </thead>
@@ -112,10 +125,12 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
                   <td className="font-sans text-sm">{channelName(c.channel)}</td>
                   <td className="text-right">{c.spend ? inr(c.spend) : <span className="text-muted">—</span>}</td>
                   <td className="text-right">{num(c.clicks)}</td>
+                  <td className="text-right">{c.leads ? num(c.leads) : <span className="text-muted">—</span>}</td>
                   <td className="text-right">{num(c.registrations)}</td>
                   <td className="text-right font-medium">{num(c.activations)}</td>
                   <td className="text-right">{c.registrations ? pct(c.activations / c.registrations) : "—"}</td>
                   <td className="text-right">{num(c.paid)}</td>
+                  <td className="text-right">{c.revenue ? inr(c.revenue) : <span className="text-muted">—</span>}</td>
                   <td className="text-right">
                     {c.spend === 0 ? <Pill>Organic</Pill> : cpa ? inr(cpa) : "—"}
                   </td>
@@ -141,8 +156,10 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
                 <th>Platform</th>
                 <th className="text-right">Spend</th>
                 <th className="text-right">Clicks</th>
+                <th className="text-right">Leads</th>
                 <th className="text-right">Registered</th>
                 <th className="text-right">Activated</th>
+                <th className="text-right">Revenue</th>
                 <th className="text-right">Cost per activated</th>
               </tr>
             </thead>
@@ -159,8 +176,10 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
                     <td className="whitespace-nowrap text-muted">{channelName(a.platform)}</td>
                     <td className="text-right font-mono text-[13px] tabular">{inr(a.spend)}</td>
                     <td className="text-right font-mono text-[13px] tabular">{num(a.clicks)}</td>
+                    <td className="text-right font-mono text-[13px] tabular">{a.leads ? num(a.leads) : <span className="text-muted">—</span>}</td>
                     <td className="text-right font-mono text-[13px] tabular">{num(a.registrations)}</td>
                     <td className="text-right font-mono text-[13px] tabular">{num(a.activations)}</td>
+                    <td className="text-right font-mono text-[13px] tabular">{a.revenue ? inr(a.revenue) : <span className="text-muted">—</span>}</td>
                     <td className={`text-right font-mono text-[13px] tabular ${!cpa ? "text-muted" : ratio > 1.3 ? "text-sindoor" : ratio < 0.85 ? "text-leaf" : ""}`}>
                       {cpa ? inr(cpa) : "No activations"}
                     </td>
@@ -173,7 +192,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       </Card>
 
       <p className="mt-4 text-xs text-muted">
-        Built from BODH registration events, ad platform spend and GA4 sessions.{" "}
+        Built from BODH registration events, CRM leads and paid invoices, ad platform spend and GA4 sessions.{" "}
         {lastRebuild ? `Last rebuilt ${ago(lastRebuild.startedAt, now)}.` : "Not rebuilt yet."} Details on the Tracking page.
       </p>
     </>

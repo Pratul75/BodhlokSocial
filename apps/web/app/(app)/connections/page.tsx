@@ -10,6 +10,9 @@ import { ConnectionCard, type ConnectionView } from "./connection-card";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Connections" };
 
+/** Pasted-key connections that "Sync now" can check or pull (see lib/integrations/google-connection.ts). */
+const SYNCABLE = new Set(["bodhlok_cms", "crm_billing", "crm_leads"]);
+
 const MESSAGES: Record<string, string> = {
   admin_only: "Only admins can connect accounts.",
   no_oauth_client: "Google sign-in isn't configured, so Google accounts can't be connected yet.",
@@ -43,6 +46,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       syncedLabel: r?.lastSyncAt ? ago(r.lastSyncAt, now) : null,
       error: r?.error ?? null,
       oauthEnabled: Boolean(i.googleOAuth?.enabled),
+      canSync: Boolean(i.googleOAuth?.enabled) || SYNCABLE.has(i.key),
       hasCredential: Boolean(r?.secretRef),
       oauthClientReady: authEnabled(),
       postizSignIn: i.key === "postiz" && byKey.get("postiz_app")?.status === "connected",

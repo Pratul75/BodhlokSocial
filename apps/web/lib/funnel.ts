@@ -9,6 +9,8 @@ export interface FunnelTotals {
   registrations: number;
   activations: number;
   paid: number;
+  leads: number;
+  revenue: number;
 }
 
 const sums = {
@@ -17,6 +19,8 @@ const sums = {
   registrations: sql<number>`coalesce(sum(${funnelDaily.registrations}), 0)::int`,
   activations: sql<number>`coalesce(sum(${funnelDaily.activations}), 0)::int`,
   paid: sql<number>`coalesce(sum(${funnelDaily.paid}), 0)::int`,
+  leads: sql<number>`coalesce(sum(${funnelDaily.leads}), 0)::int`,
+  revenue: sql<number>`coalesce(sum(${funnelDaily.revenue}), 0)::int`,
 };
 
 /** Totals for the `days` days ending yesterday, offset by `offsetDays` further back. */
@@ -27,7 +31,7 @@ export async function funnelTotals(days: number, offsetDays = 0): Promise<Funnel
     .select(sums)
     .from(funnelDaily)
     .where(and(gte(funnelDaily.day, from), lte(funnelDaily.day, to)));
-  return row ?? { spend: 0, clicks: 0, registrations: 0, activations: 0, paid: 0 };
+  return row ?? { spend: 0, clicks: 0, registrations: 0, activations: 0, paid: 0, leads: 0, revenue: 0 };
 }
 
 export async function funnelByChannel(days: number) {
@@ -59,3 +63,6 @@ export async function weeklyActivations(weeks: number) {
 
 export const costPerActivated = (t: Pick<FunnelTotals, "spend" | "activations">) =>
   t.activations ? Math.round(t.spend / t.activations) : null;
+
+/** Rupees back per rupee spent; null without spend. */
+export const returnOnSpend = (t: Pick<FunnelTotals, "spend" | "revenue">) => (t.spend ? t.revenue / t.spend : null);
