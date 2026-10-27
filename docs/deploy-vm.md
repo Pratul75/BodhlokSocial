@@ -8,7 +8,8 @@ There is no CI/CD: you deploy from a laptop.
 |---|---|
 | Web app | systemd `bodh-web`, Node 24, on 127.0.0.1:3100 behind Caddy |
 | Worker | systemd `bodh-worker`, on 127.0.0.1:8787, not reachable from outside |
-| Scheduled jobs | systemd timers `bodh-*.timer` (tracking, publisher, video checks, Content agent daily 06:00 IST, Strategy agent on the 25th at 09:00 IST, SEO and Ads jobs, site publishing to bodhlok.com daily 10:00 IST) |
+| Scheduled jobs | systemd timers `bodh-*.timer` (tracking, publisher, video checks, Content agent daily 06:00 IST, Strategy agent on the 25th at 09:00 IST, SEO and Ads jobs, site publishing to bodhlok.com every 30 minutes, CRM sync nightly 02:30 IST) |
+| Release uploads | private bucket `gs://bodh-growth-releases` (asia-south1, public access blocked, objects deleted after 14 days); the VM's service account reads it |
 | Database | `bodh_growth` on the VM's Postgres 15 |
 | Settings and secrets | `/opt/bodh/shared/bodh.env`, readable by root and the `bodh` user only |
 | Integration keys, uploads | `/opt/bodh/shared/secrets`, `/opt/bodh/shared/uploads` |
@@ -23,6 +24,10 @@ Needs Docker and `gcloud` signed in with access to the project.
 ```bash
 scripts/deploy-vm.sh
 ```
+
+The release goes up through the releases bucket over HTTPS, because some networks reset long
+uploads over SSH; the VM downloads it and checks its checksum. `BUCKET= scripts/deploy-vm.sh`
+copies straight over scp instead, and `IAP=1` runs ssh through Google's IAP tunnel.
 
 It builds Linux images, uploads only the runnable files, migrates the database, switches
 releases and restarts. It takes about ten minutes on a Mac, mostly the Linux build.

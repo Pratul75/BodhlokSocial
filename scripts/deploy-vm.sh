@@ -4,10 +4,12 @@
 #
 #   scripts/deploy-vm.sh            # deploy
 #   SEED=1 scripts/deploy-vm.sh     # first deploy: also load sample data
-#   IAP=1 scripts/deploy-vm.sh      # go through Google's IAP tunnel (HTTPS) when a network
-#                                   # throttles or resets uploads over SSH (port 22)
+#   BUCKET= scripts/deploy-vm.sh    # copy straight to the VM over scp instead of the bucket
+#   IAP=1 scripts/deploy-vm.sh      # run ssh through Google's IAP tunnel (HTTPS)
 #
-# Defaults target the rapido-demo VM; override with PROJECT, ZONE, VM, HOST.
+# Defaults target the rapido-demo VM; override with PROJECT, ZONE, VM, HOST. The release goes
+# through the private bucket gs://bodh-growth-releases (BUCKET), which the VM's service account
+# can read, because some networks reset long uploads over SSH.
 set -euo pipefail
 
 PROJECT="${PROJECT:-absolute-water-387410}"
@@ -15,6 +17,7 @@ ZONE="${ZONE:-asia-south1-c}"
 VM="${VM:-rapido-demo}"
 HOST="${HOST:-growth.rechargestudio.com}"
 SEED="${SEED:-0}"
+BUCKET="${BUCKET-bodh-growth-releases}"
 # Every gcloud compute ssh/scp below takes these (the tunnel, when IAP=1).
 VIA=(--zone "$ZONE" --project "$PROJECT" --quiet)
 [ "${IAP:-0}" = 1 ] && VIA+=(--tunnel-through-iap)
@@ -45,20 +48,23 @@ COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -C "$OUT/vm" -czf "$OUT/vm.tgz" .
 du -h "$OUT/release.tgz" | cut -f1 | xargs echo "   release size:"
 
 echo "== uploading to $VM"
-# Over a slow or flaky link a long upload gets reset partway, so the release goes up in 4 MB
-# parts, each retried on its own, and the VM checks the reassembled checksum.
-# -O: the classic scp protocol. The SFTP mode (macOS scp's default) gets its session closed the
-# moment it starts on some networks, while plain ssh and classic scp go through.
-retry gcloud compute ssh "$VM" "${VIA[@]}" --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release/parts"
-(cd "$OUT" && split -b 4m release.tgz release.tgz.part- && shasum -a 256 release.tgz > release.tgz.sha256)
-parts=("$OUT"/release.tgz.part-*)
-n=0
-for part in "${parts[@]}" "$OUT/release.tgz.sha256" "$OUT/vm.tgz"; do
-  n=$((n + 1)); echo "   part $n of $(( ${#parts[@]} + 2 ))"
-  retry gcloud compute scp "$part" "$VM:/tmp/bodh-release/parts/" "${VIA[@]}" --scp-flag=-O
-done
-retry gcloud compute ssh "$VM" "${VIA[@]}" --command \
-  "cd /tmp/bodh-release && cat parts/release.tgz.part-* > release.tgz && mv parts/vm.tgz parts/release.tgz.sha256 . && sha256sum -c release.tgz.sha256 && rm -rf parts"
+(cd "$OUT" && shasum -a 256 release.tgz vm.tgz > release.sha256)
+retry gcloud compute ssh "$VM" "${VIA[@]}" --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release"
+if [ -n "$BUCKET" ]; then
+  # Through the private releases bucket: HTTPS with resumable uploads gets through networks that
+  # reset long uploads over SSH, and the VM reads it with its own service account. The bucket
+  # deletes objects after 14 days.
+  STAGE="gs://$BUCKET/$SHA-$(date +%Y%m%d%H%M%S)"
+  retry gcloud storage cp "$OUT/release.tgz" "$OUT/vm.tgz" "$OUT/release.sha256" "$STAGE/" --project "$PROJECT"
+  retry gcloud compute ssh "$VM" "${VIA[@]}" --command \
+    "cd /tmp/bodh-release && gcloud storage cp '$STAGE/*' . --quiet && sha256sum -c release.sha256"
+  gcloud storage rm --recursive "$STAGE" --project "$PROJECT" >/dev/null 2>&1 || true
+else
+  # -O: the classic scp protocol. The SFTP mode (macOS scp's default) gets its session closed the
+  # moment it starts on some networks, while plain ssh and classic scp go through.
+  retry gcloud compute scp "$OUT/release.tgz" "$OUT/vm.tgz" "$OUT/release.sha256" "$VM:/tmp/bodh-release/" "${VIA[@]}" --scp-flag=-O
+  retry gcloud compute ssh "$VM" "${VIA[@]}" --command "cd /tmp/bodh-release && sha256sum -c release.sha256"
+fi
 
 echo "== installing"
 gcloud compute ssh "$VM" "${VIA[@]}" --command \
