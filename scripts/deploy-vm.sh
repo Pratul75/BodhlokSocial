@@ -21,7 +21,7 @@ OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
 # Registry and Compute API calls time out now and then on slow networks; retry them.
-retry() { for i in 1 2 3; do "$@" && return 0; echo "   retrying ($i)…"; sleep 10; done; return 1; }
+retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "   retrying ($i)…"; sleep 10; done; return 1; }
 
 echo "== building linux/amd64 images for $SHA"
 retry docker build --platform linux/amd64 --target web -t bodh-web:vm .
@@ -40,8 +40,20 @@ COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -C "$OUT/vm" -czf "$OUT/vm.tgz" .
 du -h "$OUT/release.tgz" | cut -f1 | xargs echo "   release size:"
 
 echo "== uploading to $VM"
-retry gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release"
-retry gcloud compute scp "$OUT/release.tgz" "$OUT/vm.tgz" "$VM:/tmp/bodh-release/" --zone "$ZONE" --project "$PROJECT" --quiet
+# Over a slow or flaky link a long upload gets reset partway, so the release goes up in 4 MB
+# parts, each retried on its own, and the VM checks the reassembled checksum.
+# -O: the classic scp protocol. The SFTP mode (macOS scp's default) gets its session closed the
+# moment it starts on some networks, while plain ssh and classic scp go through.
+retry gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release/parts"
+(cd "$OUT" && split -b 4m release.tgz release.tgz.part- && shasum -a 256 release.tgz > release.tgz.sha256)
+parts=("$OUT"/release.tgz.part-*)
+n=0
+for part in "${parts[@]}" "$OUT/release.tgz.sha256" "$OUT/vm.tgz"; do
+  n=$((n + 1)); echo "   part $n of $(( ${#parts[@]} + 2 ))"
+  retry gcloud compute scp "$part" "$VM:/tmp/bodh-release/parts/" --zone "$ZONE" --project "$PROJECT" --quiet --scp-flag=-O
+done
+retry gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command \
+  "cd /tmp/bodh-release && cat parts/release.tgz.part-* > release.tgz && mv parts/vm.tgz parts/release.tgz.sha256 . && sha256sum -c release.tgz.sha256 && rm -rf parts"
 
 echo "== installing"
 gcloud compute ssh "$VM" --zone "$ZONE" --project "$PROJECT" --quiet --command \
