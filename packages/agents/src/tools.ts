@@ -369,7 +369,8 @@ export function strategyTools(ctx: ToolContext) {
             and(
               gte(calendarItems.scheduledAt, new Date()),
               lte(calendarItems.scheduledAt, until),
-              sql`(${calendarItems.status} = 'idea' or (${calendarItems.status} = 'drafted' and ${calendarItems.settings}->>'drafted_by' like '% agent'))`,
+              // Ideas, and drafts an agent made (marked drafted_by, or older ones that only carry the run that planned them) with no media attached yet.
+              sql`(${calendarItems.status} = 'idea' or (${calendarItems.status} = 'drafted' and jsonb_array_length(${calendarItems.assetIds}) = 0 and (${calendarItems.settings}->>'drafted_by' like '% agent' or ${calendarItems.settings}->>'run_id' in (select id::text from agent_runs))))`,
               sql`${calendarItems.postizId} is null`,
             ),
           )
