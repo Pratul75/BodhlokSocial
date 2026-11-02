@@ -5,7 +5,14 @@ import { eq } from "drizzle-orm";
 import { brandKit, db, strategyPlans } from "@bodh/db";
 import { getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { startReplan } from "@/lib/agents";
+import { startAgentRun, startReplan } from "@/lib/agents";
+
+/** Next month in India time, as YYYY-MM and as a label. */
+export async function nextMonthIst(now = new Date()): Promise<{ key: string; label: string }> {
+  const ist = new Date(now.getTime() + 330 * 60_000);
+  const d = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth() + 1, 1));
+  return { key: d.toISOString().slice(0, 7), label: d.toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }) };
+}
 
 export async function approvePlan(formData: FormData) {
   const user = await getCurrentUser();
@@ -39,7 +46,8 @@ export async function savePositioning(_prev: PositioningResult, formData: FormDa
     }
     if (sources.length >= 10) break;
   }
-  const replan = String(formData.get("intent")) === "replan";
+  const intent = String(formData.get("intent"));
+  const replan = intent === "replan";
   if (replan && positioning.length < 40) return { ok: false, error: "Write the brief first (at least a few sentences), then re-plan." };
 
   await db.insert(brandKit).values({ id: 1 }).onConflictDoNothing();
@@ -47,6 +55,14 @@ export async function savePositioning(_prev: PositioningResult, formData: FormDa
   await audit({ actor: user.email, actorType: "user", action: "save_positioning", target: "Positioning brief", result: `${positioning.length} characters, ${sources.length} source page(s)` });
   revalidatePath("/strategy");
   revalidatePath("/creative");
+  if (intent === "plan_next") {
+    const next = await nextMonthIst();
+    const r = await startAgentRun("strategy", user.email, `Write the strategy plan for ${next.key} from the positioning brief and your research, and outline that month's calendar.`);
+    if (r.error) return { ok: false, error: `Brief saved, but the planning run couldn't start: ${r.error}` };
+    await audit({ actor: user.email, actorType: "user", action: "plan_next_month", target: "Strategy agent", result: `run ${r.runId}` });
+    revalidatePath("/runs");
+    return { ok: true, message: `Brief saved and the Strategy agent is planning ${next.label}. It comes back as a draft to approve; follow it under Agent runs (5 to 10 minutes).` };
+  }
   if (!replan) return { ok: true, message: "Brief saved. Every agent run from now on follows it." };
 
   const r = await startReplan(user.email);

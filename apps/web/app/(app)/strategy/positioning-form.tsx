@@ -1,11 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
-import { RefreshCw, Save } from "lucide-react";
+import { CalendarPlus, RefreshCw, Save } from "lucide-react";
 import { savePositioning, type PositioningResult } from "./actions";
 import { btn, inputClass } from "@/components/ui";
 
-export function PositioningForm({ positioning, sources, updatedLabel, canEdit, busy }: { positioning: string; sources: string; updatedLabel: string | null; canEdit: boolean; busy: boolean }) {
+export function PositioningForm({ positioning, sources, updatedLabel, canEdit, busy, nextMonth }: { positioning: string; sources: string; updatedLabel: string | null; canEdit: boolean; busy: boolean; nextMonth: string }) {
   const [state, action, pending] = useActionState<PositioningResult, FormData>(savePositioning, null);
   const label = "mb-1 block text-xs text-muted";
   return (
@@ -34,6 +34,9 @@ export function PositioningForm({ positioning, sources, updatedLabel, canEdit, b
           </button>
           <button name="intent" value="replan" className={btn.primary} disabled={pending || busy} title={busy ? "An agent is running; wait for it to finish" : undefined}>
             <RefreshCw size={15} className={pending ? "animate-spin" : ""} /> {pending ? "Starting…" : "Save and re-plan this month"}
+          </button>
+          <button name="intent" value="plan_next" className={btn.secondary} disabled={pending || busy} title={busy ? "An agent is running; wait for it to finish" : `Write ${nextMonth}'s plan and lay out its calendar from this brief`}>
+            <CalendarPlus size={15} /> Plan {nextMonth}
           </button>
           {updatedLabel && <span className="text-xs text-muted">Last saved {updatedLabel}</span>}
         </div>

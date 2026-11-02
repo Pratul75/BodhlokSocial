@@ -6,7 +6,7 @@ The Strategy and Content agents and the "Ask the agents" chat live in `packages/
 
 | | Runs | Can read | Can write |
 |---|---|---|---|
-| Strategy | 25th of each month, 09:00 IST, or **Run Strategy agent** on Strategy | funnel, ads, calendar, recent posts, brand kit, plans, keywords, web search | a **draft** plan for this month or next. An approved plan is never replaced. |
+| Strategy | 25th of each month, 09:00 IST, or **Plan next month** / **Save and re-plan this month** on the Strategy page's brief card | funnel, ads, calendar, recent posts, brand kit, plans, keywords, web search | a **draft** plan for this month or next. An approved plan is replaced only by a re-plan from the brief (it becomes `superseded`). |
 | Content | daily 06:00 IST, or **Draft next week** on Calendar | the same | **drafted** calendar posts, 12 hours to 21 days out, up to 21 per run; fills the Strategy agent's ideas in place |
 | SEO | Monday 07:00 IST, or **Run SEO agent** on SEO & GEO | the same, plus the page catalog | page and blog drafts, sent to Approvals (up to 25 per run); tracked keywords |
 | Chat | on each question | the same | nothing itself; it can start a Strategy, Content or SEO run for someone whose role can |

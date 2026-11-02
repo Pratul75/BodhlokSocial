@@ -1,12 +1,14 @@
-import { desc, inArray, sql } from "drizzle-orm";
+import Link from "next/link";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { Check } from "lucide-react";
 import { agentRuns, brandKit, db, strategyPlans } from "@bodh/db";
 import { requireModule } from "@/lib/auth";
 import { ago } from "@/lib/format";
-import { AgentRunPanel } from "@/components/agent-run-panel";
 import { Card, CardHeader, EmptyState, PageHeader, StatusPill, btn } from "@/components/ui";
-import { approvePlan } from "./actions";
+import { approvePlan, nextMonthIst } from "./actions";
 import { PositioningForm } from "./positioning-form";
+
+const fmt = (d: Date) => d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Strategy" };
@@ -14,33 +16,38 @@ export const metadata = { title: "Strategy" };
 export default async function StrategyPage() {
   const user = await requireModule("strategy");
   const now = new Date();
-  const [[kit], busyRuns] = await Promise.all([
+  const [[kit], busyRuns, [last], next] = await Promise.all([
     db.select().from(brandKit).limit(1),
     db.select({ id: agentRuns.id }).from(agentRuns).where(sql`${agentRuns.agent} in ('strategy', 'content') and ${agentRuns.status} in ('queued', 'running') and ${agentRuns.startedAt} > now() - interval '1 hour'`).limit(1),
+    db.select().from(agentRuns).where(eq(agentRuns.agent, "strategy")).orderBy(desc(agentRuns.startedAt)).limit(1),
+    nextMonthIst(),
   ]);
+  const busy = busyRuns.length > 0;
   const briefCard = (
     <Card className="mb-6">
       <CardHeader
         title="Positioning brief"
-        sub="What every agent follows, before anything else: the plan, every post, page and ad. The launch film's positioning is built in; what you write here is current and wins where they differ. Save and re-plan rewrites this month's plan and the rest of its calendar from it."
+        sub={`What every agent follows, before anything else: the plan, every post, page and ad. The launch film's positioning is built in; what you write here is current and wins where they differ. Save and re-plan rewrites this month's plan and the rest of its calendar from it; Plan ${next.label} writes next month's plan ahead of the 25th, when the Strategy agent would do it by itself.`}
       />
       <PositioningForm
         positioning={kit?.positioning ?? ""}
         sources={(kit?.positioningSources ?? []).join("\n")}
         updatedLabel={kit?.positioningUpdatedAt ? ago(kit.positioningUpdatedAt, now) : null}
         canEdit={user.role === "admin" || user.role === "social_manager"}
-        busy={busyRuns.length > 0}
+        busy={busy}
+        nextMonth={next.label}
       />
+      {last && (
+        <div className="mx-5 mb-4 rounded-lg bg-paper px-3 py-2.5 text-sm">
+          <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+            <StatusPill status={last.status} /> Strategy agent, last run {fmt(last.startedAt)}, {last.trigger === "schedule" ? "scheduled" : "on request"}
+            {Number(last.costUsd) > 0 && <span className="font-mono tabular">${Number(last.costUsd).toFixed(2)}</span>}
+            <Link href={`/runs/${last.id}`} className="text-dusk hover:underline">See what it did</Link>
+          </p>
+          {busy ? <p className="mt-1.5 text-muted">Working on it. Refresh in a few minutes.</p> : last.summary && <p className="mt-1.5 line-clamp-4 whitespace-pre-wrap">{last.summary}</p>}
+        </div>
+      )}
     </Card>
-  );
-  const runPanel = (
-    <AgentRunPanel
-      agent="strategy"
-      title="Strategy agent"
-      sub="Runs on the 25th for next month. Run it now to draft or redo the plan; an approved plan is only replaced by a re-plan from the brief above."
-      label="Run Strategy agent"
-      placeholder="Optional: anything to focus on, e.g. the KP module for practitioners, or institutes"
-    />
   );
   // The newest plan for the newest month: a re-plan's fresh draft shows over the plan it superseded.
   const [plan] = await db.select().from(strategyPlans).where(inArray(strategyPlans.status, ["draft", "approved"])).orderBy(desc(strategyPlans.month), desc(strategyPlans.createdAt)).limit(1);
@@ -53,7 +60,6 @@ export default async function StrategyPage() {
         <Card>
           <EmptyState title="No plan yet">The Strategy agent writes next month's plan on the 25th from the brief, the funnel, ads, keywords and the month's astrological events. You can also run it now.</EmptyState>
         </Card>
-        <Card className="mt-6">{runPanel}</Card>
       </>
     );
   }
@@ -116,7 +122,6 @@ export default async function StrategyPage() {
         </Card>
       </div>
 
-      <Card className="mt-6">{runPanel}</Card>
     </>
   );
 }
