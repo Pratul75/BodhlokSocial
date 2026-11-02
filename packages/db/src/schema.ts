@@ -23,11 +23,21 @@ export const connections = pgTable("connections", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export interface RunStep {
+  at: string; // ISO time
+  kind: "tool" | "search" | "read" | "said" | "wrote" | "note";
+  text: string;
+}
+
 export const agentRuns = pgTable("agent_runs", {
   id: id(),
   agent: text("agent").notNull(),
   trigger: text("trigger").notNull(), // schedule | manual | chat
   status: text("status").notNull(), // queued | running | succeeded | failed
+  /** What the run was asked to do (the default task, or the person's instructions). */
+  task: text("task"),
+  /** What the agent did, step by step: tool calls, web searches and what it said in between. */
+  steps: jsonb("steps").$type<RunStep[]>().notNull().default([]),
   summary: text("summary"),
   tokensIn: integer("tokens_in").notNull().default(0),
   tokensOut: integer("tokens_out").notNull().default(0),
@@ -564,6 +574,14 @@ export const brandKit = pgTable("brand_kit", {
   imageStyle: text("image_style").notNull().default(""),
   /** How captions should sound, for the Content agent. */
   voice: text("voice").notNull().default(""),
+  /**
+   * The team's positioning brief, in their own words: who Bodhlok is for, what it claims, what
+   * this month is about. Every agent reads it and it wins over the built-in positioning skill.
+   */
+  positioning: text("positioning").notNull().default(""),
+  /** Pages the agents may read for the positioning (the live site, a launch page), https only. */
+  positioningSources: jsonb("positioning_sources").$type<string[]>().notNull().default([]),
+  positioningUpdatedAt: timestamp("positioning_updated_at", { withTimezone: true }),
   bannedPhrases: jsonb("banned_phrases").$type<string[]>().notNull().default([]),
   defaultHashtags: jsonb("default_hashtags").$type<string[]>().notNull().default([]),
   /** Stamp the logo on generated images and thumbnails. */

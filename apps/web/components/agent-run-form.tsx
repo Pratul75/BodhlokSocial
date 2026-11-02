@@ -12,7 +12,7 @@ export function AgentRunForm({ agent, label, placeholder, disabled }: { agent: "
       <input type="hidden" name="agent" value={agent} />
       <div className="flex-1">
         <label htmlFor={`task-${agent}`} className="sr-only">Instructions for this run</label>
-        <input id={`task-${agent}`} name="task" className={inputClass} placeholder={placeholder} maxLength={2000} disabled={disabled || pending} autoComplete="off" />
+        <textarea id={`task-${agent}`} name="task" className={inputClass} placeholder={placeholder} maxLength={6000} rows={2} disabled={disabled || pending} autoComplete="off" />
         {state.error && <p className="mt-1.5 text-xs text-sindoor">{state.error}</p>}
         {state.started && !state.error && <p className="mt-1.5 text-xs text-muted">Started. This takes a few minutes; refresh to see the result.</p>}
       </div>

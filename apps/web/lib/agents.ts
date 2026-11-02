@@ -1,5 +1,38 @@
 import "server-only";
-import { activeRun, anthropicClient, queueRun, runAgent, type AgentName } from "@bodh/agents";
+import { activeRun, anthropicClient, queueRun, replanTask, runAgent, type AgentName } from "@bodh/agents";
+
+/**
+ * Re-plans the current month from the positioning brief: the Strategy agent rewrites the plan
+ * and the rest of the calendar, then the Content agent drafts the first week. On the worker
+ * when there is one; here otherwise.
+ */
+export async function startReplan(requestedBy: string): Promise<{ runId?: string; error?: string }> {
+  const url = process.env.WORKER_URL;
+  const token = process.env.WORKER_TOKEN;
+  if (url && token) {
+    try {
+      const res = await fetch(`${url.replace(/\/$/, "")}/jobs/replan?trigger=manual`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Worker-Token": token },
+        body: JSON.stringify({ requestedBy }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const body = (await res.json().catch(() => ({}))) as { runId?: string; error?: string };
+      return res.ok ? { runId: body.runId } : { error: body.error ?? `The worker answered ${res.status}.` };
+    } catch {
+      return { error: "The agent service isn't answering. Try again in a minute." };
+    }
+  }
+  if (!(await anthropicClient())) return { error: "No Anthropic API key. An admin can add one in Connections." };
+  if ((await activeRun("strategy")) || (await activeRun("content"))) return { error: "An agent is already running; try again in a few minutes." };
+  const runId = await queueRun("strategy", "manual");
+  void (async () => {
+    const r = await runAgent("strategy", { trigger: "manual", task: replanTask(), requestedBy, replan: true }, runId);
+    if (r.status !== "succeeded") return;
+    await runAgent("content", { trigger: "manual", task: "The month was just re-planned from a new positioning brief. Draft the next 7 days from the new plan and the ideas now on the calendar. Leave posts a person edited, sent for approval or approved as they are.", requestedBy }, await queueRun("content", "manual"));
+  })().catch((e) => console.error("replan failed", e));
+  return { runId };
+}
 
 /**
  * Starts a Strategy or Content run. With WORKER_URL set (the VM), the worker runs it, so a

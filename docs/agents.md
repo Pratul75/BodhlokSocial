@@ -15,6 +15,18 @@ The Strategy agent also lays the month out as **idea** items on the calendar (da
 
 Nothing an agent writes goes out by itself. Drafted posts still need media, a person to send them for approval, and an approver. Captions go through the same checks as approvals (ad-claim rules, the brand kit's banned phrases), and a blocked caption goes back to Claude to rewrite. Posts the agent flags, and posts a person ticks, show "Needs Jyotish review" in Approvals.
 
+## The positioning brief, and re-planning a month
+
+Where the positioning is decided: the **Positioning brief** on the Strategy page (brand kit, `positioning` and `positioningSources`). The launch film's positioning is built in as the `bodh-positioning` skill; the brief is the team's own words on top of it and wins where they differ. It goes into every agent's system prompt as a `<team_brief>` block, and `get_brand_kit` returns it. The listed source pages (bodhlok.com, a launch page) are the only pages the new `read_website` tool reads, so the agents can quote the live site's wording.
+
+**Save and re-plan this month** (admins and social media managers) saves the brief and starts the Strategy agent with `replan` on: it may replace the month's approved plan (the old one becomes `superseded`) and, with `outline_calendar`'s `replace_remaining`, clears the rest of the month's ideas and agent drafts before putting new ones down. Posts a person edited, sent for approval, approved, scheduled or published are never touched. When the Strategy run succeeds, the worker runs the Content agent on the first week (`POST /jobs/replan`). The new plan comes back as a draft to approve.
+
+Instruction boxes (the Run buttons, chat) take up to 6,000 characters; longer documents go in the brief.
+
+## Agent runs: what each one did
+
+Every run keeps a step log on its row (`agent_runs.steps`): each tool it called with the few inputs that matter, each web search, each page it read, what it wrote (post, page, plan), and what it said between steps. The **Agent runs** page lists runs; a run's page shows the steps in order with their time, the summary, the cost, and links to every post or page it produced. Each Run button links to its last run ("See what it did"), and a calendar item drafted or planned by an agent links to the run that made it.
+
 ## Skills
 
 `packages/agents/skills/*.md` hold BODH's house rules: brand voice, Jyotish accuracy, formats and timing, funnel metrics. They go in the system prompt in full (cached). After editing one, run

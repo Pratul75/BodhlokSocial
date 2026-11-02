@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { and, eq, gt, inArray } from "drizzle-orm";
-import { agentRuns, auditLog, db } from "@bodh/db";
+import { agentRuns, auditLog, db, type RunStep } from "@bodh/db";
 import { anthropicClient, FALLBACK_BETA, MODEL } from "./client";
 import { addUsage, costUsd, emptyTotals, MONTHLY_BUDGET_USD, spentThisMonthUsd, type RunTotals } from "./cost";
 import { defaultTask, systemPrompt, userMessage, type AgentName } from "./prompts";
@@ -20,7 +20,75 @@ export interface RunOptions {
   trigger: "manual" | "schedule";
   task?: string;
   requestedBy?: string | null;
+  /** A re-plan a person asked for: the month's approved plan and upcoming agent work may be replaced. */
+  replan?: boolean;
   client?: Anthropic; // tests pass a client with a mocked fetch
+}
+
+const MAX_STEPS = 200;
+const STEP_CHARS = 400;
+
+/** Short labels for the step log; tools not listed show their name. */
+const STEP_LABELS: Record<string, string> = {
+  get_funnel: "Read the funnel",
+  get_top_ads: "Read ad results",
+  get_calendar: "Read the calendar",
+  get_recent_posts: "Read recent posts",
+  get_brand_kit: "Read the brand kit and positioning brief",
+  get_strategy_plan: "Read the strategy plan",
+  get_keywords: "Read the tracked keywords",
+  read_skill: "Read a skill",
+  get_search_trends: "Checked Google Trends",
+  get_keyword_ideas: "Looked up keyword ideas",
+  get_site_audit: "Read the site audit",
+  get_ai_visibility: "Read the AI-visibility results",
+  list_pages_to_write: "Listed pages to write",
+  track_keywords: "Added keywords to tracking",
+  get_ads_overview: "Read the ads overview",
+  get_ab_tests: "Read the A/B tests",
+};
+
+/** One line about a tool call's input, for the step log: the few fields a person would ask about. */
+function describeInput(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const o = input as Record<string, unknown>;
+  const parts: string[] = [];
+  for (const k of ["name", "file", "days", "month", "terms", "keyword", "keywords", "search", "template", "url", "ad_id", "campaign_id", "query"]) {
+    const v = o[k];
+    if (v === undefined || v === null || v === "") continue;
+    parts.push(`${k}: ${Array.isArray(v) ? v.slice(0, 5).join(", ") : String(v).slice(0, 80)}`);
+  }
+  return parts.join("; ");
+}
+
+/** The step log of one run, appended to the run row as the agent works, so the team can read along. */
+function stepLogger(runId: string) {
+  const steps: RunStep[] = [];
+  let writing: Promise<void> = Promise.resolve();
+  return async (kind: RunStep["kind"], text: string) => {
+    if (steps.length >= MAX_STEPS) return;
+    steps.push({ at: new Date().toISOString(), kind, text: text.replace(/\s+/g, " ").trim().slice(0, STEP_CHARS) });
+    const snapshot = [...steps];
+    writing = writing.then(() => db.update(agentRuns).set({ steps: snapshot }).where(eq(agentRuns.id, runId)).then(() => undefined)).catch(() => undefined);
+    await writing;
+  };
+}
+
+/** Wraps every tool so each call lands in the step log: write tools log their own result, the rest log the call. */
+function logged<T extends { name: string; run: (input: never) => unknown }>(tools: T[], log: (kind: RunStep["kind"], text: string) => Promise<void>): T[] {
+  return tools.map((t) => ({
+    ...t,
+    run: async (input: never) => {
+      const label = STEP_LABELS[t.name];
+      if (label) {
+        const detail = describeInput(input);
+        await log("tool", detail ? `${label} (${detail})` : label);
+      }
+      const out = await t.run(input);
+      if (typeof out === "string" && out.startsWith("Error:")) await log("note", `${t.name}: ${out}`);
+      return out;
+    },
+  }));
 }
 
 export interface RunResult {
@@ -79,11 +147,13 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
     return finish(runId, "failed", `This month's AI budget ($${MONTHLY_BUDGET_USD}) is used up ($${spent.toFixed(2)} spent). Raise AI_MONTHLY_BUDGET_USD to run more.`, totals);
   }
 
-  await db.update(agentRuns).set({ status: "running", startedAt: new Date() }).where(eq(agentRuns.id, runId));
+  const task = opts.task?.trim() || defaultTask(agent);
+  await db.update(agentRuns).set({ status: "running", startedAt: new Date(), task }).where(eq(agentRuns.id, runId));
   await db.insert(auditLog).values({ actor: `${agent} agent`, actorType: "agent", action: "run", target: agent, reason: opts.requestedBy ? `requested by ${opts.requestedBy}` : opts.trigger, result: "started" });
 
-  const ctx: ToolContext = { agent, runId, drafts: 0 };
-  const tools = [...readTools(ctx), ...TOOLS[agent](ctx)];
+  const log = stepLogger(runId);
+  const ctx: ToolContext = { agent, runId, drafts: 0, replan: opts.replan, log };
+  const tools = logged([...readTools(ctx), ...TOOLS[agent](ctx)], log);
 
   try {
     const runner = client.beta.messages.toolRunner({
@@ -93,7 +163,7 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
       max_tokens: 20000,
       system: await systemPrompt(agent),
       tools: [...tools, { type: "web_search_20260209", name: "web_search", max_uses: WEB_SEARCHES[agent] }],
-      messages: [{ role: "user", content: userMessage(opts.task?.trim() || defaultTask(agent), opts.requestedBy ?? null) }],
+      messages: [{ role: "user", content: userMessage(task, opts.requestedBy ?? null) }],
       output_config: { effort: EFFORT[agent] },
       max_iterations: 40,
       betas: [FALLBACK_BETA],
@@ -105,6 +175,11 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
     for await (const message of runner) {
       totals = addUsage(totals, message.usage);
       last = message;
+      // What the agent said between tool calls, and the web searches it ran, so the team can follow its reasoning.
+      for (const b of message.content) {
+        if (b.type === "text" && b.text.trim()) await log("said", b.text);
+        else if (b.type === "server_tool_use" && b.name === "web_search") await log("search", `Searched the web: ${String((b.input as { query?: unknown })?.query ?? "")}`);
+      }
       if (message.stop_reason === "refusal") {
         stopped = "Claude declined to continue this run.";
         break;

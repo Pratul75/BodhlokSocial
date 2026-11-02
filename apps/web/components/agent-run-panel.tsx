@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { and, desc, eq } from "drizzle-orm";
 import { agentRuns, db } from "@bodh/db";
 import { CardHeader, StatusPill } from "./ui";
@@ -19,6 +20,7 @@ export async function AgentRunPanel({ agent, title, sub, label, placeholder }: {
             <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
               <StatusPill status={last.status} /> Last run {fmt(last.startedAt)}, {last.trigger === "schedule" ? "scheduled" : "on request"}
               {Number(last.costUsd) > 0 && <span className="font-mono tabular">${Number(last.costUsd).toFixed(2)}</span>}
+              <Link href={`/runs/${last.id}`} className="text-dusk hover:underline">See what it did</Link>
             </p>
             {busy ? (
               <p className="mt-1.5 text-muted">Working on it. Refresh in a few minutes.</p>

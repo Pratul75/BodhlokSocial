@@ -1,3 +1,4 @@
+import { brandKit, db } from "@bodh/db";
 import { bundledSkills, installedSkills, skillsPrompt } from "./skills";
 
 export type AgentName = "strategy" | "content" | "seo" | "ads";
@@ -18,10 +19,30 @@ const ROLES: Record<AgentName | "chat", string> = {
   chat: `You are the BODH Growth assistant answering the team's questions in chat. Answer from the tools' data, briefly, with numbers. Use ₹ for money. You can also run any skill on demand right in the chat: draft hooks, captions, scripts, page outlines or ideas in your answer (they aren't saved). When someone asks for work to be saved, such as a plan, posts on the calendar, or SEO pages and blogs, start the matching agent with start_agent_run and say where the results will appear. Otherwise you can't change anything in the app.`,
 };
 
-/** System prompt: stable, so it is cached across runs. Dates go in the user message. */
+/** The team's positioning brief from the brand kit, as a block for the system prompt. */
+export async function teamBrief(): Promise<string> {
+  const [k] = await db.select({ positioning: brandKit.positioning, sources: brandKit.positioningSources, at: brandKit.positioningUpdatedAt }).from(brandKit).limit(1);
+  if (!k?.positioning.trim()) return "";
+  const when = k.at ? k.at.toISOString().slice(0, 10) : "";
+  const sources = k.sources.length ? `\nPages you can read with read_website for the current site and wording: ${k.sources.join(", ")}` : "";
+  return `<team_brief${when ? ` updated="${when}"` : ""}>
+The team's own positioning brief. It is current and wins over the bodh-positioning skill wherever they differ. Every plan, post, page and ad follows it.
+
+${k.positioning.trim()}${sources}
+</team_brief>`;
+}
+
+/** System prompt: stable while the brief is unchanged, so it is cached across runs. Dates go in the user message. */
 export async function systemPrompt(agent: AgentName | "chat") {
   const skills = skillsPrompt(bundledSkills(), await installedSkills());
-  return [{ type: "text" as const, text: `${COMMON}\n\n${ROLES[agent]}\n\n${skills}`, cache_control: { type: "ephemeral" as const } }];
+  const brief = await teamBrief();
+  return [{ type: "text" as const, text: `${COMMON}\n\n${ROLES[agent]}\n\n${skills}${brief ? `\n\n${brief}` : ""}`, cache_control: { type: "ephemeral" as const } }];
+}
+
+/** The task for a re-plan a person asked for: the plan and the rest of the month's calendar follow the new brief. */
+export function replanTask(now = new Date()): string {
+  const t = istNow(now);
+  return `A person has updated the positioning brief and asked for ${t.month} to be re-planned from today. Read the brief (get_brand_kit) and its source pages (read_website), then: (1) save a new plan for ${t.month} that follows the brief (the approved one steps aside); (2) outline the rest of ${t.month} from tomorrow with replace_remaining set, so earlier ideas and agent drafts that no longer fit are cleared and replaced. Keep posts a person has edited, sent for approval, approved or scheduled. Finish with two or three sentences on what changed and why.`;
 }
 
 export function istNow(now = new Date()) {

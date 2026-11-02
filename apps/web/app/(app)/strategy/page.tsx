@@ -1,33 +1,57 @@
-import { desc } from "drizzle-orm";
+import { desc, inArray, sql } from "drizzle-orm";
 import { Check } from "lucide-react";
-import { db, strategyPlans } from "@bodh/db";
+import { agentRuns, brandKit, db, strategyPlans } from "@bodh/db";
 import { requireModule } from "@/lib/auth";
+import { ago } from "@/lib/format";
 import { AgentRunPanel } from "@/components/agent-run-panel";
 import { Card, CardHeader, EmptyState, PageHeader, StatusPill, btn } from "@/components/ui";
 import { approvePlan } from "./actions";
+import { PositioningForm } from "./positioning-form";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Strategy" };
 
 export default async function StrategyPage() {
   const user = await requireModule("strategy");
+  const now = new Date();
+  const [[kit], busyRuns] = await Promise.all([
+    db.select().from(brandKit).limit(1),
+    db.select({ id: agentRuns.id }).from(agentRuns).where(sql`${agentRuns.agent} in ('strategy', 'content') and ${agentRuns.status} in ('queued', 'running') and ${agentRuns.startedAt} > now() - interval '1 hour'`).limit(1),
+  ]);
+  const briefCard = (
+    <Card className="mb-6">
+      <CardHeader
+        title="Positioning brief"
+        sub="What every agent follows, before anything else: the plan, every post, page and ad. The launch film's positioning is built in; what you write here is current and wins where they differ. Save and re-plan rewrites this month's plan and the rest of its calendar from it."
+      />
+      <PositioningForm
+        positioning={kit?.positioning ?? ""}
+        sources={(kit?.positioningSources ?? []).join("\n")}
+        updatedLabel={kit?.positioningUpdatedAt ? ago(kit.positioningUpdatedAt, now) : null}
+        canEdit={user.role === "admin" || user.role === "social_manager"}
+        busy={busyRuns.length > 0}
+      />
+    </Card>
+  );
   const runPanel = (
     <AgentRunPanel
       agent="strategy"
       title="Strategy agent"
-      sub="Runs on the 25th for next month. Run it now to draft or redo the plan; an approved plan is never replaced."
+      sub="Runs on the 25th for next month. Run it now to draft or redo the plan; an approved plan is only replaced by a re-plan from the brief above."
       label="Run Strategy agent"
       placeholder="Optional: anything to focus on, e.g. the KP module for practitioners, or institutes"
     />
   );
-  const [plan] = await db.select().from(strategyPlans).orderBy(desc(strategyPlans.month)).limit(1);
+  // The newest plan for the newest month: a re-plan's fresh draft shows over the plan it superseded.
+  const [plan] = await db.select().from(strategyPlans).where(inArray(strategyPlans.status, ["draft", "approved"])).orderBy(desc(strategyPlans.month), desc(strategyPlans.createdAt)).limit(1);
 
   if (!plan) {
     return (
       <>
         <PageHeader title="Strategy" />
+        {briefCard}
         <Card>
-          <EmptyState title="No plan yet">The Strategy agent writes next month's plan on the 25th from the funnel, ads, keywords and the month's astrological events. You can also run it now.</EmptyState>
+          <EmptyState title="No plan yet">The Strategy agent writes next month's plan on the 25th from the brief, the funnel, ads, keywords and the month's astrological events. You can also run it now.</EmptyState>
         </Card>
         <Card className="mt-6">{runPanel}</Card>
       </>
@@ -41,7 +65,7 @@ export default async function StrategyPage() {
       <PageHeader
         eyebrow={<span className="flex items-center gap-2">Monthly plan <StatusPill status={plan.status} /></span>}
         title={month}
-        description="Written by the Strategy agent from the funnel, ads, keywords and the month's astrological events. Approve it before the Content agent plans the calendar."
+        description="Written by the Strategy agent from the positioning brief, the funnel, ads, keywords and the month's astrological events. Approve it before the Content agent plans the calendar."
         actions={
           user.role === "admin" && plan.status === "draft" ? (
             <form action={approvePlan}>
@@ -51,6 +75,8 @@ export default async function StrategyPage() {
           ) : undefined
         }
       />
+
+      {briefCard}
 
       <Card className="mb-6 p-5">
         <p className="max-w-3xl text-[17px] leading-relaxed">{plan.summary}</p>

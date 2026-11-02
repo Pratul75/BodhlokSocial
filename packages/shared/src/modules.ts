@@ -14,6 +14,7 @@ export type ModuleKey =
   | "analytics"
   | "tracking"
   | "chat"
+  | "runs"
   | "connections"
   | "admin";
 
@@ -43,6 +44,7 @@ export const MODULES: readonly ModuleDef[] = [
   { key: "analytics", label: "Analytics", href: "/analytics", group: "Measure", roles: MARKETING },
   { key: "tracking", label: "Tracking", href: "/tracking", group: "Measure", roles: ["admin", "ads_manager"] },
   { key: "chat", label: "Ask the agents", href: "/chat", group: "Measure", roles: MARKETING },
+  { key: "runs", label: "Agent runs", href: "/runs", group: "Measure", roles: MARKETING },
   { key: "connections", label: "Connections", href: "/connections", group: "Settings", roles: ["admin"] },
   { key: "admin", label: "Admin", href: "/admin", group: "Settings", roles: ["admin"] },
 ];

@@ -15,6 +15,44 @@ export interface ToolContext {
   agent: string; // strategy | content | seo | chat
   runId: string;
   drafts: number; // posts, ideas or pages created this run
+  /** A re-plan asked for by a person: the month's approved plan may be replaced. */
+  replan?: boolean;
+  /** Records a line in the run's step log (what the agent did, for the team to read). */
+  log?: (kind: "tool" | "search" | "read" | "said" | "wrote" | "note", text: string) => Promise<void>;
+}
+
+/** Hosts the agents may read pages from: the site itself, plus the positioning brief's sources. */
+export async function readableHosts(): Promise<Set<string>> {
+  const hosts = new Set(["bodhlok.com", "www.bodhlok.com"]);
+  const [k] = await db.select({ sources: brandKit.positioningSources }).from(brandKit).limit(1);
+  for (const u of k?.sources ?? []) {
+    try {
+      hosts.add(new URL(u).hostname.toLowerCase());
+    } catch {
+      /* skipped when saved; ignore */
+    }
+  }
+  return hosts;
+}
+
+/** A web page as readable text: scripts, styles and tags out, headings and paragraphs kept apart. */
+export function pageText(html: string, max = 20_000): string {
+  const text = html
+    .replace(/<(script|style|noscript|svg|template)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<\/(p|div|section|article|li|h[1-6]|tr|br|blockquote|header|footer|nav)>/gi, "\n")
+    .replace(/<(h[1-6])[^>]*>/gi, (_m, h: string) => `\n${"#".repeat(Number(h[1]))} `)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n+/g, "\n\n")
+    .trim();
+  return text.length > max ? `${text.slice(0, max)}\n\n[cut at ${max} characters]` : text;
 }
 
 export const MAX_DRAFTS_PER_RUN = 21;
@@ -132,11 +170,41 @@ export function readTools(_ctx: ToolContext) {
 
   const getBrandKit = betaZodTool({
     name: "get_brand_kit",
-    description: "The brand kit: caption voice, banned phrases, default hashtags, palette and image style. Banned phrases block approval, so never use them.",
+    description: "The brand kit: the team's positioning brief and its source pages, caption voice, banned phrases, default hashtags, palette and image style. Banned phrases block approval, so never use them.",
     inputSchema: z.object({}),
     run: async () => {
       const [k] = await db.select().from(brandKit).limit(1);
-      return json(k ? { voice: k.voice, banned_phrases: k.bannedPhrases, default_hashtags: k.defaultHashtags, palette: k.palette, image_style: k.imageStyle } : { note: "No brand kit set yet." });
+      return json(
+        k
+          ? { positioning_brief: k.positioning || "(none written yet)", positioning_sources: k.positioningSources, voice: k.voice, banned_phrases: k.bannedPhrases, default_hashtags: k.defaultHashtags, palette: k.palette, image_style: k.imageStyle }
+          : { note: "No brand kit set yet." },
+      );
+    },
+  });
+
+  const readWebsite = betaZodTool({
+    name: "read_website",
+    description:
+      "Read a page of bodhlok.com (or a page listed as a positioning source) as text: the homepage, /product, /for-astrologers, /blog/<slug>. Use it to see the live site's current positioning, features and wording before planning or writing.",
+    inputSchema: z.object({ url: z.string().url().max(500).describe("An https URL on bodhlok.com or a listed source") }),
+    run: async ({ url }) => {
+      let u: URL;
+      try {
+        u = new URL(url);
+      } catch {
+        return "Error: not a valid URL.";
+      }
+      const hosts = await readableHosts();
+      if (u.protocol !== "https:" || !hosts.has(u.hostname.toLowerCase())) return `Error: only https pages on ${[...hosts].join(", ")} can be read.`;
+      try {
+        const res = await fetch(u, { headers: { accept: "text/html", "user-agent": "BODH Growth OS (reads its own site)" }, redirect: "follow", signal: AbortSignal.timeout(20_000) });
+        if (!res.ok) return `Error: ${u.href} answered ${res.status}.`;
+        const text = pageText(await res.text());
+        await _ctx.log?.("read", `Read ${u.href} (${text.length} characters)`);
+        return text || "(the page has no readable text)";
+      } catch (e) {
+        return `Error: couldn't read ${u.href}: ${e instanceof Error ? e.message : String(e)}`;
+      }
     },
   });
 
@@ -224,7 +292,7 @@ export function readTools(_ctx: ToolContext) {
     },
   });
 
-  return [getFunnel, getTopAds, getCalendar, getRecentPosts, getBrandKit, getStrategyPlan, getKeywords, readSkillTool, trends, ideas, audit, visibility];
+  return [getFunnel, getTopAds, getCalendar, getRecentPosts, getBrandKit, readWebsite, getStrategyPlan, getKeywords, readSkillTool, trends, ideas, audit, visibility];
 }
 
 /* ---------- strategy agent ---------- */
@@ -252,10 +320,15 @@ export function strategyTools(ctx: ToolContext) {
       if (p.month !== thisMonth && p.month !== next) return `Error: plan for ${thisMonth} or ${next} only.`;
       const monthDate = `${p.month}-01`;
       const existing = await db.select().from(strategyPlans).where(eq(strategyPlans.month, monthDate));
-      if (existing.some((e) => e.status === "approved")) return `Error: the ${p.month} plan is already approved. Don't replace it; mention your suggestions in your reply instead.`;
+      if (existing.some((e) => e.status === "approved")) {
+        if (!ctx.replan) return `Error: the ${p.month} plan is already approved. Don't replace it; mention your suggestions in your reply instead.`;
+        // A re-plan asked for by a person: the approved plan steps aside for the new draft, which they approve again.
+        await db.update(strategyPlans).set({ status: "superseded" }).where(and(eq(strategyPlans.month, monthDate), eq(strategyPlans.status, "approved")));
+      }
       if (existing.length) await db.delete(strategyPlans).where(and(eq(strategyPlans.month, monthDate), eq(strategyPlans.status, "draft")));
       await db.insert(strategyPlans).values({ month: monthDate, status: "draft", summary: p.summary, pillars: p.pillars, bets: p.bets });
       await audit(ctx, "save_strategy_plan", `Plan for ${p.month}`, "draft saved");
+      await ctx.log?.("wrote", `Saved the ${p.month} plan as a draft: ${p.pillars.map((x) => `${x.name} ${x.share}%`).join(", ")}`);
       return `Saved the ${p.month} plan as a draft. The team will review it on the Strategy page.`;
     },
   });
@@ -278,10 +351,32 @@ export function strategyTools(ctx: ToolContext) {
         )
         .min(1)
         .max(45),
+      replace_remaining: z
+        .boolean()
+        .optional()
+        .describe("Only on a re-plan: first clear the calendar's upcoming ideas and agent drafts (not posts a person has edited, sent for approval, approved, scheduled or published) up to the last date given"),
     }),
-    run: async ({ ideas }) => {
+    run: async ({ ideas, replace_remaining }) => {
       let added = 0;
+      let removed = 0;
       const skipped: string[] = [];
+      if (replace_remaining) {
+        if (!ctx.replan) return "Error: replace_remaining is only for a re-plan a person asked for.";
+        const until = new Date(`${ideas.map((i) => i.date).sort().at(-1)}T23:59:59+05:30`);
+        const gone = await db
+          .delete(calendarItems)
+          .where(
+            and(
+              gte(calendarItems.scheduledAt, new Date()),
+              lte(calendarItems.scheduledAt, until),
+              sql`(${calendarItems.status} = 'idea' or (${calendarItems.status} = 'drafted' and ${calendarItems.settings}->>'drafted_by' like '% agent'))`,
+              sql`${calendarItems.postizId} is null`,
+            ),
+          )
+          .returning({ id: calendarItems.id });
+        removed = gone.length;
+        if (removed) await audit(ctx, "outline_calendar", `${removed} upcoming ideas and agent drafts`, "cleared for the re-plan");
+      }
       for (const i of ideas) {
         const at = new Date(`${i.date}T${i.time}:00+05:30`);
         if (Number.isNaN(at.getTime()) || at.getTime() < Date.now() + 3_600_000 || at.getTime() > Date.now() + 70 * 86_400_000) {
@@ -310,7 +405,8 @@ export function strategyTools(ctx: ToolContext) {
       }
       ctx.drafts += added;
       await audit(ctx, "outline_calendar", `${added} ideas`, "added");
-      return `Added ${added} ideas to the calendar.${skipped.length ? ` Skipped: ${skipped.slice(0, 10).join("; ")}.` : ""}`;
+      await ctx.log?.("wrote", `${removed ? `Cleared ${removed} upcoming ideas and agent drafts, then put` : "Put"} ${added} ideas on the calendar${skipped.length ? ` (${skipped.length} skipped)` : ""}`);
+      return `${removed ? `Cleared ${removed} upcoming items. ` : ""}Added ${added} ideas to the calendar.${skipped.length ? ` Skipped: ${skipped.slice(0, 10).join("; ")}.` : ""}`;
     },
   });
   return [savePlan, outline];
@@ -384,6 +480,7 @@ export function contentTools(ctx: ToolContext) {
       if (!row) return "Error: that idea was changed by someone a moment ago. Check the calendar again.";
       ctx.drafts++;
       await audit(ctx, "create_draft_post", p.idea, "drafted", `${channelLabel(p.channel)}, ${istDate(at)}`);
+      await ctx.log?.("wrote", `Drafted "${p.idea}" for ${channelLabel(p.channel)} on ${istDate(at)} (${p.format})`);
       const notes = check.warnings.length ? ` Warnings: ${check.warnings.join(" ")}` : "";
       return `Drafted "${p.idea}" (id ${row!.id}) for ${istDate(at)}.${notes}`;
     },
@@ -474,6 +571,7 @@ export function seoTools(ctx: ToolContext) {
       await sendPageForApproval(ctx, saved!, `Drafted by the SEO agent for "${page.keyword ?? page.title}".${p.needs_jyotish_review ? " Needs a Jyotish check." : ""}`);
       ctx.drafts++;
       await audit(ctx, "write_page", page.slug, "in_review");
+      await ctx.log?.("wrote", `Wrote the page "${p.title}" (${words(p.body)} words) and sent it for approval`);
       return `Saved "${p.title}" and sent it for approval (${words(p.body)} words).`;
     },
   });
@@ -496,6 +594,7 @@ export function seoTools(ctx: ToolContext) {
       await sendPageForApproval(ctx, saved!, `Blog for "${p.keyword}", drafted by the SEO agent.`);
       ctx.drafts++;
       await audit(ctx, "write_blog", p.slug, "in_review");
+      await ctx.log?.("wrote", `Wrote the blog "${p.title}" and sent it for approval`);
       return `Saved the blog "${p.title}" and sent it for approval.`;
     },
   });
@@ -533,7 +632,7 @@ export function chatTools(start: RunStarter) {
       name: "start_agent_run",
       description:
         "Start a Strategy, Content, SEO or Ads agent run when the person asks for one (a plan, posts drafted onto the calendar, SEO pages or blogs written, an ads review). Pass their instructions as the task. It runs in the background for a few minutes; results appear on the Strategy, Calendar, SEO, Ads manager and Approvals pages.",
-      inputSchema: z.object({ agent: z.enum(["strategy", "content", "seo", "ads"]), task: z.string().max(2000).optional() }),
+      inputSchema: z.object({ agent: z.enum(["strategy", "content", "seo", "ads"]), task: z.string().max(6000).optional() }),
       run: async ({ agent, task }) => {
         const r = await start(agent, task);
         return r.error ? `Couldn't start it: ${r.error}` : `Started the ${agent} agent (run ${r.runId}). It takes a few minutes.`;

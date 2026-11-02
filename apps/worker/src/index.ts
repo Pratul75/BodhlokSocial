@@ -16,7 +16,7 @@ import {
 } from "@bodh/integrations/pipeline";
 import { runPublisher } from "@bodh/integrations/publisher";
 import { pollVideoJobs } from "@bodh/integrations/creative";
-import { activeRun, anthropicClient, failStaleRuns, isAgentName, queueRun, runAgent, runVisibilityChecks } from "@bodh/agents";
+import { activeRun, anthropicClient, failStaleRuns, isAgentName, queueRun, replanTask, runAgent, runVisibilityChecks } from "@bodh/agents";
 import { syncAdStructure } from "@bodh/integrations/ads";
 import { publishQueued, removeQueued, syncSite } from "@bodh/integrations/site-publisher";
 import { pullLeads, reconcileBilling } from "@bodh/integrations/crm";
@@ -78,11 +78,33 @@ app.get("/jobs", (c) => c.json(AGENTS));
  */
 app.post("/jobs/:agent", async (c) => {
   const agent = c.req.param("agent");
-  if (!(agent in AGENTS)) return c.json({ error: `Unknown agent "${agent}"` }, 404);
+  if (!(agent in AGENTS) && agent !== "replan") return c.json({ error: `Unknown agent "${agent}"` }, 404);
   const trigger = c.req.query("trigger") === "manual" ? "manual" : "schedule";
   const body = (await c.req.json().catch(() => ({}))) as { task?: unknown; requestedBy?: unknown };
-  const task = typeof body.task === "string" ? body.task.slice(0, 2000) : undefined;
+  const task = typeof body.task === "string" ? body.task.slice(0, 6000) : undefined;
   const requestedBy = typeof body.requestedBy === "string" ? body.requestedBy.slice(0, 200) : null;
+
+  // A person updated the positioning brief: the Strategy agent re-plans the month (replacing the
+  // approved plan and upcoming agent work), then the Content agent drafts the first week from it.
+  if (agent === "replan") {
+    if (!(await anthropicClient())) return c.json({ error: "No Anthropic API key. An admin can add one in Connections." }, 409);
+    for (const a of ["strategy", "content"] as const) {
+      const running = await activeRun(a);
+      if (running) return c.json({ error: `The ${a} agent is already running; try again in a few minutes.`, runId: running }, 409);
+    }
+    const runId = await queueRun("strategy", "manual");
+    void (async () => {
+      const r = await runAgent("strategy", { trigger: "manual", task: replanTask(), requestedBy, replan: true }, runId);
+      if (r.status !== "succeeded") return;
+      const contentRun = await queueRun("content", "manual");
+      await runAgent(
+        "content",
+        { trigger: "manual", task: "The month was just re-planned from a new positioning brief. Draft the next 7 days from the new plan and the ideas now on the calendar. Leave posts a person edited, sent for approval or approved as they are.", requestedBy },
+        contentRun,
+      );
+    })().catch((e) => console.error(`replan ${runId} failed`, e));
+    return c.json({ runId, status: "queued" }, 202);
+  }
 
   if (isAgentName(agent)) {
     if (!(await anthropicClient())) return c.json({ error: "No Anthropic API key. An admin can add one in Connections." }, 409);

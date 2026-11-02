@@ -44,6 +44,11 @@ export default async function CalendarItemPage({ params, searchParams }: { param
           <span className="flex flex-wrap items-center gap-2">
             {CHANNEL_LABELS[item.channel as Channel] ?? item.channel} · {FORMAT_LABELS[item.format as keyof typeof FORMAT_LABELS] ?? item.format}
             <StatusPill status={item.status} />
+            {typeof item.settings.run_id === "string" && (
+              <Link href={`/runs/${item.settings.run_id}`} className="text-dusk hover:underline">
+                {typeof item.settings.drafted_by === "string" ? `Drafted by the ${item.settings.drafted_by}` : typeof item.settings.planned_by === "string" ? `Planned by the ${item.settings.planned_by}` : "By an agent"}: see the run
+              </Link>
+            )}
           </span>
         }
         title={item.title || item.idea}
