@@ -26,7 +26,7 @@ export async function teamBrief(): Promise<string> {
   const when = k.at ? k.at.toISOString().slice(0, 10) : "";
   const sources = k.sources.length ? `\nPages you can read with read_website for the current site and wording: ${k.sources.join(", ")}` : "";
   return `<team_brief${when ? ` updated="${when}"` : ""}>
-The team's own positioning brief. It is current and wins over the bodh-positioning skill wherever they differ. Every plan, post, page and ad follows it.
+The team's own positioning brief: the direction, not the plan. It says who Bodhlok is for, what it claims, the tone, and what never appears; it is current and wins over the bodh-positioning skill wherever they differ. What to do about it is still yours to work out: research as your role says (the data, the keywords and trends, what was published, the month's events, the web) before deciding anything, and where the data points somewhere the brief does not, say so plainly in your summary.
 
 ${k.positioning.trim()}${sources}
 </team_brief>`;
@@ -42,7 +42,7 @@ export async function systemPrompt(agent: AgentName | "chat") {
 /** The task for a re-plan a person asked for: the plan and the rest of the month's calendar follow the new brief. */
 export function replanTask(now = new Date()): string {
   const t = istNow(now);
-  return `A person has updated the positioning brief and asked for ${t.month} to be re-planned from today. Read the brief (get_brand_kit) and its source pages (read_website), then: (1) save a new plan for ${t.month} that follows the brief (the approved one steps aside); (2) outline the rest of ${t.month} from tomorrow with replace_remaining set, so earlier ideas and agent drafts that no longer fit are cleared and replaced. Keep posts a person has edited, sent for approval, approved or scheduled. Finish with two or three sentences on what changed and why.`;
+  return `A person has updated the positioning brief and asked for ${t.month} to be re-planned from today. Read the brief (get_brand_kit) and its source pages (read_website). Then do your usual research before deciding anything: the funnel and ads, the keywords and search trends, what was published and how it did, AI visibility, and the month's astrological events and festivals (web search). Then: (1) save a new plan for ${t.month} that follows the brief's direction and what the research found (the approved one steps aside); (2) outline the rest of ${t.month} from tomorrow with replace_remaining set, so earlier ideas and agent drafts that no longer fit are cleared and replaced. Keep posts a person has edited, sent for approval, approved or scheduled. Finish with two or three sentences on what changed, why, and anything in the data that argues with the brief.`;
 }
 
 export function istNow(now = new Date()) {
