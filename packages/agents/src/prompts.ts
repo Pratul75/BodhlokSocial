@@ -69,7 +69,7 @@ export function defaultTask(agent: AgentName, now = new Date()): string {
   if (agent === "seo") {
     return "Draft the next 10 programmatic pages, write one blog if a keyword deserves it, and summarise the site audit and AI-visibility gaps.";
   }
-  return "Draft posts for the next 7 days. Aim for one Reel or Short a day across Instagram and YouTube, three to four other Instagram or Facebook posts, and at most one LinkedIn post, minus whatever is already on the calendar.";
+  return "Draft posts for the next 7 days. First turn every open idea in those days into a draft (pass its idea_id), whatever its channel: the strategy plan already chose the mix. Then, only on days the plan left empty, fill gaps following the plan's pillars and channel weighting.";
 }
 
 export function userMessage(task: string, requestedBy: string | null, now = new Date()) {
