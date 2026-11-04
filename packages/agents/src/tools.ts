@@ -440,8 +440,9 @@ export function contentTools(ctx: ToolContext) {
       if (!isPublishChannel(p.channel)) return "Error: unknown channel.";
       const at = new Date(p.scheduled_at);
       const soonest = Date.now() + 12 * 3_600_000;
-      const latest = Date.now() + 21 * 86_400_000;
-      if (at.getTime() < soonest || at.getTime() > latest) return "Error: schedule between 12 hours and 21 days from now, so there is time to make the creative and approve it.";
+      // Far enough to draft the whole month the plan laid out (a person can ask for that).
+      const latest = Date.now() + 35 * 86_400_000;
+      if (at.getTime() < soonest || at.getTime() > latest) return "Error: schedule between 12 hours and 35 days from now, so there is time to make the creative and approve it.";
       if (p.channel === "youtube" && (!p.title || p.title.trim().length < 2)) return "Error: YouTube posts need a title of 2 to 100 characters.";
 
       let idea: typeof calendarItems.$inferSelect | undefined;
