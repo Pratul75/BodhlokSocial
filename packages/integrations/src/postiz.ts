@@ -135,10 +135,22 @@ export function providerSettings(identifier: string, item: ItemForPostiz, media:
         tags: [],
       };
     }
+    case "gmb": {
+      // docs.postiz.com/public-api/providers/gmb. A standard update; the button is optional.
+      const url = String(s.cta_url ?? "").trim();
+      const type = GMB_BUTTONS.includes(String(s.cta_type) as GmbButton) ? String(s.cta_type) : "NONE";
+      return type !== "NONE" && /^https:\/\/\S+$/.test(url)
+        ? { __type: "gmb", topicType: "STANDARD", callToActionType: type, callToActionUrl: url }
+        : { __type: "gmb", topicType: "STANDARD" };
+    }
     default:
       return { __type: identifier };
   }
 }
+
+/** Business Profile post buttons Growth OS offers (Postiz's callToActionType values). */
+export const GMB_BUTTONS = ["NONE", "LEARN_MORE", "SIGN_UP", "BOOK", "GET_OFFER"] as const;
+export type GmbButton = (typeof GMB_BUTTONS)[number];
 
 /**
  * The create-post body for one calendar item. The group is the calendar item's ID, so the
@@ -146,7 +158,13 @@ export function providerSettings(identifier: string, item: ItemForPostiz, media:
  */
 export function buildPostPayload(item: ItemForPostiz, integration: { id: string; identifier: string }, media: MediaForPostiz[], now = new Date()) {
   const postNow = item.scheduledAt.getTime() <= now.getTime() + 60_000;
-  const attached = integration.identifier === "youtube" ? media.filter((m) => m.type === "video").slice(0, 1) : media;
+  // YouTube takes the one video (an image goes as the thumbnail); Business Profile takes one photo.
+  const attached =
+    integration.identifier === "youtube"
+      ? media.filter((m) => m.type === "video").slice(0, 1)
+      : integration.identifier === "gmb"
+        ? media.filter((m) => m.type === "image").slice(0, 1)
+        : media;
   return {
     type: postNow ? "now" : "schedule",
     date: (postNow ? now : item.scheduledAt).toISOString(),
@@ -169,5 +187,6 @@ export function channelFor(identifier: string): string | null {
   if (identifier === "facebook") return "facebook";
   if (identifier.startsWith("linkedin")) return "linkedin";
   if (identifier === "youtube") return "youtube";
+  if (identifier === "gmb") return "gbp";
   return null;
 }

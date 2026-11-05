@@ -31,7 +31,7 @@ function readForm(formData: FormData) {
   const date = String(formData.get("date") ?? "");
   const time = String(formData.get("time") ?? "18:30");
   const settings: Record<string, unknown> = {};
-  for (const key of ["post_type", "visibility", "made_for_kids"]) {
+  for (const key of ["post_type", "visibility", "made_for_kids", "cta_type", "cta_url"]) {
     const v = formData.get(`setting_${key}`);
     if (typeof v === "string" && v) settings[key] = v;
   }

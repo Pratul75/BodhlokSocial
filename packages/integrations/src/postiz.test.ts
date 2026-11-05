@@ -62,7 +62,18 @@ describe("payloads", () => {
   });
 
   it("maps Postiz channel types to ours", () => {
-    expect(["instagram-standalone", "facebook", "linkedin-page", "youtube", "x"].map(channelFor)).toEqual(["instagram", "facebook", "linkedin", "youtube", null]);
+    expect(["instagram-standalone", "facebook", "linkedin-page", "youtube", "gmb", "x"].map(channelFor)).toEqual(["instagram", "facebook", "linkedin", "youtube", "gbp", null]);
+  });
+
+  it("sends Business Profile updates as standard gmb posts with one photo and an optional button", () => {
+    const gbp = { ...item, channel: "gbp", format: "post" };
+    const plain = buildPostPayload(gbp, { id: "g-1", identifier: "gmb" }, [video, image, { ...image, id: "m3" }], now);
+    expect(plain.posts[0]!.value[0]!.image).toEqual([{ id: "m2", path: image.path }]);
+    expect(plain.posts[0]!.settings).toEqual({ __type: "gmb", topicType: "STANDARD" });
+    const withButton = buildPostPayload({ ...gbp, settings: { cta_type: "SIGN_UP", cta_url: "https://www.bodhlok.com" } }, { id: "g-1", identifier: "gmb" }, [image], now);
+    expect(withButton.posts[0]!.settings).toEqual({ __type: "gmb", topicType: "STANDARD", callToActionType: "SIGN_UP", callToActionUrl: "https://www.bodhlok.com" });
+    const badLink = buildPostPayload({ ...gbp, settings: { cta_type: "SIGN_UP", cta_url: "http://x" } }, { id: "g-1", identifier: "gmb" }, [image], now);
+    expect(badLink.posts[0]!.settings).toEqual({ __type: "gmb", topicType: "STANDARD" });
   });
 });
 

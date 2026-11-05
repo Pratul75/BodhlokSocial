@@ -40,6 +40,18 @@ describe("checkPost", () => {
     expect(r.errors).toEqual(['"Guaranteed": guaranteed outcomes aren\'t allowed.', '"best astrologer in india" is on the brand kit\'s banned list.']);
   });
 
+  it("checks Business Profile updates: photos only, 1,500 characters, a working button link", () => {
+    const base = { channel: "gbp", format: "post", caption: "The Bodhlok desk is open to astrologers in Indore.", title: null, assets: [img] };
+    expect(checkPost(base)).toEqual({ errors: [], warnings: [] });
+    expect(checkPost({ ...base, assets: [vid] }).errors[0]).toMatch(/photos, not video/);
+    expect(checkPost({ ...base, assets: [] }).warnings[0]).toMatch(/without a photo/);
+    expect(checkPost({ ...base, caption: "x".repeat(1501) }).errors[0]).toMatch(/allows 1500/);
+    expect(checkPost({ ...base, settings: { cta_type: "LEARN_MORE", cta_url: "" } }).errors[0]).toMatch(/needs a link/);
+    expect(checkPost({ ...base, settings: { cta_type: "LEARN_MORE", cta_url: "https://www.bodhlok.com" } }).errors).toEqual([]);
+    expect(checkPost({ ...base, caption: "Call 98260 12345 for a demo" }).warnings.join(" ")).toMatch(/phone number/);
+    expect(checkPost({ ...base, caption: "Workshop on 2026-11-05" }).warnings).toEqual([]);
+  });
+
   it("refuses channels Postiz doesn't publish", () => {
     expect(checkPost({ channel: "seo", format: "blog", caption: "x", title: "t", assets: [] }).errors[0]).toMatch(/isn't published through Postiz/);
   });

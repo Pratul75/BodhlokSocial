@@ -151,6 +151,25 @@ export function ItemEditor({
           </div>
         )}
 
+        {channel === "gbp" && (
+          <div className="flex flex-wrap gap-4">
+            <label className="block w-48 text-sm">
+              <span className={label}>Button</span>
+              <select name="setting_cta_type" defaultValue={String(item.settings.cta_type ?? "NONE")} className={inputClass}>
+                <option value="NONE">No button</option>
+                <option value="LEARN_MORE">Learn more</option>
+                <option value="SIGN_UP">Sign up</option>
+                <option value="BOOK">Book</option>
+                <option value="GET_OFFER">Get offer</option>
+              </select>
+            </label>
+            <label className="block min-w-64 flex-1 text-sm">
+              <span className={label}>Button link</span>
+              <input name="setting_cta_url" type="url" defaultValue={String(item.settings.cta_url ?? "")} placeholder="https://www.bodhlok.com" className={inputClass} />
+            </label>
+          </div>
+        )}
+
         <div>
           <div className="mb-2 text-xs text-muted">Media, in posting order ({selected.length} chosen)</div>
           {selected.length > 0 && (
