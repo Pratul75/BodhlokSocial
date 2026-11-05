@@ -54,6 +54,8 @@ async function call<T>(creds: PostizCredentials, path: string, init: RequestInit
   let res: Response;
   try {
     res = await fetch(`${normalizeApiUrl(creds.api_url)}${path}`, {
+      // Uploads of finished videos can be large; everything else answers in seconds.
+      signal: AbortSignal.timeout(300_000),
       ...init,
       headers: { Authorization: creds.api_key, ...(init.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}), ...(init.headers ?? {}) },
     });

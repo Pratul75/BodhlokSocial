@@ -171,5 +171,5 @@ registration arrives.
 
 ## Testing
 
-Send events to the staging Growth OS with a staging secret. They appear within seconds on the
+Send test events with a test secret to a local or test copy of Growth OS first (there is no shared staging environment). They appear within seconds on the
 **Tracking** page under Recent events, with the channel each registration was attributed to.

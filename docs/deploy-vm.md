@@ -8,7 +8,7 @@ There is no CI/CD: you deploy from a laptop.
 |---|---|
 | Web app | systemd `bodh-web`, Node 24, on 127.0.0.1:3100 behind Caddy |
 | Worker | systemd `bodh-worker`, on 127.0.0.1:8787, not reachable from outside |
-| Scheduled jobs | systemd timers `bodh-*.timer` (tracking, publisher, video checks, Content agent daily 06:00 IST, Strategy agent on the 25th at 09:00 IST, SEO and Ads jobs, site publishing to bodhlok.com daily 10:00 IST) |
+| Scheduled jobs | 21 systemd timers `bodh-*.timer` calling the worker through `bodh-job@` (tracking, ad sync, publisher, video checks, SEO and site publishing, the daily ops digest at 09:00, and the seven agents), the same jobs and times as `infra/scheduler.tf`; plus `bodh-db-backup.timer` (02:30 IST) |
 | Database | `bodh_growth` on the VM's Postgres 15 |
 | Settings and secrets | `/opt/bodh/shared/bodh.env`, readable by root and the `bodh` user only |
 | Integration keys, uploads | `/opt/bodh/shared/secrets`, `/opt/bodh/shared/uploads` |
@@ -45,8 +45,9 @@ audience and branding alone. To recreate the client in a project of its own:
    `rechargestudio.com` under authorised domains.
 2. **Audience**: **Internal** if the project belongs to the rechargestudio.com organisation.
    Otherwise **External**, leave it in Testing, and add each teammate's email as a test user.
-3. **Data access**: add `openid`, `email`, `profile` and
-   `https://www.googleapis.com/auth/webmasters.readonly`.
+3. **Data access**: add `openid`, `email`, `profile`,
+   `https://www.googleapis.com/auth/webmasters.readonly`, `https://www.googleapis.com/auth/adwords`
+   and `https://www.googleapis.com/auth/youtube.force-ssl` (YouTube comments).
 4. **Clients > Create client > Web application**, with these authorised redirect URIs, using the
    app's current address:
    - `https://growth.rechargestudio.com/api/auth/callback/google`
@@ -82,8 +83,16 @@ To roll back, point `current` at the previous release and restart:
 sudo ln -sfn /opt/bodh/releases/<previous> /opt/bodh/current && sudo systemctl restart bodh-web bodh-worker
 ```
 
-Database migrations only add tables and columns, so an older release still runs on a newer
-database.
+Database migrations add tables, columns, indexes and constraints; they never drop data a release
+reads, so an older release still runs on a newer database. Migration 0008 also normalises values the
+new constraints don't allow (for example an unknown role becomes social_manager, as the app already
+treated it) and keeps one strategy plan per month.
+
+## Backups
+
+`bodh-db-backup.timer` runs `/opt/bodh/bin/backup` nightly: a compressed `pg_dump` in
+`/opt/bodh/backups`, newest 14 kept. Set `BACKUP_BUCKET=gs://<bucket>` in `bodh.env` (with `gsutil` on
+the VM) to copy each dump off the machine. Restoring is in `docs/operations.md`.
 
 ## Notes
 
@@ -92,3 +101,12 @@ database.
   brand kit. Spend caps were reset to ₹0; set real ones in **Admin** before connecting ad accounts.
 - Keys pasted in Connections are stored as files in `/opt/bodh/shared/secrets`, not in GCP Secret
   Manager, since this VM setup doesn't use Cloud Run. The folder is readable only by the `bodh` user.
+- The "Sample data" badge follows the seed's marker row in the database, not an environment flag.
+  A `DEMO_DATA` line left in `bodh.env` from the first install does nothing and can be deleted.
+- `pnpm db:seed` (or `src/seed.ts`) wipes users, connections and content, so it refuses to run
+  unless `SEED_CONFIRM=yes`, and on this VM (production) also `SEED_ALLOW_PRODUCTION=yes`. Only the
+  first install with `SEED=1` sets both.
+- Lead forms: set `META_APP_SECRET`, `META_LEADS_VERIFY_TOKEN` and `GOOGLE_LEADS_WEBHOOK_KEY` in
+  `bodh.env`; the URLs to give Meta and Google are on the Leads page (admins).
+- Alerts: set `ALERT_WEBHOOK_URL` to a Slack-compatible incoming webhook for the 09:00 digest.
+- Postiz: write here whether the team uses Postiz Cloud or a self-hosted Postiz, and who upgrades it.

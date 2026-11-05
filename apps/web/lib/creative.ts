@@ -1,7 +1,7 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import { assets, creativeJobs, db } from "@bodh/db";
-import { assetBytes, loadBrand, MONTHLY_LIMITS, monthlyUsage, vertexKey } from "@bodh/integrations/creative";
+import { assetBytes, generationRefusal, loadBrand, vertexKey } from "@bodh/integrations/creative";
 import { imageSize, saveFile, storagePathFor } from "@bodh/integrations/storage";
 import { brandPrompt, generateImage, vertexAuth, type CreativeKind, type ImageAspect } from "@bodh/integrations/vertex";
 import { compose } from "./compose";
@@ -23,10 +23,8 @@ async function inBatches<T>(n: number, size: number, fn: (i: number) => Promise<
 /** Generates, applies the brand kit, stores the results as assets. Returns the job and asset IDs. */
 export async function runImageJob(input: ImageJobInput, requestedBy: string) {
   const n = input.kind === "thumbnail" ? 1 : input.count;
-  const usage = await monthlyUsage();
-  if (usage.images + n > MONTHLY_LIMITS.images) {
-    throw new Error(`This would pass this month's limit of ${MONTHLY_LIMITS.images} images (${usage.images} used).`);
-  }
+  const refusal = await generationRefusal(requestedBy, "images", n);
+  if (refusal) throw new Error(refusal);
   const brand = await loadBrand();
   const aspect: ImageAspect = input.kind === "thumbnail" ? "16:9" : input.aspectRatio;
   const [job] = await db

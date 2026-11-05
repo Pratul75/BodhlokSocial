@@ -25,6 +25,11 @@ export interface ConnectionView {
   oauthClientReady: boolean;
   /** Postiz only: an OAuth app is saved, so Postiz can be connected by signing in. */
   postizSignIn?: boolean;
+  /** Not built yet: why, shown instead of a connect form. */
+  planned?: string;
+  /** A non-Google sign-in flow, and whether its app credentials are saved. */
+  customOAuth?: "reddit";
+  customOAuthReady?: boolean;
   /** Extra line under the description, e.g. the redirect URL to give a platform. */
   note?: string;
 }
@@ -64,7 +69,12 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
           {c.syncedLabel && ` · synced ${c.syncedLabel}`}
         </p>
       )}
-      {c.error && <p className="mt-2 text-xs text-sindoor" role="alert">{c.error}</p>}
+      {c.error && (
+        <p className={`mt-2 text-xs ${c.status === "connected" ? "text-turmeric-ink" : "text-sindoor"}`} role="alert">
+          {c.status === "connected" ? "Note: " : ""}
+          {c.error}
+        </p>
+      )}
       {c.note && <p className="mt-2 text-xs break-all text-muted">{c.note}</p>}
 
       <div className="mt-auto pt-4">
@@ -79,7 +89,12 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
                   </button>
                 </form>
               )}
-              <form action={disconnect}>
+              <form
+                action={disconnect}
+                onSubmit={(e) => {
+                  if (!window.confirm(`Disconnect ${c.name}? Agents and jobs stop using it until someone connects it again.`)) e.preventDefault();
+                }}
+              >
                 <input type="hidden" name="key" value={c.key} />
                 <button className={btn.ghost}>
                   <Unplug size={15} /> Disconnect
@@ -91,6 +106,13 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
                 {syncState.ok ? syncState.message : syncState.error}
               </p>
             )}
+          </div>
+        ) : c.planned ? (
+          <div>
+            <button className={btn.secondary} disabled>
+              <KeyRound size={15} /> Not available yet
+            </button>
+            <p className="mt-1.5 text-xs text-muted">{c.planned}</p>
           </div>
         ) : c.method === "api_key" || c.method === "service_account" ? (
           open ? (
@@ -120,10 +142,10 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
               <input name="label" className={inputClass} placeholder="Account name (optional)" />
               {state && !state.ok && <p className="text-sm text-sindoor" role="alert">{state.error}</p>}
               <div className="flex gap-2">
-                <button className={btn.primary} disabled={pending}>Save and connect</button>
+                <button className={btn.primary} disabled={pending}>{pending ? "Checking…" : "Save and connect"}</button>
                 <button type="button" className={btn.ghost} onClick={() => setOpen(false)}>Cancel</button>
               </div>
-              <p className="text-xs text-muted">Stored in the secrets store, never in the database.</p>
+              <p className="text-xs text-muted">Checked with the provider first, then stored in the secrets store, never in the database.</p>
             </form>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -135,6 +157,19 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
               <button className={btn.secondary} onClick={() => setOpen(true)}>
                 <KeyRound size={15} /> {c.fields ? (c.postizSignIn ? "Paste an API key" : "Add credentials") : c.method === "api_key" ? "Add API key" : "Add service account"}
               </button>
+            </div>
+          )
+        ) : c.customOAuth ? (
+          c.customOAuthReady ? (
+            <a href={`/api/connect/${c.key}/start`} className={btn.primary}>
+              <Link2 size={15} /> Sign in with Reddit
+            </a>
+          ) : (
+            <div>
+              <button className={btn.secondary} disabled>
+                <Link2 size={15} /> Sign in with Reddit
+              </button>
+              <p className="mt-1.5 text-xs text-muted">Save the Reddit app (client ID and secret) first, then sign in with the team account.</p>
             </div>
           )
         ) : c.method === "oauth" && c.oauthEnabled && c.oauthClientReady ? (

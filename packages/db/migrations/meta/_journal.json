@@ -50,6 +50,20 @@
       "when": 1792861484034,
       "tag": "0006_site_publishing",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793858208042,
+      "tag": "0007_agent_runs_active",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793860583102,
+      "tag": "0008_integrity_and_growth",
+      "breakpoints": true
     }
   ]
 }

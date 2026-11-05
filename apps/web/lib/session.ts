@@ -12,6 +12,14 @@ export function authEnabled(): boolean {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
 
+/**
+ * Dev sign-in (no Google client, everyone is DEV_USER_EMAIL) is only ever allowed outside
+ * production. There is deliberately no environment flag that re-enables it in production.
+ */
+export function devAuthAllowed(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 function secretKey(): Uint8Array {
   const s = process.env.AUTH_SECRET;
   if (!s || s.length < 32) throw new Error("AUTH_SECRET must be set to at least 32 characters.");
@@ -21,10 +29,12 @@ function secretKey(): Uint8Array {
 export interface SessionClaims {
   sub: string; // user id
   email: string;
+  /** users.session_version when the session was issued; a higher number in the database revokes it. */
+  sv: number;
 }
 
 export async function createSessionToken(claims: SessionClaims): Promise<string> {
-  return new SignJWT({ email: claims.email })
+  return new SignJWT({ email: claims.email, sv: claims.sv })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(claims.sub)
     .setIssuedAt()
@@ -38,7 +48,7 @@ export async function verifySessionToken(token: string | undefined): Promise<Ses
   try {
     const { payload } = await jwtVerify(token, secretKey(), { audience: "bodh-session", algorithms: ["HS256"] });
     if (typeof payload.sub !== "string" || typeof payload.email !== "string") return null;
-    return { sub: payload.sub, email: payload.email };
+    return { sub: payload.sub, email: payload.email, sv: typeof payload.sv === "number" ? payload.sv : 0 };
   } catch {
     return null;
   }
@@ -81,6 +91,21 @@ export function cookieOptions(maxAgeSeconds: number) {
     path: "/",
     maxAge: maxAgeSeconds,
   };
+}
+
+/**
+ * For state-changing requests that don't carry a form token (sign-out): the browser's Origin
+ * header must be this app. A missing Origin (old clients, some privacy tools) is allowed through,
+ * since the session cookie is SameSite=Lax and isn't sent on cross-site POSTs anyway.
+ */
+export function sameOrigin(req: Request, appOrigin: string): boolean {
+  const origin = req.headers.get("origin");
+  if (!origin) return true;
+  try {
+    return new URL(origin).origin === new URL(appOrigin).origin;
+  } catch {
+    return false;
+  }
 }
 
 /** Only allow same-site relative paths after sign-in, never another origin. */

@@ -1,10 +1,10 @@
 import { z } from "zod";
+import { log } from "@bodh/shared/log";
 import { chat } from "@bodh/agents";
-import { canAccess } from "@bodh/shared";
+import { AGENT_MODULE, canAccess, type StartableAgent } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
 import { startAgentRun } from "@/lib/agents";
 
-const MODULE_FOR = { strategy: "strategy", content: "calendar", seo: "seo", ads: "ads" } as const;
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -22,8 +22,8 @@ export async function POST(req: Request) {
 
   const encoder = new TextEncoder();
   // Chat can start the agents this person could start from their pages.
-  const start = async (agent: keyof typeof MODULE_FOR, task: string | undefined) =>
-    canAccess(user.role, MODULE_FOR[agent]) ? startAgentRun(agent, user.email, task) : { error: "Your role can't run that agent." };
+  const start = async (agent: StartableAgent, task: string | undefined) =>
+    canAccess(user.role, AGENT_MODULE[agent]) ? startAgentRun(agent, user.email, task) : { error: "Your role can't run that agent." };
   const events = chat(parsed.data.messages, user.email, undefined, start);
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
         if (done) return controller.close();
         controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
       } catch (e) {
-        console.error("chat failed", e);
+        log.error("chat failed", e);
         controller.enqueue(encoder.encode(`${JSON.stringify({ type: "error", message: "Something went wrong answering that." })}\n`));
         controller.close();
       }

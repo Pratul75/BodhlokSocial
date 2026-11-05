@@ -1,20 +1,21 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { agentRuns, auditLog, db } from "@bodh/db";
 import { anthropicClient, FALLBACK_BETA, MODEL } from "./client";
-import { addUsage, costUsd, emptyTotals, MONTHLY_BUDGET_USD, spentThisMonthUsd, type RunTotals } from "./cost";
+import { addUsage, costUsd, emptyTotals, reserveBudget, type RunTotals } from "./cost";
 import { defaultTask, systemPrompt, userMessage, type AgentName } from "./prompts";
 import { adsTools, contentTools, readTools, seoTools, strategyTools, type ToolContext } from "./tools";
+import { analystTools, communityTools, mentionsTools } from "./tools-growth";
 
-export const AGENT_NAMES: AgentName[] = ["strategy", "content", "seo", "ads"];
+export const AGENT_NAMES: AgentName[] = ["strategy", "content", "seo", "ads", "community", "mentions", "analyst"];
 export const isAgentName = (a: string): a is AgentName => (AGENT_NAMES as string[]).includes(a);
 
 /** One run may not spend more than this, whatever the monthly budget says. */
 export const RUN_CAP_USD = Number(process.env.AI_RUN_CAP_USD ?? 6);
-const EFFORT = { strategy: "high", content: "medium", seo: "medium", ads: "high" } as const;
-const WEB_SEARCHES = { strategy: 8, content: 4, seo: 6, ads: 2 } as const;
-const TOOLS = { strategy: strategyTools, content: contentTools, seo: seoTools, ads: adsTools } as const;
+const EFFORT = { strategy: "high", content: "medium", seo: "medium", ads: "high", community: "medium", mentions: "medium", analyst: "high" } as const;
+const WEB_SEARCHES = { strategy: 8, content: 4, seo: 6, ads: 2, community: 6, mentions: 10, analyst: 2 } as const;
+const TOOLS = { strategy: strategyTools, content: contentTools, seo: seoTools, ads: adsTools, community: communityTools, mentions: mentionsTools, analyst: analystTools } as const;
 
 export interface RunOptions {
   trigger: "manual" | "schedule";
@@ -30,10 +31,28 @@ export interface RunResult {
   costUsd: number;
 }
 
-/** Creates the run row so callers can return its id before the run finishes. */
-export async function queueRun(agent: AgentName, trigger: RunOptions["trigger"]): Promise<string> {
-  const [row] = await db.insert(agentRuns).values({ agent, trigger, status: "queued" }).returning({ id: agentRuns.id });
-  return row!.id;
+/** A run that has been queued or running for longer than this is treated as dead. */
+export const STALE_AFTER_MS = 3_600_000;
+
+/**
+ * Creates the run row so callers can return its id before the run finishes. A partial unique
+ * index (agent_runs_one_active_idx) allows one queued or running row per agent, so two callers
+ * racing to start the same agent get one run between them: the loser receives the winner's id
+ * with created=false.
+ */
+export async function queueRun(agent: string, trigger: RunOptions["trigger"]): Promise<{ id: string; created: boolean }> {
+  // A row left behind by a crash would block the agent forever; expire it first.
+  await db
+    .update(agentRuns)
+    .set({ status: "failed", summary: "Stopped: the run stopped responding.", finishedAt: new Date() })
+    .where(
+      and(eq(agentRuns.agent, agent), inArray(agentRuns.status, ["queued", "running"]), lt(agentRuns.startedAt, new Date(Date.now() - STALE_AFTER_MS))),
+    );
+  const [row] = await db.insert(agentRuns).values({ agent, trigger, status: "queued" }).onConflictDoNothing().returning({ id: agentRuns.id });
+  if (row) return { id: row.id, created: true };
+  const existing = await activeRun(agent);
+  if (!existing) throw new Error(`Could not queue a ${agent} run.`);
+  return { id: existing, created: false };
 }
 
 async function finish(runId: string, status: RunResult["status"], summary: string, totals: RunTotals): Promise<RunResult> {
@@ -66,18 +85,23 @@ function describeError(e: unknown): string {
   return e instanceof Error ? e.message.slice(0, 500) : String(e);
 }
 
-/** Runs the Strategy or Content agent to completion and records the result on the run row. */
+/** Runs an agent to completion and records the result on the run row. */
 export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId?: string): Promise<RunResult> {
-  const runId = existingRunId ?? (await queueRun(agent, opts.trigger));
+  let runId = existingRunId;
+  if (!runId) {
+    const queued = await queueRun(agent, opts.trigger);
+    if (!queued.created) return { runId: queued.id, status: "failed", summary: `The ${agent} agent is already running.`, costUsd: 0 };
+    runId = queued.id;
+  }
   let totals = emptyTotals();
 
   const client = opts.client ?? (await anthropicClient());
   if (!client) return finish(runId, "failed", "No Anthropic API key. An admin can add one in Connections → Claude.", totals);
 
-  const spent = await spentThisMonthUsd();
-  if (spent >= MONTHLY_BUDGET_USD) {
-    return finish(runId, "failed", `This month's AI budget ($${MONTHLY_BUDGET_USD}) is used up ($${spent.toFixed(2)} spent). Raise AI_MONTHLY_BUDGET_USD to run more.`, totals);
-  }
+  // Reserve this run's cap against the monthly budget before spending anything.
+  const budget = await reserveBudget(runId, RUN_CAP_USD);
+  if (!budget.ok) return finish(runId, "failed", budget.reason, totals);
+  const capUsd = budget.capUsd;
 
   await db.update(agentRuns).set({ status: "running", startedAt: new Date() }).where(eq(agentRuns.id, runId));
   await db.insert(auditLog).values({ actor: `${agent} agent`, actorType: "agent", action: "run", target: agent, reason: opts.requestedBy ? `requested by ${opts.requestedBy}` : opts.trigger, result: "started" });
@@ -103,7 +127,7 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
     let last: BetaMessage | null = null;
     let stopped: string | null = null;
     for await (const message of runner) {
-      totals = addUsage(totals, message.usage);
+      totals = addUsage(totals, message.usage, message.model);
       last = message;
       if (message.stop_reason === "refusal") {
         stopped = "Claude declined to continue this run.";
@@ -113,16 +137,19 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
         stopped = "The run hit its output limit mid-step and stopped.";
         break;
       }
-      if (costUsd(totals) > RUN_CAP_USD) {
-        stopped = `Stopped at the per-run cost cap of $${RUN_CAP_USD}.`;
+      if (costUsd(totals) > capUsd) {
+        stopped =
+          capUsd < RUN_CAP_USD
+            ? `Stopped: this month's AI budget ran out ($${capUsd.toFixed(2)} was left for this run).`
+            : `Stopped at the per-run cost cap of $${RUN_CAP_USD}.`;
         break;
       }
       if (message.stop_reason === "pause_turn") runner.pushMessages({ role: "assistant", content: message.content });
     }
 
     const text = textOf(last);
-    const unit = { content: "post", seo: "page", strategy: "calendar idea", ads: "change" }[agent];
-    const verb = { content: "drafted", seo: "drafted", strategy: "added", ads: "requested" }[agent];
+    const unit = { content: "post", seo: "page", strategy: "calendar idea", ads: "change", community: "answer", mentions: "listing", analyst: "report" }[agent];
+    const verb = { content: "drafted", seo: "drafted", strategy: "added", ads: "requested", community: "drafted", mentions: "drafted", analyst: "saved" }[agent];
     const done = (agent === "strategy" || agent === "ads") && ctx.drafts === 0 ? "" : `${ctx.drafts} ${unit}${ctx.drafts === 1 ? "" : "s"} ${verb}. `;
     if (stopped) return finish(runId, ctx.drafts > 0 ? "succeeded" : "failed", `${stopped} ${done}${text}`.trim(), totals);
     return finish(runId, "succeeded", `${done}${text}`.trim() || "Finished without a summary.", totals);
@@ -132,21 +159,24 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
 }
 
 /** A run of this agent that is still going, if any. Runs older than an hour count as dead. */
-export async function activeRun(agent: AgentName): Promise<string | null> {
+export async function activeRun(agent: string): Promise<string | null> {
   const [row] = await db
     .select({ id: agentRuns.id })
     .from(agentRuns)
-    .where(and(eq(agentRuns.agent, agent), inArray(agentRuns.status, ["queued", "running"]), gt(agentRuns.startedAt, new Date(Date.now() - 3_600_000))))
+    .where(and(eq(agentRuns.agent, agent), inArray(agentRuns.status, ["queued", "running"]), gt(agentRuns.startedAt, new Date(Date.now() - STALE_AFTER_MS))))
     .limit(1);
   return row?.id ?? null;
 }
 
-/** Marks Strategy and Content runs left queued or running by a restart as failed. The worker calls this on start. */
-export async function failStaleRuns(): Promise<number> {
+/**
+ * Marks every run left queued or running by a restart as failed, whatever the agent (chat and
+ * AI-visibility runs included). The worker calls this on start.
+ */
+export async function failStaleRuns(exceptAgent?: string): Promise<number> {
   const rows = await db
     .update(agentRuns)
     .set({ status: "failed", summary: "Stopped: the service restarted during the run.", finishedAt: new Date() })
-    .where(and(inArray(agentRuns.agent, AGENT_NAMES), inArray(agentRuns.status, ["queued", "running"])))
+    .where(and(inArray(agentRuns.status, ["queued", "running"]), exceptAgent ? ne(agentRuns.agent, exceptAgent) : undefined))
     .returning({ id: agentRuns.id });
   return rows.length;
 }

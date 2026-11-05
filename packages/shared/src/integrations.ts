@@ -10,8 +10,12 @@ export interface IntegrationDef {
   group: "AI" | "Ads" | "Social" | "Search" | "Analytics" | "Messaging" | "Internal";
   /** For credentials with several parts: the form fields, stored together as JSON. */
   fields?: { name: string; label: string; secret?: boolean; optional?: boolean; placeholder?: string }[];
+  /** Not built yet: the card explains this and refuses credentials instead of storing a key nothing reads. */
+  planned?: string;
   /** For Google OAuth integrations: scopes requested, and whether the connect flow is switched on. */
   googleOAuth?: { scopes: string[]; enabled: boolean };
+  /** A sign-in flow of its own (not Google): the card links to /api/connect/<key>/start once its app credentials are saved. */
+  customOAuth?: "reddit";
 }
 
 /** From section 6 of the build plan. */
@@ -69,9 +73,27 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     ],
   },
   { key: "meta_pages", name: "Instagram + Facebook Pages", usedFor: "Organic posting, connected inside Postiz", method: "none", group: "Social" },
-  { key: "youtube", name: "YouTube Data API", usedFor: "Uploads, comments, analytics", method: "oauth", prerequisite: "upload quota audit", group: "Social", googleOAuth: { scopes: ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/yt-analytics.readonly"], enabled: false } },
+  {
+    key: "youtube",
+    name: "YouTube comments",
+    usedFor: "Reads questions in comments on BODH's channel and posts approved replies as the channel. Videos are uploaded through Postiz, not here.",
+    method: "oauth",
+    group: "Social",
+    googleOAuth: { scopes: ["https://www.googleapis.com/auth/youtube.force-ssl"], enabled: true },
+  },
   { key: "linkedin", name: "LinkedIn", usedFor: "Company page posting, connected inside Postiz", method: "none", group: "Social" },
-  { key: "reddit", name: "Reddit API", usedFor: "Find questions, post approved answers", method: "oauth", group: "Social" },
+  {
+    key: "reddit_app",
+    name: "Reddit app",
+    usedFor: "Only to sign in with Reddit below. At reddit.com/prefs/apps create a \"web app\" with the redirect URL shown here.",
+    method: "api_key",
+    group: "Social",
+    fields: [
+      { name: "client_id", label: "Client ID (under the app name)" },
+      { name: "client_secret", label: "Secret", secret: true },
+    ],
+  },
+  { key: "reddit", name: "Reddit", usedFor: "Finds questions in astrology subreddits and posts approved answers from the team's named account", method: "oauth", group: "Social", customOAuth: "reddit" },
   { key: "quora", name: "Quora", usedFor: "Find questions (drafts only, a person posts)", method: "none", group: "Social" },
   { key: "gbp", name: "Google Business Profile API", usedFor: "Posts, reviews", method: "oauth", prerequisite: "access request", group: "Search", googleOAuth: { scopes: ["https://www.googleapis.com/auth/business.manage"], enabled: false } },
   {
@@ -100,10 +122,10 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
       { name: "target", label: "Website to track (keywords and site audit)", placeholder: "www.bodhlok.com" },
     ],
   },
-  { key: "semrush", name: "Semrush or Ahrefs", usedFor: "Competitor data (optional)", method: "api_key", group: "Search" },
+  { key: "semrush", name: "Semrush or Ahrefs", usedFor: "Competitor data (optional)", method: "api_key", group: "Search", planned: "Not built: DataForSEO covers keywords and rankings today." },
   { key: "ga4", name: "GA4 / Firebase", usedFor: "Web sessions per channel, from the BigQuery export", method: "service_account", group: "Analytics" },
-  { key: "whatsapp", name: "WhatsApp Business API", usedFor: "Onboarding messages", method: "api_key", group: "Messaging" },
-  { key: "email", name: "Email (Brevo or SendGrid)", usedFor: "Onboarding emails", method: "api_key", group: "Messaging" },
+  { key: "whatsapp", name: "WhatsApp Business API", usedFor: "Onboarding messages", method: "api_key", group: "Messaging", planned: "Planned with the lifecycle messages (build plan phase 9)." },
+  { key: "email", name: "Email (Brevo or SendGrid)", usedFor: "Onboarding emails", method: "api_key", group: "Messaging", planned: "Planned with the lifecycle messages (build plan phase 9)." },
   { key: "bodh", name: "BODH backend", usedFor: "Registration, first-chart and paid events", method: "internal", group: "Internal" },
 ];
 

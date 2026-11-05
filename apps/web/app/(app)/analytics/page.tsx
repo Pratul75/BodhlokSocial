@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
-import { creativePerformance, db, pipelineRuns } from "@bodh/db";
+import { creativePerformance, db, pipelineRuns, reports } from "@bodh/db";
 import { channelLabel } from "@bodh/shared";
 import { requireModule } from "@/lib/auth";
 import { ago, daysAgo, inr, num, pct, toIsoDate } from "@/lib/format";
 import { costPerActivated, funnelByChannel, funnelTotals, weeklyActivations } from "@/lib/funnel";
 import { FunnelStrip, PeriodBars } from "@/components/charts";
-import { Card, CardHeader, PageHeader, Pill, Table } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageHeader, Pill, StatusPill, Table } from "@/components/ui";
+import { AgentRunPanel } from "@/components/agent-run-panel";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Analytics" };
@@ -19,12 +20,13 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const { days: d } = await searchParams;
   const days = RANGES.includes(Number(d) as 7 | 28) ? Number(d) : 28;
 
-  const [totals, channels, weeks, ads, [lastRebuild]] = await Promise.all([
+  const [totals, channels, weeks, ads, [lastRebuild], recentReports] = await Promise.all([
     funnelTotals(days),
     funnelByChannel(days),
     weeklyActivations(8),
     creativePerformance(toIsoDate(daysAgo(days)), toIsoDate(daysAgo(1)), 15),
     db.select().from(pipelineRuns).where(eq(pipelineRuns.job, "rebuild_funnel")).orderBy(desc(pipelineRuns.startedAt)).limit(1),
+    db.select().from(reports).orderBy(desc(reports.periodStart), desc(reports.createdAt)).limit(8),
   ]);
   const now = new Date();
   // Ads are judged against other ads, not against a blend that includes free organic signups.
@@ -63,6 +65,32 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         <FunnelStrip totals={totals} />
       </div>
 
+      <div className="mb-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+        <Card>
+          <CardHeader title="Reports" sub="Weekly on Mondays and monthly on the 1st, written by the Analyst agent from the funnel and what the team did." />
+          {recentReports.length === 0 ? (
+            <EmptyState title="No reports yet">The first one is written on Monday morning, or run the Analyst agent now.</EmptyState>
+          ) : (
+            <ul className="divide-y divide-rule">
+              {recentReports.map((r) => (
+                <li key={r.id}>
+                  <Link href={`/analytics/reports/${r.id}`} className="flex items-start justify-between gap-3 px-5 py-3 text-sm hover:bg-paper">
+                    <span className="min-w-0">
+                      <span className="block font-medium">{r.title}</span>
+                      <span className="text-xs text-muted">{r.periodStart} to {r.periodEnd}</span>
+                    </span>
+                    <StatusPill status={r.kind} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card>
+          <AgentRunPanel agent="analyst" title="Analyst agent" sub="Writes this week's report now (or last month's on the 1st)." label="Write a report now" placeholder="Optional: e.g. the monthly report for October" />
+        </Card>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
         <Card>
           <CardHeader title="Activated registrations per week" sub="7-day blocks ending yesterday. The North Star metric." />
@@ -91,6 +119,11 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
 
       <Card className="mt-6">
         <CardHeader title="By channel" sub={`Last ${days} days, sorted by activated registrations`} />
+        {channels.length === 0 ? (
+          <EmptyState title="No funnel data for this period">
+            The funnel fills from BODH&apos;s signed registration events, ad spend and GA4 sessions. Check the <Link href="/tracking" className="text-dusk hover:underline">Tracking</Link> page for what&apos;s connected.
+          </EmptyState>
+        ) : (
         <Table>
           <thead>
             <tr>
@@ -124,6 +157,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
             })}
           </tbody>
         </Table>
+        )}
       </Card>
 
       <Card className="mt-6">

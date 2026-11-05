@@ -8,6 +8,7 @@ product plan into a build plan for this repository. Repo: github.com/Pratul75/Bo
 
 | Date | What landed |
 |---|---|
+| 2026-11-05 | Audit follow-up (branch `audit-implementation`, not deployed): dev sign-in impossible in production, sign-out and removed access end sessions everywhere, worker-only agent runs, one active run per agent, budget reserved under a lock and priced per model; credentials checked with the provider before saving, a daily re-check and an alert digest; Google Ads and YouTube on the shared OAuth client, Reddit OAuth; Community, Mentions and Analyst agents with disclosure guardrails, directory listings, weekly and monthly reports; Meta and Google lead-form webhooks; ad changes re-checked at approval, retry for failed ones; database constraints, foreign keys and IST event day (migrations 0007–0008); structured logs, nightly backups, timer/Scheduler parity check, lint, Playwright smoke test, image and Terraform checks in CI; runbook in `docs/operations.md`. Not verified here: database tests, e2e, Docker builds, Terraform validate, live integrations. |
 | 2026-10-25 | Positioning aligned to the Bodhlok launch film: a bodh-positioning skill (audience, four-layer AI story, demo sequence, tone, what never appears) plus rewritten voice, formats and funnel skills and agent prompts; positioning lint in the guardrails (consumer address, AI-replaces claims, undisclaimed health claims, mystical tone) applied to posts, pages and ad copy; the SEO catalog rebuilt around software comparisons and module guides with study guides below and city Panchang retired; the professional funnel (desk created, first chart opened, paid) in the events spec and app copy; brand kit updated and the 10 consumer-framed pages sent back for rewrite. |
 | 2026-10-24 | Phase 6 built: every ad change goes through one guarded pipeline (caps from Admin, live spend, committed daily budgets, losing ads judged by code from 14-day results against the best ad in the ad set, last active ad never auto-paused), recorded in a change log with before/after and both reasons; Meta Graph and Google Ads REST write clients (pause/resume, bids, budgets, A/B variants); hourly account sync; Ads agent daily at 07:30 with proposals into Approvals, where approving applies the change; Ads manager rebuilt on live data. Done-when covered by a database test with Meta mocked. Also: SEO agent first real run (10 pages, $3.95), copy lint allows disclaimers, page priority without volumes. Waiting on: Meta app review for ads_management, Google Ads developer token, spend caps above ₹0. |
 | 2026-10-24 | Phase 5 built: DataForSEO client (ranked keywords, keyword ideas, Google Trends, On-Page audits) and connection form; Search Console sync now tracks top queries; 210-page programmatic catalog; Panchang engine (Lahiri, matches Drik Panchang to the minute); SEO agent drafts pages and blogs with direct answers and FAQ schema into Approvals; AI-visibility checks on ChatGPT, Gemini, Perplexity and Claude with competitors named; token-protected page feed, Panchang API and llms.txt for the website; weekly timers. Phase 4 gaps closed: Strategy outlines the month as calendar ideas that Content fills, Trends and keyword tools for all agents, plan's skills installed on the server and read on demand, chat can start agent runs. Waiting on: DataForSEO re-entered with login/password/domain, a verified Search Console property, OpenAI and Perplexity keys, the web team wiring the feed. |
@@ -200,14 +201,14 @@ Order follows doc section 11. Durations assume one to two engineers.
 
 ## 7. Guardrails checklist (doc section 8, enforced in code)
 
-- [ ] Hard daily and monthly spend caps, admin-only, agents cannot raise them
-- [ ] Auto-allow list limited to pause-losing-ad and ±20% bid changes
-- [ ] Nothing public without approval for the first 60 days; per-channel auto-approve flag later
-- [ ] No fake accounts, reviews or undisclosed promotion; disclosure template for influencers
-- [ ] Platform rate limits respected in `packages/integrations`; community replies human-approved
-- [ ] Ad copy linter rejects guaranteed predictions and health/financial promises
-- [ ] Audit log on every agent action with who, what, why, result
-- [ ] Per-user and per-month token and video-generation limits
+- [x] Hard daily and monthly spend caps, admin-only, agents cannot raise them
+- [x] Auto-allow list limited to pause-losing-ad and ±20% bid changes
+- [x] Nothing public without approval for the first 60 days; per-channel auto-approve flag later
+- [x] No fake accounts, reviews or undisclosed promotion; disclosure template for influencers
+- [x] Platform rate limits respected in `packages/integrations`; community replies human-approved
+- [x] Ad copy linter rejects guaranteed predictions and health/financial promises
+- [x] Audit log on every agent action with who, what, why, result
+- [ ] Per-user and per-month token and video-generation limits (monthly AI budget, team and optional per-person image/video limits are in; per-person token limits are not)
 
 ## 8. Roles (doc section 10)
 

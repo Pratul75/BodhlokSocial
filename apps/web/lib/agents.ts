@@ -1,51 +1,66 @@
 import "server-only";
-import { activeRun, anthropicClient, queueRun, runAgent, type AgentName } from "@bodh/agents";
+import { anthropicClient, queueRun, runAgent, type AgentName } from "@bodh/agents";
+import { log } from "@bodh/shared/log";
+import { workerHeaders } from "@bodh/integrations/worker-auth";
 
-/**
- * Starts a Strategy or Content run. With WORKER_URL set (the VM), the worker runs it, so a
- * web restart doesn't cut it off; without it (local development), it runs in this process.
- */
-export async function startAgentRun(agent: AgentName, requestedBy: string, task?: string): Promise<{ runId?: string; error?: string }> {
+function worker(): { url: string; token: string } | null {
   const url = process.env.WORKER_URL;
   const token = process.env.WORKER_TOKEN;
-  if (url && token) {
+  return url && token ? { url: url.replace(/\/$/, ""), token } : null;
+}
+
+/**
+ * Long work belongs on the worker, where a web restart (or Cloud Run throttling the web
+ * service's CPU after a response) cannot cut it off. Only local development runs it in the
+ * web process, and only when no worker is configured.
+ */
+const inProcessAllowed = () => process.env.NODE_ENV !== "production";
+const NO_WORKER = "The agent service isn't configured. Set WORKER_URL and WORKER_TOKEN on the web service.";
+
+/** Starts an agent run on the worker (or in this process during local development). */
+export async function startAgentRun(agent: AgentName, requestedBy: string, task?: string): Promise<{ runId?: string; error?: string }> {
+  const w = worker();
+  if (w) {
     try {
-      const res = await fetch(`${url.replace(/\/$/, "")}/jobs/${agent}?trigger=manual`, {
+      const res = await fetch(`${w.url}/jobs/${agent}?trigger=manual`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Worker-Token": token },
+        headers: { "Content-Type": "application/json", ...(await workerHeaders(w.url, w.token)) },
         body: JSON.stringify({ task, requestedBy }),
         signal: AbortSignal.timeout(15_000),
       });
       const body = (await res.json().catch(() => ({}))) as { runId?: string; error?: string };
       return res.ok ? { runId: body.runId } : { error: body.error ?? `The worker answered ${res.status}.` };
-    } catch {
+    } catch (e) {
+      log.warn("worker unreachable", { agent, error: e });
       return { error: "The agent service isn't answering. Try again in a minute." };
     }
   }
+  if (!inProcessAllowed()) return { error: NO_WORKER };
   if (!(await anthropicClient())) return { error: "No Anthropic API key. An admin can add one in Connections." };
-  if (await activeRun(agent)) return { error: `The ${agent} agent is already running.` };
-  const runId = await queueRun(agent, "manual");
-  void runAgent(agent, { trigger: "manual", task, requestedBy }, runId).catch((e) => console.error(`${agent} run failed`, e));
-  return { runId };
+  const queued = await queueRun(agent, "manual");
+  if (!queued.created) return { error: `The ${agent} agent is already running.` };
+  void runAgent(agent, { trigger: "manual", task, requestedBy }, queued.id).catch((e) => log.error(`${agent} run failed`, e));
+  return { runId: queued.id };
 }
 
-/**
- * Runs an SEO job on the worker (WORKER_URL), or in this process without one.
- * Long jobs (geo) start in the background either way.
- */
-export async function runSeoJob(job: "keywords" | "audit-start" | "audit-poll" | "geo" | "catalog" | "site-publish" | "site-sync"): Promise<{ message?: string; error?: string }> {
-  const url = process.env.WORKER_URL;
-  const token = process.env.WORKER_TOKEN;
-  if (url && token) {
+export type SeoJob = "keywords" | "audit-start" | "audit-poll" | "geo" | "catalog" | "site-publish" | "site-sync";
+
+/** Runs an SEO job on the worker (or in this process during local development). The geo job starts in the background. */
+export async function runSeoJob(job: SeoJob): Promise<{ message?: string; error?: string }> {
+  const w = worker();
+  if (w) {
     try {
-      const path = job.startsWith("site-") ? `/jobs/site/${job.slice(5)}` : `/jobs/seo/${job}`;
-      const res = await fetch(`${url.replace(/\/$/, "")}${path}`, { method: "POST", headers: { "X-Worker-Token": token }, signal: AbortSignal.timeout(180_000) });
-      const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-      return res.ok || res.status === 202 ? { message: body.message } : { error: body.error ?? body.message ?? `The worker answered ${res.status}.` };
-    } catch {
+      const path = job.startsWith("site-") ? `/jobs/site/${job.slice(5)}` : `/jobs/seo/${job}${job === "geo" ? "?trigger=manual" : ""}`;
+      const res = await fetch(`${w.url}${path}`, { method: "POST", headers: await workerHeaders(w.url, w.token), signal: AbortSignal.timeout(180_000) });
+      const body = (await res.json().catch(() => ({}))) as { message?: string; detail?: string; error?: string };
+      const text = body.message ?? body.detail;
+      return res.ok || res.status === 202 ? { message: text } : { error: body.error ?? text ?? `The worker answered ${res.status}.` };
+    } catch (e) {
+      log.warn("worker unreachable", { job, error: e });
       return { error: "The worker isn't answering. Try again in a minute." };
     }
   }
+  if (!inProcessAllowed()) return { error: NO_WORKER };
   const seo = await import("@bodh/integrations/seo");
   try {
     if (job === "keywords") return { message: await seo.syncKeywords() };
@@ -56,9 +71,8 @@ export async function runSeoJob(job: "keywords" | "audit-start" | "audit-poll" |
       const site = await import("@bodh/integrations/site-publisher");
       return { message: job === "site-sync" ? await site.syncSite() : [await site.publishQueued(), await site.removeQueued()].join(" ") };
     }
-    const { runVisibilityChecks } = await import("@bodh/agents");
-    void runVisibilityChecks().catch((e) => console.error("geo failed", e));
-    return { message: "Started the AI-visibility checks. They take a few minutes." };
+    const { startVisibilityChecks } = await import("@bodh/agents");
+    return { message: await startVisibilityChecks("manual") };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }

@@ -1,16 +1,21 @@
 /**
  * Sample data for local development. Every number here is invented; the UI shows
- * a "Sample data" badge while DEMO_DATA=true.
+ * a "Sample data" badge until scripts/vm/remove-sample-data.sql removes it (the badge follows
+ * the seed_sample_data row in audit_log).
  *
  * The funnel is not typed in: the seed generates registration, activation and paid
  * events, ad spend per ad and organic sessions, then runs the same intake and rebuild
  * code production uses.
  */
 import { createHash } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { db, sql } from "@bodh/db";
 import * as s from "@bodh/db/schema";
 import type { NormalizedEvent } from "@bodh/integrations/bodh-events";
 import { forwardToGoogle, forwardToMeta, ingestEvents, loadGa4Sessions, loadMetaSpend, rebuild, runJob } from "@bodh/integrations/pipeline";
+import { pageCatalog } from "@bodh/integrations/seo-catalog";
+import { INTEGRATIONS } from "@bodh/shared";
+import { seedRefusal, targetHost } from "./seed-guard";
 
 const DAY = 86_400_000;
 const today = new Date();
@@ -33,15 +38,26 @@ const rand = () => {
 const jitter = (base: number, spread = 0.25) => Math.max(0, Math.round(base * (1 - spread + rand() * spread * 2)));
 
 async function main() {
+  const refusal = seedRefusal(process.env);
+  if (refusal) {
+    console.error(refusal);
+    process.exitCode = 1;
+    await sql.end();
+    return;
+  }
+  const adminEmail = process.env.DEV_USER_EMAIL!.trim().toLowerCase();
+  console.log(`Seeding ${targetHost(process.env.DATABASE_URL)} with sample data.`);
   console.log("Clearing tables…");
-  await sql`TRUNCATE pipeline_runs, conversion_forwards, conversion_events, ad_spend_daily, web_sessions_daily, audit_log, leads, community_items, ai_visibility_checks, seo_pages, keywords, funnel_daily,
+  await sql`TRUNCATE pipeline_runs, conversion_forwards, conversion_events, ad_spend_daily, web_sessions_daily, audit_log, leads, community_items, directory_listings, reports, ai_visibility_checks, seo_pages, keywords, funnel_daily,
     budgets, experiments, ad_changes, campaigns, strategy_plans, calendar_items, assets, approvals, agent_runs,
     connections, users RESTART IDENTITY CASCADE`;
+  // CASCADE also empties brand_kit (it points at assets); put back the default row migrate creates.
+  await db.insert(s.brandKit).values({ id: 1 }).onConflictDoNothing();
 
   const userRows = await db
     .insert(s.users)
     .values([
-      { email: process.env.DEV_USER_EMAIL ?? "kshitij@rechargestudio.com", name: "Kshitij Shivprasad", role: "admin" },
+      { email: adminEmail, name: "Kshitij Shivprasad", role: "admin" },
       { email: "ads@rechargestudio.com", name: "Ads Manager", role: "ads_manager" },
       { email: "seo@rechargestudio.com", name: "SEO Manager", role: "seo_manager" },
       { email: "social@rechargestudio.com", name: "Social Media Manager", role: "social_manager" },
@@ -50,11 +66,7 @@ async function main() {
     .returning();
   const sales = userRows.find((u) => u.role === "sales")!;
 
-  const keys = [
-    "anthropic", "vertex", "google_ads", "meta_marketing", "meta_capi", "postiz", "meta_pages", "youtube", "linkedin",
-    "reddit", "quora", "gbp", "search_console", "dataforseo", "semrush", "ga4", "whatsapp", "email", "bodh",
-  ];
-  await db.insert(s.connections).values(keys.map((key) => ({ key })));
+  await db.insert(s.connections).values(INTEGRATIONS.map((i) => ({ key: i.key })));
 
   const runs = await db
     .insert(s.agentRuns)
@@ -89,27 +101,6 @@ async function main() {
       body: "Ad set: Astrologer pain — video viewers 50%\nCurrent daily budget: ₹1,500\nProposed: ₹2,000\nCost per activated user, last 7 days: ₹44 (account average ₹61)",
       reason: "Lowest cost per activated user in the account for 7 straight days. Budget increases always need approval.",
       payload: { type: "budget_change", currentDaily: 1500, newDaily: 2000 },
-    },
-    {
-      kind: "reply", channel: "reddit", agent: "community", sourceRunId: communityRun!.id,
-      title: "r/vedicastrology: \"Which software calculates Drishti correctly?\"",
-      body: "Posting as the Asttrolok team account.\n\n\"Full disclosure, we build BODH. Most tools get Drishti right for the standard 7th aspect but differ on the special aspects of Mars, Jupiter and Saturn. Whatever you use, check those against a manual calculation for one chart you know well. Happy to share the reference we use.\"",
-      reason: "Real question, 34 upvotes, asked 6 hours ago. Answer discloses who we are.",
-      payload: { url: "https://www.reddit.com/r/vedicastrology/" },
-    },
-    {
-      kind: "blog", channel: "seo", agent: "seo",
-      title: "Blog: Saturn in the 7th house — meaning, effects and remedies",
-      body: "Direct answer (top of page, 48 words), then sections on marriage, career and Sade Sati overlap. Internal links to the free Kundli tool and the Saturn-in-houses hub.",
-      reason: "Keyword \"saturn in 7th house\" has 14,800 monthly searches and our page ranks 18th.",
-      payload: { keyword: "saturn in 7th house", needsJyotishReview: true },
-    },
-    {
-      kind: "listing", channel: "seo", agent: "mentions",
-      title: "Directory listing: AlternativeTo — BODH",
-      body: "Category: Astrology software\nDescription: Vedic astrology software for astrologers and students. Generate Kundli, Dasha and Drishti with classical rules.\nAlternatives listed against: Jagannatha Hora, Parashara's Light",
-      reason: "Ranks for \"jagannatha hora alternative\" (2,400 searches a month). Free listing with a followed link.",
-      payload: {},
     },
     {
       kind: "post", channel: "linkedin", agent: "content", sourceRunId: contentRun!.id,
@@ -239,8 +230,9 @@ async function main() {
   ]);
 
   await db.insert(s.budgets).values([
-    { platform: "google_ads", dailyCap: 4000, monthlyCap: 110000, spentToday: 2310, spentThisMonth: 71240, updatedBy: "kshitij@rechargestudio.com" },
-    { platform: "meta_ads", dailyCap: 3500, monthlyCap: 95000, spentToday: 2020, spentThisMonth: 58610, updatedBy: "kshitij@rechargestudio.com" },
+    // Spend is computed from ad_spend_daily (packages/integrations/src/ads.ts spendNow), not stored here.
+    { platform: "google_ads", dailyCap: 4000, monthlyCap: 110000, updatedBy: adminEmail },
+    { platform: "meta_ads", dailyCap: 3500, monthlyCap: 95000, updatedBy: adminEmail },
   ]);
 
   await seedTracking();
@@ -257,19 +249,18 @@ async function main() {
     { keyword: "vedic astrology software for astrologers", volume: 1300, difficulty: 22, position: 4, intent: "software", pageUrl: "/" },
   ]);
 
-  const pages: (typeof s.seoPages.$inferInsert)[] = [];
-  const planets = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn", "Rahu", "Ketu"];
-  planets.forEach((p, i) => {
-    for (let h = 1; h <= 12; h++) {
-      const n = i * 12 + h;
-      pages.push({
-        template: "planet_house",
-        slug: `/planets/${p.toLowerCase()}/${h}-house`,
-        title: `${p} in the ${h}${h === 1 ? "st" : h === 2 ? "nd" : h === 3 ? "rd" : "th"} house`,
-        status: n <= 24 ? "live" : n <= 40 ? "in_review" : n <= 60 ? "drafted" : "planned",
-        clicks28d: n <= 24 ? jitter(420 - n * 12, 0.4) : 0,
-      });
-    }
+  // The same catalog the worker loads on start (ensurePageCatalog), so slugs match and
+  // nothing is duplicated. A spread of statuses on the placement guides for the dashboard.
+  let placement = 0;
+  const pages: (typeof s.seoPages.$inferInsert)[] = pageCatalog().map((p) => {
+    if (p.template !== "planet_house") return { ...p, status: "planned", needsReview: true };
+    const n = ++placement;
+    return {
+      ...p,
+      status: n <= 24 ? "live" : n <= 40 ? "in_review" : n <= 60 ? "drafted" : "planned",
+      clicks28d: n <= 24 ? jitter(420 - n * 12, 0.4) : 0,
+      needsReview: true,
+    };
   });
   await db.insert(s.seoPages).values(pages);
 
@@ -289,14 +280,55 @@ async function main() {
   }
   await db.insert(s.aiVisibilityChecks).values(vis);
 
-  await db.insert(s.communityItems).values([
-    { platform: "reddit", url: "https://www.reddit.com/r/vedicastrology/", question: "Which software calculates Drishti correctly?", status: "in_review", draft: "Full disclosure, we build BODH…", foundAt: at(0, 2, 10) },
-    { platform: "quora", url: "https://www.quora.com/", question: "How long does it take to learn to read a birth chart?", status: "drafted", draft: "About six months of steady practice for the basics…", foundAt: at(0, 3, 0) },
-    { platform: "youtube", url: "https://www.youtube.com/", question: "Comment: \"Is there an app that shows Ashtakavarga properly?\"", status: "drafted", draft: "Yes, BODH shows Sarva and Bhinna Ashtakavarga…", foundAt: at(-1, 19, 0) },
-    { platform: "reddit", url: "https://www.reddit.com/r/astrology/", question: "Sidereal vs tropical, which do Indian astrologers use?", status: "found", foundAt: at(0, 5, 45) },
-    { platform: "quora", url: "https://www.quora.com/", question: "Can I generate a Kundli without birth time?", status: "posted", draft: "You can, but the Lagna and houses will be unreliable…", foundAt: at(-4, 12, 0) },
-    { platform: "reddit", url: "https://www.reddit.com/r/vedicastrology/", question: "Free tools for Muhurat?", status: "skipped", foundAt: at(-2, 10, 0) },
-  ]);
+  // Community questions and directory listings, linked to their approvals the way the agents create them.
+  const community = await db
+    .insert(s.communityItems)
+    .values([
+      { platform: "reddit", url: "https://www.reddit.com/r/vedicastrology/", externalId: "t3_seed1", place: "r/vedicastrology", question: "Which software calculates Drishti correctly?", why: "A practitioner comparing tools; the answer is a classical rule anyone can check.", status: "in_review", draft: "Most tools agree on the 7th-house aspect and differ on the special aspects of Mars, Jupiter and Saturn. Check those against a manual calculation for one chart you know well. Disclosure: I work on Bodhlok, which shows Parashari and Jaimini aspects side by side.", foundAt: at(0, 2, 10), runId: communityRun!.id },
+      { platform: "quora", url: "https://www.quora.com/How-long-does-it-take-to-learn-to-read-a-birth-chart", externalId: "https://www.quora.com/How-long-does-it-take-to-learn-to-read-a-birth-chart", place: "Vedic astrology", question: "How long does it take to learn to read a birth chart?", why: "Learners ask this weekly; a clear study path helps.", status: "drafted", draft: "About six months of steady practice for the basics: signs and houses, then lords and aspects, then dashas.", reviewNote: "Add the order of study and one book for each step.", foundAt: at(0, 3, 0), runId: communityRun!.id },
+      { platform: "youtube", url: "https://www.youtube.com/watch?v=seed&lc=seed2", externalId: "seed-comment-2", place: "Ashtakavarga explained", question: "Is there an app that shows Ashtakavarga properly?", status: "found", foundAt: at(-1, 19, 0), runId: communityRun!.id },
+      { platform: "reddit", url: "https://www.reddit.com/r/astrology/", externalId: "t3_seed4", place: "r/astrology", question: "Sidereal vs tropical, which do Indian astrologers use?", status: "found", foundAt: at(0, 5, 45) },
+      { platform: "reddit", url: "https://www.reddit.com/r/vedicastrology/", externalId: "t3_seed5", place: "r/vedicastrology", question: "Free tools for Muhurat?", status: "skipped", error: "Asks for a free consumer tool; not our audience.", foundAt: at(-2, 10, 0) },
+    ])
+    .returning();
+  const asking = community[0]!;
+  const [reply] = await db
+    .insert(s.approvals)
+    .values({
+      kind: "reply", channel: "reddit", agent: "community", sourceRunId: communityRun!.id,
+      title: asking.question, body: asking.draft!, reason: asking.why!,
+      payload: { communityItemId: asking.id, platform: "reddit", url: asking.url, place: asking.place, warnings: [] },
+    })
+    .returning({ id: s.approvals.id });
+  await db.update(s.communityItems).set({ approvalId: reply!.id }).where(eq(s.communityItems.id, asking.id));
+
+  const listings = await db
+    .insert(s.directoryListings)
+    .values([
+      { name: "AlternativeTo", url: "https://alternativeto.net/software/jagannatha-hora/", category: "software_directory", why: "Ranks for \"jagannatha hora alternative\"; free listing.", status: "in_review", draft: { title: "Bodhlok", tagline: "A Vedic astrology desk in the browser for practising astrologers", description: "Charts, dashas, transits and KP in one browser desk, with client notes and an AI consult that cites the classical rule it used. Hindi and English. Free desk to start." } },
+      { name: "Capterra: astrology software", url: "https://www.capterra.com/astrology-software/", category: "review_site", why: "Institutes compare tools here.", status: "found" },
+    ])
+    .returning();
+  const [listingAppr] = await db
+    .insert(s.approvals)
+    .values({
+      kind: "listing", channel: "directory", agent: "mentions",
+      title: "AlternativeTo: Bodhlok", body: "A Vedic astrology desk in the browser for practising astrologers\n\nCharts, dashas, transits and KP in one browser desk, with client notes and an AI consult that cites the classical rule it used. Hindi and English. Free desk to start.",
+      reason: listings[0]!.why, payload: { listingId: listings[0]!.id, url: listings[0]!.url, warnings: [] },
+    })
+    .returning({ id: s.approvals.id });
+  await db.update(s.directoryListings).set({ approvalId: listingAppr!.id }).where(eq(s.directoryListings.id, listings[0]!.id));
+
+  const analystRun = runs[4]!;
+  await db.insert(s.reports).values({
+    kind: "weekly",
+    periodStart: isoDate(dayOffset(-9)),
+    periodEnd: isoDate(dayOffset(-3)),
+    title: "Week ahead of target: cost per activated user ₹61, down 9%",
+    body: "## Headline\n\nActivated users rose to 214 (from 188). Cost per activated user fell to ₹61 from ₹67.\n\n## What moved\n\n- Meta video viewers 50% did best at ₹44 per activated user.\n- Google Search held steady; the App campaign is still learning.\n\n## Next week\n\n- Approve the budget increase on the video viewers ad set.\n- Connect DataForSEO so the SEO agent can run.\n\n*Sample report from the seed.*",
+    metrics: { activations: 214, activations_prev: 188, spend_inr: 13054, cost_per_activated_inr: 61 },
+    runId: analystRun.id,
+  });
 
   const leadNames = ["Priya Sharma", "Rahul Verma", "Anjali Gupta", "Vikram Singh", "Neha Joshi", "Suresh Iyer", "Kavita Rao"];
   await db.insert(s.leads).values(
@@ -312,11 +344,13 @@ async function main() {
   );
 
   await db.insert(s.auditLog).values([
+    // Marker read by the app shell ("Sample data" badge) and by scripts/vm/remove-sample-data.sql.
+    { actor: adminEmail, actorType: "user", action: "seed_sample_data", target: "database", reason: "pnpm db:seed", result: "sample data loaded" },
     { actor: "ads agent", actorType: "agent", action: "pause_ad", target: "Nakshatra carousel v2", reason: "Cost per activated user ₹212 over 3 days", result: "applied", createdAt: at(0, 7, 2) },
     { actor: "ads agent", actorType: "agent", action: "budget_change", target: "Astrologer pain — video viewers 50%", reason: "Lowest cost per activated user", result: "sent_to_approval", createdAt: at(0, 7, 2) },
     { actor: "content agent", actorType: "agent", action: "draft_items", target: "6 calendar items", reason: "Daily content run", result: "sent_to_approval", createdAt: at(0, 6, 4) },
     { actor: "seo agent", actorType: "agent", action: "weekly_audit", target: "asttrolok.com", reason: "Weekly schedule", result: "failed: DataForSEO not connected", createdAt: at(-1, 5, 0) },
-    { actor: "kshitij@rechargestudio.com", actorType: "user", action: "set_budget_cap", target: "google_ads", reason: "Q4 plan", result: "daily ₹4,000 / monthly ₹1,10,000", createdAt: at(-6, 11, 40) },
+    { actor: adminEmail, actorType: "user", action: "set_budget_cap", target: "google_ads", reason: "Q4 plan", result: "daily ₹4,000 / monthly ₹1,10,000", createdAt: at(-6, 11, 40) },
   ]);
 
   console.log("Seeded.");

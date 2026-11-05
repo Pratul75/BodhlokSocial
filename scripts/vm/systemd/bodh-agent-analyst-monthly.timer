@@ -1,0 +1,10 @@
+[Unit]
+Description=Analyst agent, monthly report on the 1st 09:30 IST
+
+[Timer]
+OnCalendar=*-*-01 09:30:00 Asia/Kolkata
+Persistent=true
+Unit=bodh-job@agent-analyst-monthly.service
+
+[Install]
+WantedBy=timers.target

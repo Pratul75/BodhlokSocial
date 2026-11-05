@@ -1,11 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
+import type { StartableAgent } from "@bodh/shared";
 import { Sparkles } from "lucide-react";
 import { runAgentAction, type RunState } from "@/lib/agent-actions";
 import { btn, inputClass } from "./ui";
 
-export function AgentRunForm({ agent, label, placeholder, disabled }: { agent: "strategy" | "content" | "seo" | "ads"; label: string; placeholder: string; disabled?: boolean }) {
+export function AgentRunForm({ agent, label, placeholder, disabled }: { agent: StartableAgent; label: string; placeholder: string; disabled?: boolean }) {
   const [state, action, pending] = useActionState<RunState, FormData>(runAgentAction, {});
   return (
     <form action={action} className="flex flex-col gap-2 sm:flex-row sm:items-start">

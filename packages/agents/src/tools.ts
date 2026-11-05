@@ -6,18 +6,21 @@ import { adResults, JUDGE_DAYS, judgeAd, requestChange, spendNow, testsWithResul
 import { lintAdCopy, lintPositioning } from "@bodh/guardrails";
 import { keywordIdeas, searchTrends } from "@bodh/integrations/dataforseo";
 import { dataForSeoCredentials, latestAudit, nextPlannedPages } from "@bodh/integrations/seo";
+import { WRITABLE_TEMPLATES } from "@bodh/integrations/seo-catalog";
 import { readSkill } from "./skills";
 import { checkPost, isPublishChannel } from "@bodh/guardrails/posts";
-import { channelLabel } from "@bodh/shared";
+import { channelLabel, STARTABLE_AGENTS, type StartableAgent } from "@bodh/shared";
 
 /** What a tool knows about the run it belongs to. */
 export interface ToolContext {
-  agent: string; // strategy | content | seo | chat
+  agent: string; // strategy | content | seo | ads | community | mentions | analyst | chat
   runId: string;
   drafts: number; // posts, ideas or pages created this run
 }
 
 export const MAX_DRAFTS_PER_RUN = 21;
+/** Calendar ideas the Strategy agent may add in one run (a month of posts across channels). */
+export const MAX_IDEAS_PER_RUN = 60;
 
 const IST_OFFSET_MS = 330 * 60_000;
 const istDate = (d: Date) => new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
@@ -280,9 +283,12 @@ export function strategyTools(ctx: ToolContext) {
         .max(45),
     }),
     run: async ({ ideas }) => {
+      const room = MAX_IDEAS_PER_RUN - ctx.drafts;
+      if (room <= 0) return `Error: this run has added ${MAX_IDEAS_PER_RUN} ideas, the limit. Stop and summarise.`;
       let added = 0;
       const skipped: string[] = [];
-      for (const i of ideas) {
+      if (ideas.length > room) skipped.push(`${ideas.length - room} ideas over this run's limit of ${MAX_IDEAS_PER_RUN}`);
+      for (const i of ideas.slice(0, room)) {
         const at = new Date(`${i.date}T${i.time}:00+05:30`);
         if (Number.isNaN(at.getTime()) || at.getTime() < Date.now() + 3_600_000 || at.getTime() > Date.now() + 70 * 86_400_000) {
           skipped.push(`${i.date} ${i.idea} (outside the next 70 days)`);
@@ -441,7 +447,7 @@ export function seoTools(ctx: ToolContext) {
     name: "list_pages_to_write",
     description: "Planned programmatic pages with no live or pending draft, highest search volume first (or, without volume data, the most-searched topics first): id, template, title, target keyword, the template's inputs, and any reviewer's note asking for changes. Filter by template or a word in the title, and page through with offset.",
     inputSchema: z.object({
-      template: z.enum(["planet_house", "nakshatra", "yoga", "lagna", "panchang_city"]).optional(),
+      template: z.enum(WRITABLE_TEMPLATES).optional().describe("compare and guide pages come first: they answer the questions astrologers ask when choosing software"),
       search: z.string().max(60).optional().describe("Only pages whose title contains this, e.g. Saturn or Rohini"),
       limit: z.number().int().min(1).max(30).default(10),
       offset: z.number().int().min(0).max(300).default(0),
@@ -516,6 +522,7 @@ export function seoTools(ctx: ToolContext) {
           .values({ keyword: k.keyword.toLowerCase(), volume: k.volume, difficulty: k.difficulty, intent: k.intent, source: "dataforseo" })
           .onConflictDoUpdate({ target: keywords.keyword, set: { volume: k.volume, difficulty: k.difficulty, updatedAt: new Date() } });
       }
+      await audit(ctx, "track_keywords", `${list.length} keywords`, "tracked", list.slice(0, 10).map((k) => k.keyword).join(", "));
       return `Tracking ${list.length} keywords.`;
     },
   });
@@ -525,15 +532,15 @@ export function seoTools(ctx: ToolContext) {
 
 /* ---------- chat: start a run ---------- */
 
-export type RunStarter = (agent: "strategy" | "content" | "seo" | "ads", task: string | undefined) => Promise<{ runId?: string; error?: string }>;
+export type RunStarter = (agent: StartableAgent, task: string | undefined) => Promise<{ runId?: string; error?: string }>;
 
 export function chatTools(start: RunStarter) {
   return [
     betaZodTool({
       name: "start_agent_run",
       description:
-        "Start a Strategy, Content, SEO or Ads agent run when the person asks for one (a plan, posts drafted onto the calendar, SEO pages or blogs written, an ads review). Pass their instructions as the task. It runs in the background for a few minutes; results appear on the Strategy, Calendar, SEO, Ads manager and Approvals pages.",
-      inputSchema: z.object({ agent: z.enum(["strategy", "content", "seo", "ads"]), task: z.string().max(2000).optional() }),
+        "Start an agent run when the person asks for one: strategy (a plan), content (posts drafted onto the calendar), seo (SEO pages or blogs), ads (an ads review), community (answers to community questions), mentions (directory listings) or analyst (a weekly or monthly report). Pass their instructions as the task. It runs in the background for a few minutes; results appear on the matching page and in Approvals.",
+      inputSchema: z.object({ agent: z.enum(STARTABLE_AGENTS as [StartableAgent, ...StartableAgent[]]), task: z.string().max(2000).optional() }),
       run: async ({ agent, task }) => {
         const r = await start(agent, task);
         return r.error ? `Couldn't start it: ${r.error}` : `Started the ${agent} agent (run ${r.runId}). It takes a few minutes.`;
@@ -549,10 +556,12 @@ export const MAX_AD_CHANGES_PER_RUN = 20;
 export function adsTools(ctx: ToolContext) {
   const actor = { name: `${ctx.agent} agent`, kind: "agent" as const, runId: ctx.runId };
   const platform = z.enum(["meta_ads", "google_ads"]);
-  const limit = async <T>(fn: () => Promise<T>) => {
+  /** Counts changes that went somewhere (applied, sent to Approvals, refused by the platform); a blocked request doesn't use up the run's allowance. */
+  const limit = async (fn: () => Promise<{ outcome: string; message: string }>) => {
     if (ctx.drafts >= MAX_AD_CHANGES_PER_RUN) return `Error: this run has requested ${MAX_AD_CHANGES_PER_RUN} changes, the limit. Stop and summarise.`;
-    ctx.drafts++;
-    return fn();
+    const r = await fn();
+    if (r.outcome !== "blocked") ctx.drafts++;
+    return r;
   };
 
   const overview = betaZodTool({
@@ -617,21 +626,21 @@ export function adsTools(ctx: ToolContext) {
     name: "pause_ad",
     description: "Pause an ad. Applied at once only if the guardrail's own check finds it losing against its ad set; otherwise it goes to Approvals. Pausing is allowed even when caps are reached.",
     inputSchema: z.object({ platform, ad_id: z.string(), reason: reasonField }),
-    run: async ({ platform: p, ad_id, reason }) => limit(async () => (await requestChange({ type: "pause_ad", platform: p, adId: ad_id }, reason, actor)).message),
+    run: async ({ platform: p, ad_id, reason }) => limit(async () => await requestChange({ type: "pause_ad", platform: p, adId: ad_id }, reason, actor)).then((r) => (typeof r === "string" ? r : r.message)),
   });
 
   const resume = betaZodTool({
     name: "resume_ad",
     description: "Ask to resume a paused ad. Always needs a person's approval.",
     inputSchema: z.object({ platform, ad_id: z.string(), reason: reasonField }),
-    run: async ({ platform: p, ad_id, reason }) => limit(async () => (await requestChange({ type: "resume_ad", platform: p, adId: ad_id }, reason, actor)).message),
+    run: async ({ platform: p, ad_id, reason }) => limit(async () => await requestChange({ type: "resume_ad", platform: p, adId: ad_id }, reason, actor)).then((r) => (typeof r === "string" ? r : r.message)),
   });
 
   const bid = betaZodTool({
     name: "change_bid",
     description: "Change a manual bid, bid cap or target CPA (INR) on a campaign or ad set. Within ±20% it's applied at once; bigger moves go to Approvals.",
     inputSchema: z.object({ platform, entity_id: z.string(), new_bid: z.number().positive(), reason: reasonField }),
-    run: async ({ platform: p, entity_id, new_bid, reason }) => limit(async () => (await requestChange({ type: "bid_change", platform: p, entityId: entity_id, newBid: new_bid }, reason, actor)).message),
+    run: async ({ platform: p, entity_id, new_bid, reason }) => limit(async () => await requestChange({ type: "bid_change", platform: p, entityId: entity_id, newBid: new_bid }, reason, actor)).then((r) => (typeof r === "string" ? r : r.message)),
   });
 
   const budget = betaZodTool({
@@ -639,7 +648,7 @@ export function adsTools(ctx: ToolContext) {
     description: "Change the daily budget (INR) of the campaign or ad set that owns it. Decreases are applied at once; increases always go to Approvals; anything taking the platform's daily budgets over its cap is blocked.",
     inputSchema: z.object({ platform, entity_id: z.string(), new_daily_budget: z.number().positive(), reason: reasonField }),
     run: async ({ platform: p, entity_id, new_daily_budget, reason }) =>
-      limit(async () => (await requestChange({ type: "budget_change", platform: p, entityId: entity_id, newDaily: new_daily_budget }, reason, actor)).message),
+      limit(async () => await requestChange({ type: "budget_change", platform: p, entityId: entity_id, newDaily: new_daily_budget }, reason, actor)).then((r) => (typeof r === "string" ? r : r.message)),
   });
 
   const campaign = betaZodTool({
@@ -653,7 +662,7 @@ export function adsTools(ctx: ToolContext) {
       plan: z.string().min(80).max(2500),
       reason: reasonField,
     }),
-    run: async (p) => limit(async () => (await requestChange({ type: "new_campaign", platform: p.platform, name: p.name, objective: p.objective, dailyBudget: p.daily_budget, plan: p.plan }, p.reason, actor)).message),
+    run: async (p) => limit(async () => await requestChange({ type: "new_campaign", platform: p.platform, name: p.name, objective: p.objective, dailyBudget: p.daily_budget, plan: p.plan }, p.reason, actor)).then((r) => (typeof r === "string" ? r : r.message)),
   });
 
   const abTest = betaZodTool({
@@ -678,7 +687,7 @@ export function adsTools(ctx: ToolContext) {
         .max(3),
       reason: reasonField,
     }),
-    run: async (p) => limit(async () => (await requestChange({ type: "ab_test", platform: p.platform, baseAdId: p.base_ad_id, hypothesis: p.hypothesis, variants: p.variants }, p.reason, actor)).message),
+    run: async (p) => limit(async () => await requestChange({ type: "ab_test", platform: p.platform, baseAdId: p.base_ad_id, hypothesis: p.hypothesis, variants: p.variants }, p.reason, actor)).then((r) => (typeof r === "string" ? r : r.message)),
   });
 
   return [overview, tests, pause, resume, bid, budget, campaign, abTest];

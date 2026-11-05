@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { KundliMark } from "@/components/kundli-mark";
-import { authEnabled, safeReturnTo } from "@/lib/session";
+import { authEnabled, devAuthAllowed, safeReturnTo } from "@/lib/session";
 
 export const metadata = { title: "Sign in" };
 export const dynamic = "force-dynamic";
@@ -10,6 +10,7 @@ const ERRORS: Record<string, string> = {
   domain: "Sign in with your company Google account. Personal Gmail accounts can't sign in.",
   unverified: "Google hasn't verified this email address. Use your company account.",
   expired: "The sign-in took too long. Try again.",
+  session_ended: "You were signed out, on this device or another one. Sign in again.",
   cancelled: "Sign-in was cancelled.",
   google: "Google didn't complete the sign-in. Try again.",
 };
@@ -54,7 +55,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
             </svg>
             Sign in with Google
           </a>
-        ) : process.env.NODE_ENV === "production" && process.env.ALLOW_DEV_AUTH !== "true" ? (
+        ) : !devAuthAllowed() ? (
           <div className="mt-6 rounded-lg bg-turmeric-soft px-3 py-3 text-sm text-turmeric-ink">
             Sign-in isn't set up yet. An admin needs to add the Google sign-in client, then this page shows the sign-in button.
           </div>

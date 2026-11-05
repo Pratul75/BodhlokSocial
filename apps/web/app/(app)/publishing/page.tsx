@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { asc, desc, eq, inArray } from "drizzle-orm";
-import { ExternalLink, RotateCcw } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { calendarItems, db, pipelineRuns, publishingChannels } from "@bodh/db";
 import { CHANNEL_LABELS, FORMAT_LABELS, type Channel, type Format } from "@bodh/shared";
 import { channelFor, listIntegrations, type PostizIntegration } from "@bodh/integrations/postiz";
 import { postizCredentials } from "@bodh/integrations/publisher";
 import { requireModule } from "@/lib/auth";
 import { ago, dayLabel, timeLabel } from "@/lib/format";
-import { Card, CardHeader, EmptyState, PageHeader, StatusPill, Table, btn } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageHeader, StatusPill, Table } from "@/components/ui";
+import { JobButton } from "@/components/job-button";
 import { retryPublish } from "./actions";
 import { ChannelSelect, RunPublisherButton } from "./forms";
 
@@ -109,10 +110,7 @@ export default async function PublishingPage() {
         <Card className="mb-6 border-sindoor/30">
           <CardHeader title="Failed" sub="Fix the cause, then retry. A retry goes back through the publisher's checks." />
           {rows(failed, (it) => (
-            <form action={retryPublish}>
-              <input type="hidden" name="id" value={it.id} />
-              <button className={btn.secondary}><RotateCcw size={14} /> Retry</button>
-            </form>
+            <JobButton action={retryPublish} job="retry" label="Retry" pendingLabel="Queuing…" fields={{ id: it.id }} />
           ))}
         </Card>
       )}

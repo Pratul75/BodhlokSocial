@@ -57,6 +57,21 @@ export async function adsError(res: Response) {
   return new GoogleAdsError(`Google Ads API ${res.status}${detail ? `: ${detail}` : ""}`, res.status, res.status === 429 || res.status >= 500);
 }
 
+/** Reads the configured customer to prove the grant and developer token reach it. Returns its name. */
+export async function verifyGoogleAdsAccess(cfg: GoogleAdsConfig, accessToken: string): Promise<string> {
+  const res = await fetch(`${BASE}/${ADS_API_VERSION}/customers/${cfg.customerId}/googleAds:search`, {
+    method: "POST",
+    headers: headers(cfg, accessToken),
+    body: JSON.stringify({ query: "SELECT customer.id, customer.descriptive_name, customer.currency_code FROM customer LIMIT 1" }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw await adsError(res);
+  const body = (await res.json()) as { results?: { customer?: { id?: string; descriptiveName?: string; currencyCode?: string } }[] };
+  const c = body.results?.[0]?.customer;
+  if (!c?.id) throw new Error(`Google Ads answered but returned no customer ${cfg.customerId}.`);
+  return `${c.descriptiveName || "Google Ads"} (${c.id}${c.currencyCode ? `, ${c.currencyCode}` : ""})`;
+}
+
 export const spendQuery = (since: string, until: string) =>
   `SELECT segments.date, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ` +
   `metrics.cost_micros, metrics.impressions, metrics.clicks FROM ad_group_ad ` +
@@ -73,6 +88,7 @@ export async function fetchGoogleAdsSpend(cfg: GoogleAdsConfig, accessToken: str
       method: "POST",
       headers: headers(cfg, accessToken),
       body: JSON.stringify({ query: spendQuery(since, until), pageToken }),
+      signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) throw await adsError(res);
     const body = (await res.json()) as {
@@ -144,14 +160,34 @@ export function buildClickConversion(cfg: GoogleAdsConfig, e: ConversionForGoogl
   return c;
 }
 
+interface PartialFailureError {
+  message?: string;
+  details?: { errors?: { message?: string; location?: { fieldPathElements?: { fieldName?: string; index?: number }[] } }[] }[];
+}
+
+/** Which conversions (by index in the request) Google rejected, with its reason for each. */
+export function rejectedConversions(err: PartialFailureError | null | undefined): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const d of err?.details ?? []) {
+    for (const e of d.errors ?? []) {
+      const at = e.location?.fieldPathElements?.find((p) => p.fieldName === "conversions" && typeof p.index === "number");
+      if (at && !out.has(at.index!)) out.set(at.index!, (e.message ?? "Rejected by Google Ads").slice(0, 300));
+    }
+  }
+  return out;
+}
+
 export async function uploadClickConversions(cfg: GoogleAdsConfig, accessToken: string, conversions: Record<string, unknown>[]) {
-  if (conversions.length === 0) return { uploaded: 0, partialFailure: null as string | null };
+  if (conversions.length === 0) return { uploaded: 0, partialFailure: null as string | null, rejected: new Map<number, string>() };
   const res = await fetch(`${BASE}/${ADS_API_VERSION}/customers/${cfg.customerId}:uploadClickConversions`, {
     method: "POST",
     headers: headers(cfg, accessToken),
     body: JSON.stringify({ conversions, partialFailure: true }),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw await adsError(res);
-  const body = (await res.json()) as { partialFailureError?: { message?: string }; results?: unknown[] };
-  return { uploaded: body.results?.length ?? 0, partialFailure: body.partialFailureError?.message ?? null };
+  const body = (await res.json()) as { partialFailureError?: PartialFailureError; results?: unknown[] };
+  const rejected = rejectedConversions(body.partialFailureError);
+  // A partial failure with no per-row locations can't be pinned on rows; report it as text only.
+  return { uploaded: conversions.length - rejected.size, partialFailure: body.partialFailureError?.message ?? null, rejected };
 }

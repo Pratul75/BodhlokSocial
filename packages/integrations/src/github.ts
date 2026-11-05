@@ -92,7 +92,7 @@ export class GitHub {
 
   /** Who the token acts as; a cheap way to check it works. */
   async whoAmI(): Promise<string> {
-    const res = await fetch("https://api.github.com/user", { headers: { Authorization: `Bearer ${this.creds.token}`, Accept: "application/vnd.github+json" } });
+    const res = await fetch("https://api.github.com/user", { headers: { Authorization: `Bearer ${this.creds.token}`, Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(30_000) });
     const json = (await res.json().catch(() => null)) as { login?: string; message?: string } | null;
     if (!res.ok) throw new GitHubError(`GitHub ${res.status}${json?.message ? `: ${json.message}` : ""}`, res.status);
     return json?.login ?? "unknown";

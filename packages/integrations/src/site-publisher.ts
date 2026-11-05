@@ -99,10 +99,25 @@ export interface RelatedPost {
   img: string;
 }
 
+/** Links the published site may carry: web pages, mail, and same-site paths or anchors. */
+const SAFE_HREF = /^(https?:\/\/|mailto:|\/(?!\/)|#)/i;
+
+/**
+ * Drops links and images whose target isn't a plain web URL (javascript:, data:, vbscript:,
+ * protocol-relative //host), keeping the link text. Markdown can produce these even though raw
+ * HTML is escaped, and the page goes to the public site.
+ */
+export function safeLinks(html: string): string {
+  const decode = (s: string) => s.replace(/&amp;/g, "&").replace(/&#x?[0-9a-f]+;/gi, "").replace(/[\s\u0000-\u001f]+/g, "");
+  return html
+    .replace(/<a\s+href="([^"]*)"([^>]*)>([\s\S]*?)<\/a>/gi, (m, href: string, _rest: string, text: string) => (SAFE_HREF.test(decode(href)) ? m : text))
+    .replace(/<img\s+src="([^"]*)"[^>]*>/gi, (m, src: string) => (/^https:\/\//i.test(decode(src)) ? m : ""));
+}
+
 /** Markdown body to the site's article HTML, with numbered section ids for the sidebar. */
 export function renderBody(markdown: string): { html: string; sections: { id: string; title: string }[] } {
   const safe = markdown.replace(/</g, "&lt;");
-  let html = marked.parse(safe, { async: false, gfm: true }) as string;
+  let html = safeLinks(marked.parse(safe, { async: false, gfm: true }) as string);
   const sections: { id: string; title: string }[] = [];
   html = html.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/g, (_m, inner: string) => {
     const id = `section-${sections.length + 1}`;

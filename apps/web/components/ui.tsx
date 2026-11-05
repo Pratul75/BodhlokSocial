@@ -99,6 +99,9 @@ const STATUS_TONES: Record<string, Tone> = {
   stopped: "neutral",
   proposed: "turmeric",
   applying: "dusk",
+  submitted: "ink",
+  weekly: "dusk",
+  monthly: "ink",
 };
 
 export const statusLabel = (s: string) => {

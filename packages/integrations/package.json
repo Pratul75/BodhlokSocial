@@ -23,12 +23,19 @@
     "./dataforseo": "./src/dataforseo.ts",
     "./seo": "./src/seo.ts",
     "./panchang": "./src/panchang.ts",
-    "./geo": "./src/geo.ts",
     "./seo-catalog": "./src/seo-catalog.ts",
     "./ads-platforms": "./src/ads-platforms.ts",
     "./ads": "./src/ads.ts",
     "./site-publisher": "./src/site-publisher.ts",
-    "./github": "./src/github.ts"
+    "./github": "./src/github.ts",
+    "./worker-auth": "./src/worker-auth.ts",
+    "./validate": "./src/validate.ts",
+    "./verify-connections": "./src/verify-connections.ts",
+    "./leads": "./src/leads.ts",
+    "./reddit": "./src/reddit.ts",
+    "./youtube": "./src/youtube.ts",
+    "./community": "./src/community.ts",
+    "./ops": "./src/ops.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

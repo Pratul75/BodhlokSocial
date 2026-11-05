@@ -1,6 +1,25 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { checkIdentityClaims } from "./google";
-import { createSessionToken, openOAuthState, safeReturnTo, sealOAuthState, verifySessionToken } from "./session";
+import { createSessionToken, devAuthAllowed, openOAuthState, safeReturnTo, sameOrigin, sealOAuthState, verifySessionToken } from "./session";
+
+describe("devAuthAllowed", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("allows dev sign-in only outside production", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    expect(devAuthAllowed()).toBe(true);
+    vi.stubEnv("NODE_ENV", "test");
+    expect(devAuthAllowed()).toBe(true);
+    vi.stubEnv("NODE_ENV", "production");
+    expect(devAuthAllowed()).toBe(false);
+  });
+
+  it("cannot be switched back on in production by the old ALLOW_DEV_AUTH flag", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_DEV_AUTH", "true");
+    expect(devAuthAllowed()).toBe(false);
+  });
+});
 
 beforeAll(() => {
   process.env.AUTH_SECRET = "test-secret-test-secret-test-secret-123";
@@ -37,13 +56,13 @@ describe("checkIdentityClaims", () => {
 
 describe("session tokens", () => {
   it("round-trips", async () => {
-    const t = await createSessionToken({ sub: "u1", email: "a@rechargestudio.com" });
-    expect(await verifySessionToken(t)).toEqual({ sub: "u1", email: "a@rechargestudio.com" });
+    const t = await createSessionToken({ sub: "u1", email: "a@rechargestudio.com", sv: 3 });
+    expect(await verifySessionToken(t)).toEqual({ sub: "u1", email: "a@rechargestudio.com", sv: 3 });
   });
 
   it("rejects tampered tokens", async () => {
-    const t = await createSessionToken({ sub: "u1", email: "a@rechargestudio.com" });
-    const [h, p, s] = t.split(".");
+    const t = await createSessionToken({ sub: "u1", email: "a@rechargestudio.com", sv: 0 });
+    const [h, , s] = t.split(".");
     const forged = Buffer.from(JSON.stringify({ sub: "admin", email: "x@rechargestudio.com", aud: "bodh-session", exp: 9999999999 })).toString("base64url");
     expect(await verifySessionToken(`${h}.${forged}.${s}`)).toBeNull();
     expect(await verifySessionToken(undefined)).toBeNull();
@@ -66,5 +85,17 @@ describe("safeReturnTo", () => {
     expect(safeReturnTo("//evil.com")).toBe("/");
     expect(safeReturnTo("/\\evil.com")).toBe("/");
     expect(safeReturnTo(null)).toBe("/");
+  });
+});
+
+describe("sameOrigin", () => {
+  const req = (origin?: string) => new Request("https://growth.example.com/api/auth/signout", { method: "POST", headers: origin ? { origin } : {} });
+  it("accepts this app, and a request without an Origin header", () => {
+    expect(sameOrigin(req("https://growth.example.com"), "https://growth.example.com")).toBe(true);
+    expect(sameOrigin(req(), "https://growth.example.com")).toBe(true);
+  });
+  it("refuses another site and garbage", () => {
+    expect(sameOrigin(req("https://evil.example"), "https://growth.example.com")).toBe(false);
+    expect(sameOrigin(req("null"), "https://growth.example.com")).toBe(false);
   });
 });

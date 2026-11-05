@@ -1,5 +1,5 @@
 import { count, eq } from "drizzle-orm";
-import { approvals, db } from "@bodh/db";
+import { approvals, auditLog, db } from "@bodh/db";
 import { modulesForRole, ROLE_LABELS, ROLES } from "@bodh/shared";
 import { getCurrentUser } from "@/lib/auth";
 import { setDevRole } from "@/app/(app)/actions";
@@ -10,14 +10,18 @@ import { RoleSelect } from "./role-select";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
-  const [pending] = await db.select({ n: count() }).from(approvals).where(eq(approvals.status, "pending"));
+  const [[pending], [seeded]] = await Promise.all([
+    db.select({ n: count() }).from(approvals).where(eq(approvals.status, "pending")),
+    // The seed leaves this row; removing the sample data deletes it. No env flag to forget.
+    db.select({ n: count() }).from(auditLog).where(eq(auditLog.action, "seed_sample_data")),
+  ]);
   const nav = modulesForRole(user.role).map((m) => ({
     href: m.href,
     label: m.label,
     group: m.group,
     badge: m.key === "approvals" && pending && pending.n > 0 ? pending.n : undefined,
   }));
-  const demo = process.env.DEMO_DATA === "true";
+  const demo = (seeded?.n ?? 0) > 0;
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">

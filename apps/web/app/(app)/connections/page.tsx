@@ -5,6 +5,7 @@ import { authEnabled } from "@/lib/session";
 import { getIntegration } from "@bodh/shared";
 import { ago } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
+import { CheckAllConnections } from "./check-all";
 import { ConnectionCard, type ConnectionView } from "./connection-card";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       method: i.method,
       fields: i.fields,
       prerequisite: i.prerequisite,
+      planned: i.planned,
       status: r?.status ?? "not_connected",
       accountLabel: r?.accountLabel ?? null,
       updatedLabel: r?.updatedAt ? ago(r.updatedAt, now) : null,
@@ -46,7 +48,14 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       hasCredential: Boolean(r?.secretRef),
       oauthClientReady: authEnabled(),
       postizSignIn: i.key === "postiz" && byKey.get("postiz_app")?.status === "connected",
-      note: i.key === "postiz_app" ? `Redirect URL for the Postiz app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/postiz/callback` : undefined,
+      customOAuth: i.customOAuth,
+      customOAuthReady: i.customOAuth === "reddit" && byKey.get("reddit_app")?.status === "connected",
+      note:
+        i.key === "postiz_app"
+          ? `Redirect URL for the Postiz app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/postiz/callback`
+          : i.key === "reddit_app"
+            ? `Redirect URL for the Reddit app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/reddit/callback`
+            : undefined,
     };
   });
   const groups = [...new Set(INTEGRATIONS.map((i) => i.group))];
@@ -56,7 +65,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
     <>
       <PageHeader
         title="Connections"
-        description={`${connected} of ${views.length} connected. Agents can only use the accounts connected here.`}
+        description={`${connected} of ${views.length} connected. Agents can only use the accounts connected here. "Connected" means the provider accepted the credential when it was saved or last checked.`}
+        actions={<CheckAllConnections />}
       />
       {sp.connected && (
         <p className="mb-6 rounded-xl bg-leaf-soft px-5 py-3 text-sm text-leaf" role="status">

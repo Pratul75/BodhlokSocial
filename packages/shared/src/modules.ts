@@ -71,3 +71,16 @@ export const APPROVERS: Record<ApprovalKind, readonly Role[]> = {
 export function canApprove(role: Role, kind: ApprovalKind): boolean {
   return APPROVERS[kind].includes(role);
 }
+
+/** The module whose access a person needs to start each agent (from its Run button or from chat). */
+export const AGENT_MODULE = {
+  strategy: "strategy",
+  content: "calendar",
+  seo: "seo",
+  ads: "ads",
+  community: "community",
+  mentions: "seo",
+  analyst: "analytics",
+} as const satisfies Record<string, ModuleKey>;
+export type StartableAgent = keyof typeof AGENT_MODULE;
+export const STARTABLE_AGENTS = Object.keys(AGENT_MODULE) as StartableAgent[];

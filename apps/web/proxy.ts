@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { authEnabled, SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import { authEnabled, devAuthAllowed, SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
 /**
  * Optimistic check: send anyone without a valid session cookie to /signin.
@@ -9,7 +9,7 @@ export async function proxy(req: NextRequest) {
   if (!authEnabled()) {
     // In production without a Google sign-in client, show the sign-in page's setup notice
     // instead of letting every page fail.
-    if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEV_AUTH !== "true") {
+    if (!devAuthAllowed()) {
       if (req.nextUrl.pathname.startsWith("/api/")) return NextResponse.json({ error: "Sign-in is not set up yet." }, { status: 503 });
       return NextResponse.redirect(new URL("/signin", req.url));
     }
@@ -29,5 +29,6 @@ export async function proxy(req: NextRequest) {
 
 export const config = {
   // Everything except sign-in, the auth routes, health check, signed BODH events and static files.
-  matcher: ["/((?!signin|api/auth|api/health|api/events|api/feed|_next/static|_next/image|favicon.ico).*)"],
+  // Webhooks (lead forms) carry their own signatures, like the BODH events and the page feed.
+  matcher: ["/((?!signin|api/auth|api/health|api/events|api/feed|api/webhooks|_next/static|_next/image|favicon.ico).*)"],
 };

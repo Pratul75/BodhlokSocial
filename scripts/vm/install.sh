@@ -53,7 +53,6 @@ ALLOW_LOCAL_SECRETS=true
 STORAGE_BACKEND=local
 UPLOADS_DIR=$SHARED/uploads
 ALLOW_LOCAL_STORAGE=true
-DEMO_DATA=true
 ENV
   chown root:bodh "$ENVF"; chmod 640 "$ENVF"
 fi
@@ -99,13 +98,15 @@ log "migrating"
 (cd "$DEST/worker" && run_node node packages/db/node_modules/tsx/dist/cli.mjs packages/db/src/migrate.ts)
 if [ "$SEED" = "1" ] && [ "${FIRST_INSTALL:-0}" = "1" ]; then
   log "loading sample data"
-  (cd "$DEST/worker/apps/worker" && run_node node node_modules/tsx/dist/cli.mjs src/seed.ts)
+  (cd "$DEST/worker/apps/worker" && run_node SEED_CONFIRM=yes SEED_ALLOW_PRODUCTION=yes node node_modules/tsx/dist/cli.mjs src/seed.ts)
   (cd "$DEST/worker" && run_node node packages/db/node_modules/tsx/dist/cli.mjs packages/db/src/migrate.ts)
 fi
 
 # Switch to the new release.
 ln -sfn "$DEST" "$BASE/current"
 install -m 755 "$HERE/job.sh" "$BASE/bin/job"
+install -m 755 "$HERE/backup.sh" "$BASE/bin/backup"
+install -d -m 700 -o bodh -g bodh "$BASE/backups"
 install -m 644 "$HERE"/systemd/* /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now bodh-web bodh-worker >/dev/null

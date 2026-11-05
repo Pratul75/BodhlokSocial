@@ -13,12 +13,18 @@ resource "random_password" "worker_token" {
   special = false
 }
 
+resource "random_password" "seo_feed_token" {
+  length  = 40
+  special = false
+}
+
 locals {
   generated_secrets = {
     "app-database-url"       = local.database_url
     "app-auth-secret"        = random_password.auth_secret.result
     "app-worker-token"       = random_password.worker_token.result
     "app-bodh-events-secret" = random_password.bodh_events_secret.result
+    "app-seo-feed-token"     = random_password.seo_feed_token.result
   }
 }
 

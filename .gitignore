@@ -20,3 +20,7 @@ infra/terraform.tfvars
 infra/.terraform.lock.hcl.bak
 .skills/
 .skills-src/
+
+# Playwright
+apps/web/playwright-report/
+apps/web/test-results/

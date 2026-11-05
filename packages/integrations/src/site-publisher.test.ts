@@ -45,6 +45,23 @@ describe("site publisher rendering", () => {
     expect(r.html).toContain("&lt;script&gt;");
   });
 
+  it("keeps web, mail and same-site links and drops script, data and protocol-relative ones", () => {
+    const r = renderBody(
+      "[ok](https://bodhlok.com/a) [mail](mailto:hi@bodhlok.com) [path](/blog/x) [anchor](#faq) " +
+        "[js](javascript:alert(1)) [js2](JaVaScRiPt:alert(1)) [data](data:text/html;base64,PHNjcmlwdD4=) [pr](//evil.example) " +
+        "![img](https://cdn.bodhlok.com/a.png) ![bad](javascript:alert(1))",
+    );
+    expect(r.html).toContain('href="https://bodhlok.com/a"');
+    expect(r.html).toContain('href="mailto:hi@bodhlok.com"');
+    expect(r.html).toContain('href="/blog/x"');
+    expect(r.html).toContain('href="#faq"');
+    expect(r.html).not.toMatch(/javascript:/i);
+    expect(r.html).not.toContain("data:text/html");
+    expect(r.html).not.toContain('href="//evil.example"');
+    expect(r.html).toContain("js2"); // the text stays, the link goes
+    expect(r.html).toContain('src="https://cdn.bodhlok.com/a.png"');
+  });
+
   it("fills the site's template: header and footer untouched, head and main replaced", () => {
     const html = renderPost(TEMPLATE, page, { category: "Choosing software", date: "2026-10-25", related: [{ href: "/blog/a", title: "A", category: "KP astrology", img: "../img/a.jpg" }] });
     expect(html).toContain("<header>HEADER</header>");

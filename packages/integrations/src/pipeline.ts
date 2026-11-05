@@ -14,7 +14,7 @@ import { attribute } from "./attribution";
 import type { NormalizedEvent } from "./bodh-events";
 import { fetchGa4Sessions, findGa4Dataset } from "./ga4";
 import { buildClickConversion, fetchGoogleAdsSpend, googleAdsConfigFromEnv, uploadClickConversions } from "./google-ads";
-import { refreshAccessToken, type StoredGoogleGrant } from "./google-oauth";
+import { googleAccessToken } from "./google-oauth";
 import { fetchMetaSpend, sendCapiEvents, type CapiCredentials, type ConversionForCapi, type MarketingCredentials } from "./meta";
 import { readJsonSecret } from "./secrets";
 
@@ -35,21 +35,34 @@ export interface JobResult {
   rows?: number;
 }
 
-/** Runs a job and records it in pipeline_runs, including failures. */
+/**
+ * Runs a job and records it in pipeline_runs, including failures. A Postgres advisory lock named
+ * after the job is held for the whole run, so if a timer fires while the previous run of the
+ * same job is still going (or the web app and the worker start it together), the second one is
+ * recorded as skipped instead of loading or sending everything twice.
+ */
 export async function runJob(job: string, fn: () => Promise<JobResult>): Promise<JobResult & { job: string }> {
-  const [run] = await db.insert(pipelineRuns).values({ job, status: "running" }).returning({ id: pipelineRuns.id });
-  try {
-    const r = await fn();
-    await db
-      .update(pipelineRuns)
-      .set({ status: r.status, detail: r.detail, rows: r.rows ?? 0, finishedAt: new Date() })
-      .where(eq(pipelineRuns.id, run!.id));
-    return { job, ...r };
-  } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e);
-    await db.update(pipelineRuns).set({ status: "failed", detail, finishedAt: new Date() }).where(eq(pipelineRuns.id, run!.id));
-    throw Object.assign(new Error(`${job} failed: ${detail}`), { job });
-  }
+  return db.transaction(async (lockTx) => {
+    const [got] = (await lockTx.execute(sql`SELECT pg_try_advisory_xact_lock(hashtext(${`bodh_job:${job}`})) AS ok`)) as unknown as { ok: boolean }[];
+    if (!got?.ok) {
+      await db.insert(pipelineRuns).values({ job, status: "skipped", detail: "Already running: the previous run of this job hasn't finished.", finishedAt: new Date() });
+      return { job, status: "skipped" as const, detail: "Already running.", rows: 0 };
+    }
+    // The run log is written outside the lock's transaction so it shows up while the job runs.
+    const [run] = await db.insert(pipelineRuns).values({ job, status: "running" }).returning({ id: pipelineRuns.id });
+    try {
+      const r = await fn();
+      await db
+        .update(pipelineRuns)
+        .set({ status: r.status, detail: r.detail, rows: r.rows ?? 0, finishedAt: new Date() })
+        .where(eq(pipelineRuns.id, run!.id));
+      return { job, ...r };
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      await db.update(pipelineRuns).set({ status: "failed", detail, finishedAt: new Date() }).where(eq(pipelineRuns.id, run!.id));
+      throw Object.assign(new Error(`${job} failed: ${detail}`), { job });
+    }
+  });
 }
 
 async function markSynced(key: string) {
@@ -93,18 +106,22 @@ export async function ingestEvents(events: NormalizedEvent[]): Promise<IngestRes
   let accepted = 0;
   for (let i = 0; i < rows.length; i += 1000) {
     const chunk = rows.slice(i, i + 1000);
-    const inserted = await db
-      .insert(conversionEvents)
-      .values(chunk)
-      .onConflictDoNothing({ target: conversionEvents.eventId })
-      .returning({ eventId: conversionEvents.eventId, gclid: conversionEvents.gclid, gbraid: conversionEvents.gbraid, wbraid: conversionEvents.wbraid });
-    accepted += inserted.length;
-    const forwards: (typeof conversionForwards.$inferInsert)[] = [];
-    for (const r of inserted) {
-      forwards.push({ eventId: r.eventId, destination: "meta_capi" });
-      if (r.gclid || r.gbraid || r.wbraid) forwards.push({ eventId: r.eventId, destination: "google_ads" });
-    }
-    if (forwards.length) await db.insert(conversionForwards).values(forwards).onConflictDoNothing();
+    // An event and its forwarding rows are written together: a crash between them would
+    // leave events that are never sent to Meta or Google (a retry sees them as duplicates).
+    accepted += await db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(conversionEvents)
+        .values(chunk)
+        .onConflictDoNothing({ target: conversionEvents.eventId })
+        .returning({ eventId: conversionEvents.eventId, gclid: conversionEvents.gclid, gbraid: conversionEvents.gbraid, wbraid: conversionEvents.wbraid });
+      const forwards: (typeof conversionForwards.$inferInsert)[] = [];
+      for (const r of inserted) {
+        forwards.push({ eventId: r.eventId, destination: "meta_capi" });
+        if (r.gclid || r.gbraid || r.wbraid) forwards.push({ eventId: r.eventId, destination: "google_ads" });
+      }
+      if (forwards.length) await tx.insert(conversionForwards).values(forwards).onConflictDoNothing();
+      return inserted.length;
+    });
   }
   return { accepted, duplicates: events.length - accepted };
 }
@@ -245,55 +262,103 @@ async function markFailure(rows: { id: string; attempts: number }[], error: stri
   }
 }
 
+type Due = Awaited<ReturnType<typeof dueForwards>>[number];
+
+/**
+ * Sends a batch to Meta. When Meta rejects the batch outright (a 4xx, usually one malformed
+ * event), the batch is split in half and each half retried, down to single events, so only the
+ * events Meta actually refuses are marked failed. A retryable error (429, 5xx) stops the split
+ * and is thrown, so the whole batch waits for the next run.
+ */
+export async function sendCapiBisecting(
+  send: (rows: Due[]) => Promise<unknown>,
+  rows: Due[],
+  budget = { calls: 64 },
+): Promise<{ sent: Due[]; rejected: { row: Due; error: string }[]; deferred: Due[] }> {
+  if (rows.length === 0) return { sent: [], rejected: [], deferred: [] };
+  // Out of calls for this run: leave the rest queued for the next run rather than failing them.
+  if (budget.calls <= 0) return { sent: [], rejected: [], deferred: rows };
+  budget.calls--;
+  try {
+    await send(rows);
+    return { sent: rows, rejected: [], deferred: [] };
+  } catch (e) {
+    const retryable = (e as { retryable?: boolean }).retryable ?? true;
+    if (retryable) throw e;
+    const error = e instanceof Error ? e.message : String(e);
+    if (rows.length === 1) return { sent: [], rejected: [{ row: rows[0]!, error }], deferred: [] };
+    const mid = Math.ceil(rows.length / 2);
+    const a = await sendCapiBisecting(send, rows.slice(0, mid), budget);
+    const b = await sendCapiBisecting(send, rows.slice(mid), budget);
+    return { sent: [...a.sent, ...b.sent], rejected: [...a.rejected, ...b.rejected], deferred: [...a.deferred, ...b.deferred] };
+  }
+}
+
 export async function forwardToMeta(): Promise<JobResult> {
   const creds = await readJsonSecret<CapiCredentials>("meta_capi");
   if (!creds?.pixel_id || !creds.access_token) return { status: "skipped", detail: "Meta Conversions API is not connected. Events wait in the queue for 7 days." };
   const expired = await expireOld("meta_capi");
   let sent = 0;
+  let rejected = 0;
   for (let batch = 0; batch < 5; batch++) {
     const due = await dueForwards("meta_capi", 500);
     if (due.length === 0) break;
     try {
-      await sendCapiEvents(creds, due.map((d) => toCapi(d.e)));
-      await markSent(due.map((d) => d.f.id));
-      sent += due.length;
+      const r = await sendCapiBisecting((rows) => sendCapiEvents(creds, rows.map((d) => toCapi(d.e))), due);
+      await markSent(r.sent.map((d) => d.f.id));
+      for (const x of r.rejected) await markFailure([x.row.f], x.error, false);
+      if (r.deferred.length) await markFailure(r.deferred.map((d) => d.f), "Meta rejected part of this batch; retrying the rest on the next run.", true);
+      sent += r.sent.length;
+      rejected += r.rejected.length;
+      if (r.deferred.length) break;
     } catch (e) {
-      const retryable = (e as { retryable?: boolean }).retryable ?? true;
-      await markFailure(due.map((d) => d.f), e instanceof Error ? e.message : String(e), retryable);
+      await markFailure(due.map((d) => d.f), e instanceof Error ? e.message : String(e), true);
       throw e; // recorded as a failed run; the events retry with backoff
     }
   }
   await markSynced("meta_capi");
-  return { status: "succeeded", detail: `Sent ${sent} events to Meta${expired ? `, expired ${expired}` : ""}.`, rows: sent };
-}
-
-async function googleAccessToken(): Promise<string | null> {
-  const grant = await readJsonSecret<StoredGoogleGrant>("google_ads");
-  if (!grant?.refresh_token) return null;
-  return (await refreshAccessToken(grant.refresh_token)).access_token;
+  const test = creds.test_event_code ? " (test event code set: Meta shows them under Test Events only)" : "";
+  return {
+    status: "succeeded",
+    detail: `Sent ${sent} events to Meta${test}${rejected ? `; Meta rejected ${rejected}` : ""}${expired ? `; expired ${expired}` : ""}.`,
+    rows: sent,
+  };
 }
 
 export async function forwardToGoogle(): Promise<JobResult> {
   const cfg = googleAdsConfigFromEnv();
-  const token = cfg ? await googleAccessToken() : null;
+  const token = cfg ? await googleAccessToken("google_ads") : null;
   if (!cfg || !token) return { status: "skipped", detail: "Google Ads is not connected. Click conversions wait in the queue for 60 days." };
   const expired = await expireOld("google_ads");
   const due = await dueForwards("google_ads", 2000);
   const built = due.map((d) => ({ d, c: buildClickConversion(cfg, { ...toCapi(d.e), gclid: d.e.gclid, gbraid: d.e.gbraid, wbraid: d.e.wbraid }) }));
-  const skip = built.filter((b) => !b.c).map((b) => b.d.f.id);
-  if (skip.length) await db.update(conversionForwards).set({ status: "skipped", lastError: "No conversion action for this event type" }).where(inArray(conversionForwards.id, skip));
+  // No conversion action configured for this event type yet: keep it queued and look again
+  // tomorrow, so filling in GOOGLE_ADS_CONVERSION_ACTIONS later still sends it (within 60 days).
+  const wait = built.filter((b) => !b.c).map((b) => b.d.f.id);
+  if (wait.length) {
+    await db
+      .update(conversionForwards)
+      .set({ lastError: "No Google Ads conversion action for this event type yet; checking again daily.", nextAttemptAt: new Date(Date.now() + 86_400_000) })
+      .where(inArray(conversionForwards.id, wait));
+  }
   const send = built.filter((b) => b.c);
-  let partial: string | null = null;
+  let r: Awaited<ReturnType<typeof uploadClickConversions>>;
   try {
-    const r = await uploadClickConversions(cfg, token, send.map((b) => b.c!));
-    partial = r.partialFailure;
-    await markSent(send.map((b) => b.d.f.id));
+    r = await uploadClickConversions(cfg, token, send.map((b) => b.c!));
   } catch (e) {
     await markFailure(send.map((b) => b.d.f), e instanceof Error ? e.message : String(e), (e as { retryable?: boolean }).retryable ?? true);
     throw e;
   }
+  const rejected = send.filter((_, i) => r.rejected.has(i));
+  await markSent(send.filter((_, i) => !r.rejected.has(i)).map((b) => b.d.f.id));
+  for (const [i, error] of r.rejected) await markFailure([send[i]!.d.f], error, false);
   await markSynced("google_ads");
-  return { status: "succeeded", detail: `Uploaded ${send.length} click conversions${partial ? `; some rejected: ${partial}` : ""}${expired ? `; expired ${expired}` : ""}.`, rows: send.length };
+  const unplaced = r.partialFailure && rejected.length === 0 ? `; Google reported: ${r.partialFailure}` : "";
+  return {
+    status: "succeeded",
+    detail: `Uploaded ${send.length - rejected.length} click conversions${rejected.length ? `; Google rejected ${rejected.length}` : ""}${unplaced}${wait.length ? `; ${wait.length} waiting for a conversion action` : ""}${expired ? `; expired ${expired}` : ""}.`,
+    rows: send.length - rejected.length,
+  };
 }
 
 /* ---------- loaders ---------- */
@@ -329,7 +394,7 @@ export async function loadMetaSpend(since: string, until: string): Promise<JobRe
 
 export async function loadGoogleSpend(since: string, until: string): Promise<JobResult> {
   const cfg = googleAdsConfigFromEnv();
-  const token = cfg ? await googleAccessToken() : null;
+  const token = cfg ? await googleAccessToken("google_ads") : null;
   if (!cfg || !token) return { status: "skipped", detail: "Google Ads is not connected." };
   const rows = await fetchGoogleAdsSpend(cfg, token, since, until);
   await upsertSpend(rows);
@@ -362,7 +427,24 @@ export async function loadGa4Sessions(day: string): Promise<JobResult> {
 }
 
 export async function rebuild(from: string, to: string): Promise<JobResult> {
-  const fixed = await reconcileAttribution();
+  const fixed = await reconcileAttribution(from);
   const rows = await rebuildFunnel(from, to);
   return { status: "succeeded", detail: `Rebuilt ${from} to ${to}: ${rows} funnel rows${fixed ? `, re-attributed ${fixed} events` : ""}.`, rows };
+}
+
+/* ---------- retention ---------- */
+
+/** How long raw client IP addresses and user agents are kept. Meta only accepts events up to 7 days old. */
+export const CLIENT_DATA_DAYS = 30;
+
+/**
+ * Clears the raw IP address and user agent from events older than CLIENT_DATA_DAYS. They are only
+ * needed to match events when forwarding them; email and phone are never stored raw at all.
+ */
+export async function scrubClientData(): Promise<JobResult> {
+  const res = await db.execute(sql`
+    UPDATE conversion_events SET client_ip = NULL, user_agent = NULL
+    WHERE received_at < now() - make_interval(days => ${CLIENT_DATA_DAYS}) AND (client_ip IS NOT NULL OR user_agent IS NOT NULL)`);
+  const n = (res as unknown as { count?: number }).count ?? 0;
+  return { status: "succeeded", detail: `Cleared IP and user agent on ${n} events older than ${CLIENT_DATA_DAYS} days.`, rows: n };
 }

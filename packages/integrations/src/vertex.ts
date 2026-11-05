@@ -46,6 +46,7 @@ async function vertexFetch(url: string, auth: VertexAuth, body: unknown) {
     method: "POST",
     headers: { Authorization: `Bearer ${auth.accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120_000),
   });
   if (!res.ok) {
     let detail = "";

@@ -66,3 +66,19 @@ describe("positioning checks", () => {
     expect(r.warnings.some((w) => /mystical tone/i.test(w))).toBe(true);
   });
 });
+
+describe("post rules not covered above", () => {
+  const base = { channel: "linkedin" as const, format: "post" as const, caption: "How the desk reads a dasha, step by step, on a sample chart.", title: null, assets: [] as { type: "image" | "video" }[], bannedPhrases: [] as string[] };
+
+  it("limits LinkedIn to one video and nine images", () => {
+    expect(checkPost({ ...base, assets: [{ type: "video" }, { type: "video" }] }).errors.length).toBeGreaterThan(0);
+    expect(checkPost({ ...base, assets: Array.from({ length: 10 }, () => ({ type: "image" as const })) }).errors.length).toBeGreaterThan(0);
+    expect(checkPost({ ...base, assets: [{ type: "image" }] }).errors).toEqual([]);
+  });
+
+  it("needs a YouTube title of 100 characters or fewer", () => {
+    const yt = { ...base, channel: "youtube" as const, format: "short" as const, assets: [{ type: "video" as const }] };
+    expect(checkPost({ ...yt, title: "x".repeat(101) }).errors.join(" ")).toMatch(/title/i);
+    expect(checkPost({ ...yt, title: "Reading a dasha on a sample chart" }).errors).toEqual([]);
+  });
+});

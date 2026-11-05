@@ -13,7 +13,7 @@ Connections needed: **DataForSEO** (API login, API password, site domain), **Sea
 
 ## Programmatic pages
 
-The catalog (`packages/integrations/src/seo-catalog.ts`) has 200 pages: 108 planets in houses, 27 nakshatras, 12 lagnas, 28 yogas and 25 city Panchang pages. Each page has a meta description, a 40 to 70 word direct answer at the top, the body in Markdown, and 3 to 6 FAQs that become `FAQPage` schema. Pages with astrological claims are flagged for Jyotish review.
+The catalog (`packages/integrations/src/seo-catalog.ts`) has 210 pages: 13 software comparisons, 22 module guides, 108 planets in houses, 27 nakshatras, 12 lagnas and 28 yogas. City Panchang pages were retired; the worker deletes any still planned. Each page has a meta description, a 40 to 70 word direct answer at the top, the body in Markdown, and 3 to 6 FAQs that become `FAQPage` schema. Pages with astrological claims are flagged for Jyotish review.
 
 Statuses: **planned** → **in review** (in Approvals) → **live** (approved, in the feed). Rejecting a page sends it back as **changes asked** with the note, and the agent picks it up again.
 
@@ -39,7 +39,7 @@ Categories: comparison pages → "Choosing software"; module guides → the site
 
 ## The page feed (for BODH's web team)
 
-Approved pages reach the website through a read-only feed. It needs the token shown to admins at the bottom of the SEO page (`SEO_FEED_TOKEN` on the server), sent as `Authorization: Bearer <token>`. Responses carry `X-Robots-Tag: noindex`, so this app never competes with the site in search.
+Approved pages reach the website through a read-only feed. It needs the token shown to admins at the bottom of the SEO page (`SEO_FEED_TOKEN` on the server), sent as `Authorization: Bearer <token>` (a `?token=` query parameter is not accepted, because URLs end up in logs). The token is masked on the page; Show or Copy reveals it. Responses carry `X-Robots-Tag: noindex`, so this app never competes with the site in search.
 
 | Endpoint | Returns |
 |---|---|

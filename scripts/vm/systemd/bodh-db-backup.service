@@ -1,0 +1,10 @@
+[Unit]
+Description=BODH Growth OS: nightly database backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=bodh
+Group=bodh
+NoNewPrivileges=true
+ExecStart=/opt/bodh/bin/backup

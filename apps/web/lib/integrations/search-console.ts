@@ -15,7 +15,7 @@ export interface SiteEntry {
 }
 
 export async function listSites(accessToken: string): Promise<SiteEntry[]> {
-  const res = await fetch(`${API}/sites`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await fetch(`${API}/sites`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw await failure("sites request", res);
   const body = (await res.json()) as { siteEntry?: SiteEntry[] };
   return (body.siteEntry ?? []).filter((s) => s.permissionLevel !== "siteUnverifiedUser");
@@ -43,6 +43,7 @@ export async function topQueries(accessToken: string, siteUrl: string, days = 28
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ startDate: iso(start), endDate: iso(end), dimensions: ["query"], rowLimit: 1000 }),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw await failure("query", res);
   const body = (await res.json()) as { rows?: { keys: string[]; clicks: number; impressions: number; position: number }[] };

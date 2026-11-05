@@ -80,25 +80,13 @@ export async function exchangeCode(code: string, redirectUri: string, verifier: 
       grant_type: "authorization_code",
       code_verifier: verifier,
     }),
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`Google token exchange failed (${res.status})`);
   return (await res.json()) as GoogleTokens;
 }
 
-export async function refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_in: number }> {
-  const res = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      refresh_token: refreshToken,
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-      grant_type: "refresh_token",
-    }),
-  });
-  if (!res.ok) throw new Error(`Google token refresh failed (${res.status})`);
-  return (await res.json()) as { access_token: string; expires_in: number };
-}
+// Access-token refresh for connected integrations lives in @bodh/integrations/google-oauth.
 
 export interface GoogleIdentity {
   email: string;

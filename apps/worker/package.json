@@ -7,10 +7,12 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "start": "tsx --env-file-if-exists=../../.env src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "seed": "tsx --env-file-if-exists=../../.env src/seed.ts"
   },
   "devDependencies": {
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "vitest": "^5.0.5"
   },
   "dependencies": {
     "@bodh/agents": "workspace:*",

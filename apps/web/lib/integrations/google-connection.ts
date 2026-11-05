@@ -1,25 +1,19 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import { connections, db, keywords } from "@bodh/db";
-import { refreshAccessToken } from "@/lib/google";
+import { googleAccessToken, revokeGoogleGrant, type StoredGoogleGrant } from "@bodh/integrations/google-oauth";
+import { syncAdStructure } from "@bodh/integrations/ads";
+import { googleAdsConfigFromEnv, verifyGoogleAdsAccess } from "@bodh/integrations/google-ads";
 import { intentFor } from "@bodh/integrations/dataforseo";
-import { secretName, secretStore } from "@/lib/secrets";
+import { myChannel } from "@bodh/integrations/youtube";
 import { listSites, pickSite, topQueries } from "./search-console";
 
-/** What we keep in the secrets store for a Google OAuth connection. */
-export interface StoredGoogleGrant {
-  refresh_token: string;
-  scope: string;
-  connected_by: string;
-  connected_at: string;
-}
+export type { StoredGoogleGrant };
 
 export async function accessTokenFor(key: string): Promise<string> {
-  const raw = await (await secretStore()).get(secretName(key));
-  if (!raw) throw new Error("No stored grant. Connect again.");
-  const grant = JSON.parse(raw) as StoredGoogleGrant;
-  const { access_token } = await refreshAccessToken(grant.refresh_token);
-  return access_token;
+  const token = await googleAccessToken(key);
+  if (!token) throw new Error("No stored grant. Connect again.");
+  return token;
 }
 
 /** Check a fresh grant works and describe the account it reaches. */
@@ -30,6 +24,17 @@ export async function describeAccount(key: string, accessToken: string): Promise
     if (!site) throw new Error("This Google account has no verified Search Console properties.");
     return site.siteUrl;
   }
+  if (key === "google_ads") {
+    const cfg = googleAdsConfigFromEnv();
+    // Without the developer token the account can't be checked yet; the card already says so.
+    if (!cfg) return "Signed in (developer token pending)";
+    return verifyGoogleAdsAccess(cfg, accessToken);
+  }
+  if (key === "youtube") {
+    const channel = await myChannel(accessToken);
+    if (!channel) throw new Error("This Google account has no YouTube channel. Sign in with the account that owns BODH's channel.");
+    return channel.title;
+  }
   return "Connected";
 }
 
@@ -37,12 +42,18 @@ export interface SyncResult {
   message: string;
 }
 
-/** Pull data for a connected integration. Search Console updates keyword positions. */
+/** Pull data for a connected integration: Search Console keyword positions, Google Ads account structure. */
 export async function syncIntegration(key: string): Promise<SyncResult> {
   const token = await accessTokenFor(key);
+  if (key === "google_ads") {
+    if (!googleAdsConfigFromEnv()) throw new Error("Set GOOGLE_ADS_DEVELOPER_TOKEN and GOOGLE_ADS_CUSTOMER_ID on the server first.");
+    const message = await syncAdStructure();
+    await db.update(connections).set({ status: "connected", lastSyncAt: new Date(), error: null, updatedAt: new Date() }).where(eq(connections.key, key));
+    return { message };
+  }
   if (key !== "search_console") {
-    await db.update(connections).set({ lastSyncAt: new Date(), error: null }).where(eq(connections.key, key));
-    return { message: "Connection works." };
+    await db.update(connections).set({ status: "connected", lastSyncAt: new Date(), error: null, updatedAt: new Date() }).where(eq(connections.key, key));
+    return { message: "Google accepted the stored grant." };
   }
 
   const sites = await listSites(token);
@@ -95,12 +106,5 @@ export async function syncIntegration(key: string): Promise<SyncResult> {
 }
 
 export async function revokeGrant(key: string) {
-  const raw = await (await secretStore()).get(secretName(key));
-  if (!raw) return;
-  try {
-    const grant = JSON.parse(raw) as StoredGoogleGrant;
-    await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(grant.refresh_token)}`, { method: "POST" });
-  } catch {
-    // Revocation is best effort; the stored grant is deleted either way.
-  }
+  await revokeGoogleGrant(key);
 }

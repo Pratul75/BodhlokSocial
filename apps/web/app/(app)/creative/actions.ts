@@ -1,5 +1,7 @@
 "use server";
 
+import type { JobState } from "@/app/(app)/seo/actions";
+
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { assets, brandKit, db } from "@bodh/db";
@@ -85,15 +87,17 @@ export async function generateCreative(_prev: GenerateResult, formData: FormData
   }
 }
 
-export async function checkVideos(): Promise<void> {
+export async function checkVideos(_prev: JobState, _formData: FormData): Promise<JobState> {
   const user = await getCurrentUser();
-  if (!canAccess(user.role, "creative")) return;
+  if (!canAccess(user.role, "creative")) return { error: "Your role can't use the Creative studio." };
   try {
-    await pollVideoJobs();
-  } catch {
-    // The job rows keep their status; errors show on the next poll.
+    const r = await pollVideoJobs();
+    revalidatePath("/creative");
+    if (r.checked === 0) return { message: "No videos are being generated." };
+    return { message: `Checked ${r.checked}: ${r.finished} finished, ${r.failed} failed, ${r.checked - r.finished - r.failed} still rendering.` };
+  } catch (e) {
+    return { error: `Couldn't reach Vertex AI: ${e instanceof Error ? e.message : String(e)}` };
   }
-  revalidatePath("/creative");
 }
 
 export type BrandResult = { ok: true; message: string } | { ok: false; error: string } | null;

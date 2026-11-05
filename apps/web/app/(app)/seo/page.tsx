@@ -9,8 +9,9 @@ import { num, pct } from "@/lib/format";
 import { PeriodBars } from "@/components/charts";
 import { AgentRunPanel } from "@/components/agent-run-panel";
 import { JobButton } from "@/components/job-button";
-import { Card, CardHeader, EmptyState, PageHeader, Pill, Table, btn, inputClass } from "@/components/ui";
-import { addQuestion, seoJobAction, toggleQuestion } from "./actions";
+import { Card, CardHeader, EmptyState, PageHeader, Pill, Table, btn } from "@/components/ui";
+import { seoJobAction } from "./actions";
+import { AddQuestion, FeedToken, ToggleQuestion } from "./geo-forms";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "SEO & GEO" };
@@ -73,7 +74,12 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
       <PageHeader
         title="SEO & GEO"
         description="Search rankings, programmatic pages for BODH's site, the weekly site audit, and whether AI assistants recommend Bodhlok."
-        actions={<Link href="/seo/pages" className={btn.secondary}>All pages</Link>}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link href="/seo/listings" className={btn.secondary}>Directory listings</Link>
+            <Link href="/seo/pages" className={btn.secondary}>All pages</Link>
+          </div>
+        }
       />
 
       <Card className="mb-6">
@@ -178,18 +184,11 @@ export default async function SeoPage({ searchParams }: { searchParams: Promise<
               {questions.map((q) => (
                 <li key={q.id} className="flex items-start justify-between gap-3">
                   <span className={q.active ? "" : "text-muted line-through"}>{q.question}</span>
-                  <form action={toggleQuestion}>
-                    <input type="hidden" name="id" value={q.id} />
-                    <button className="text-xs text-dusk hover:underline">{q.active ? "Stop asking" : "Ask again"}</button>
-                  </form>
+                  <ToggleQuestion id={q.id} active={q.active} />
                 </li>
               ))}
             </ul>
-            <form action={addQuestion} className="mt-3 flex gap-2">
-              <label htmlFor="geo-q" className="sr-only">New question</label>
-              <input id="geo-q" name="question" className={inputClass} placeholder="A question your customers ask an AI assistant" minLength={10} maxLength={200} />
-              <button className={btn.secondary}>Add</button>
-            </form>
+            <AddQuestion />
           </details>
         </Card>
       </div>
@@ -331,7 +330,7 @@ async function FeedCard() {
             <li>{base}/llms.txt</li>
           </ul>
           <label className="block pt-2 text-xs text-muted" htmlFor="feed-token">Feed token</label>
-          <input id="feed-token" readOnly value={token} className={`${inputClass} font-mono`} />
+          <FeedToken token={token} />
         </div>
       ) : (
         <p className="px-5 py-4 text-sm text-muted">The feed is off. Set SEO_FEED_TOKEN on the server to turn it on.</p>

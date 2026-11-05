@@ -1,10 +1,9 @@
 import { desc } from "drizzle-orm";
-import { Check } from "lucide-react";
 import { db, strategyPlans } from "@bodh/db";
 import { requireModule } from "@/lib/auth";
 import { AgentRunPanel } from "@/components/agent-run-panel";
-import { Card, CardHeader, EmptyState, PageHeader, StatusPill, btn } from "@/components/ui";
-import { approvePlan } from "./actions";
+import { Card, CardHeader, EmptyState, PageHeader, StatusPill } from "@/components/ui";
+import { ApprovePlanButton } from "./approve-plan";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Strategy" };
@@ -43,12 +42,7 @@ export default async function StrategyPage() {
         title={month}
         description="Written by the Strategy agent from the funnel, ads, keywords and the month's astrological events. Approve it before the Content agent plans the calendar."
         actions={
-          user.role === "admin" && plan.status === "draft" ? (
-            <form action={approvePlan}>
-              <input type="hidden" name="id" value={plan.id} />
-              <button className={btn.approve}><Check size={16} /> Approve plan</button>
-            </form>
-          ) : undefined
+          user.role === "admin" && plan.status === "draft" ? <ApprovePlanButton id={plan.id} /> : undefined
         }
       />
 
