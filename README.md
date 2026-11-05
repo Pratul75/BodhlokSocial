@@ -24,7 +24,7 @@ Open http://localhost:3000. `pnpm dev` needs ports 3000 and 8787 free.
 ### Sign-in
 
 - **Dev mode** (default): with `GOOGLE_CLIENT_ID` empty, every request runs as `DEV_USER_EMAIL`, and **Preview as** in the top bar switches roles. This only works outside production: with `NODE_ENV=production` the app shows a "sign-in isn't set up" notice instead, and no setting overrides that.
-- **Google sign-in**: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `AUTH_SECRET` in `.env`. Only people an admin has added in Admin can sign in. An address on `ALLOWED_EMAIL_DOMAINS` must come from that Workspace (a personal Google account made with a company address is refused); any other address, such as Gmail or a partner's company, signs in with the verified Google account for exactly that address.
+- **Google sign-in**: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `AUTH_SECRET` in `.env`. Only people an admin has added in Admin can sign in. An address on `ALLOWED_EMAIL_DOMAINS` must come from that Workspace (a personal Google account made with a company address is refused); any other address, such as Gmail or a partner's company, signs in with the verified Google account for exactly that address. Connecting YouTube, Google Ads and Search Console goes through Growth OS's own Google app once it's saved in Connections; see [docs/google-verification.md](docs/google-verification.md).
 
 ### Tracking
 

@@ -17,6 +17,7 @@ const SYNCABLE = new Set(["bodhlok_cms", "crm_billing", "crm_leads"]);
 const NOTES: Record<string, string> = {
   postiz_app: `Redirect URL for the Postiz app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/postiz/callback`,
   reddit_app: `Redirect URL for the Reddit app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/reddit/callback`,
+  google_app: `Create it in a Google Cloud project of its own, not the staff sign-in project: Google Auth Platform, audience External, then a Web application client with the redirect URL ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/google/callback. Paste the client ID and secret here. New connections then go through this app; connections made before keep working on the old one until you reconnect them. Removing this card breaks every connection made through it. Verification steps: docs/google-verification.md.`,
   bodhlok_cms:
     "To verify: in a private browser window, log in at bodhlok.com as the Growth OS account (you pass reCAPTCHA there). Then open the browser console on bodhlok.com (Cmd+Option+J in Chrome), type copy(localStorage.refresh_token) and press Enter: the sign-in key is now on your clipboard. Paste it here and close the window without logging out. Growth OS renews the key every hour; if it ever lapses, this card asks you to do this again.",
 };
@@ -57,7 +58,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       oauthEnabled: Boolean(i.googleOAuth?.enabled),
       canSync: Boolean(i.googleOAuth?.enabled) || SYNCABLE.has(i.key),
       hasCredential: Boolean(r?.secretRef),
-      oauthClientReady: authEnabled(),
+      oauthClientReady: authEnabled() || byKey.get("google_app")?.status === "connected",
       postizSignIn: i.key === "postiz" && byKey.get("postiz_app")?.status === "connected",
       customOAuth: i.customOAuth,
       customOAuthReady: i.customOAuth === "reddit" && byKey.get("reddit_app")?.status === "connected",

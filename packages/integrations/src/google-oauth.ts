@@ -1,7 +1,13 @@
 /**
- * Google OAuth access tokens for connected integrations (Search Console, Google Ads), shared by
- * the web app and the worker. Only the refresh token is stored; access tokens are minted on use
+ * Google OAuth access tokens for connected integrations (Search Console, Google Ads, YouTube), shared
+ * by the web app and the worker. Only the refresh token is stored; access tokens are minted on use
  * and cached in memory until shortly before they expire.
+ *
+ * Two Google apps can issue grants. The staff sign-in app (GOOGLE_CLIENT_ID/SECRET) lives in the
+ * company's Google Cloud project, so outside accounts (Gmail, a customer's company) can't grant it
+ * sensitive scopes until Google verifies it. Growth OS's own app, saved on the google_app card,
+ * is the one meant for that. New connections use the own app when it's saved; each grant records
+ * the app that issued it, since only that app can refresh it.
  */
 import { eq } from "drizzle-orm";
 import { connections, db } from "@bodh/db";
@@ -16,6 +22,44 @@ export interface StoredGoogleGrant {
   scope: string;
   connected_by: string;
   connected_at: string;
+  /** The OAuth app that issued the grant. Missing on grants from before there were two: the staff app. */
+  client_id?: string;
+}
+
+export interface GoogleOAuthClient {
+  client_id: string;
+  client_secret: string;
+  /** Growth OS's own connect app (google_app card), rather than the staff sign-in app. */
+  own: boolean;
+}
+
+/** The staff sign-in app from the environment. */
+export function staffGoogleClient(): GoogleOAuthClient | null {
+  const id = process.env.GOOGLE_CLIENT_ID;
+  const secret = process.env.GOOGLE_CLIENT_SECRET;
+  return id && secret ? { client_id: id, client_secret: secret, own: false } : null;
+}
+
+async function ownGoogleClient(): Promise<GoogleOAuthClient | null> {
+  const app = await readJsonSecret<{ client_id?: string; client_secret?: string }>("google_app");
+  return app?.client_id && app.client_secret ? { client_id: app.client_id, client_secret: app.client_secret, own: true } : null;
+}
+
+/** The app new connections go through: Growth OS's own when saved, otherwise the staff sign-in app. */
+export async function googleConnectClient(): Promise<GoogleOAuthClient | null> {
+  return (await ownGoogleClient()) ?? staffGoogleClient();
+}
+
+/** The app that can refresh a stored grant. A grant whose app is gone has to be connected again. */
+export async function googleClientForGrant(grant: Pick<StoredGoogleGrant, "client_id">): Promise<GoogleOAuthClient> {
+  const staff = staffGoogleClient();
+  if (!grant.client_id || grant.client_id === staff?.client_id) {
+    if (!staff) throw new Error("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set.");
+    return staff;
+  }
+  const own = await ownGoogleClient();
+  if (own?.client_id === grant.client_id) return own;
+  throw new GoogleGrantRevokedError();
 }
 
 /** Google said the refresh token is no longer valid (revoked, expired, or the password changed). */
@@ -26,10 +70,9 @@ export class GoogleGrantRevokedError extends Error {
   }
 }
 
-export async function refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_in: number }> {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  if (!clientId || !clientSecret) throw new Error("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set.");
+export async function refreshAccessToken(refreshToken: string, client: GoogleOAuthClient | null = staffGoogleClient()): Promise<{ access_token: string; expires_in: number }> {
+  if (!client) throw new Error("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set.");
+  const { client_id: clientId, client_secret: clientSecret } = client;
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -63,7 +106,7 @@ export async function googleAccessToken(integration: string): Promise<string | n
   const hit = cache.get(integration);
   if (hit && hit.refreshToken === grant.refresh_token && hit.expiresAt > Date.now() + 60_000) return hit.token;
   try {
-    const t = await refreshAccessToken(grant.refresh_token);
+    const t = await refreshAccessToken(grant.refresh_token, await googleClientForGrant(grant));
     cache.set(integration, { token: t.access_token, refreshToken: grant.refresh_token, expiresAt: Date.now() + (t.expires_in ?? 3600) * 1000 });
     return t.access_token;
   } catch (e) {

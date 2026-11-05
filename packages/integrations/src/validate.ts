@@ -31,6 +31,31 @@ const parse = <T>(value: string): T | null => {
 };
 
 export const VALIDATORS: Record<string, Validator> = {
+  async google_app(value) {
+    const c = parse<{ client_id?: string; client_secret?: string }>(value);
+    if (!c?.client_id || !c.client_secret) return fail("Fill in the client ID and the client secret.");
+    if (!c.client_id.endsWith(".apps.googleusercontent.com")) return fail("The client ID ends with .apps.googleusercontent.com. Copy it from the OAuth client in Google Cloud.");
+    // A made-up code: Google answers invalid_client when the ID or secret is wrong, and only
+    // invalid_grant (the code) once both are right. Nothing is created at Google.
+    const r = await getJson("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: c.client_id,
+        client_secret: c.client_secret,
+        code: "growth-os-credential-check",
+        grant_type: "authorization_code",
+        redirect_uri: `${(process.env.APP_URL ?? "https://growth.rechargestudio.com").replace(/\/$/, "")}/api/connect/google/callback`,
+      }),
+    });
+    const error = typeof r.body?.error === "string" ? r.body.error : "";
+    const detail = typeof r.body?.error_description === "string" ? r.body.error_description : "";
+    // The client ID starts with the Google Cloud project number.
+    if (error === "invalid_grant") return { ok: true, label: `Google Cloud project ${c.client_id.split("-")[0]}` };
+    if (error === "invalid_client") return fail(`Google refused the app: ${detail || "the client ID or secret is wrong"}.`);
+    return fail(`Google answered ${error || `HTTP ${r.status}`}${detail ? `: ${detail}` : ""}.`);
+  },
+
   async meta_marketing(value) {
     const c = parse<{ ad_account_id?: string; access_token?: string }>(value);
     if (!c?.ad_account_id || !c.access_token) return fail("Fill in the ad account ID and the access token.");

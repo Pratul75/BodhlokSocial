@@ -61,6 +61,8 @@ export interface OAuthState {
   nonce: string;
   purpose: "signin" | "connect";
   integration?: string;
+  /** For connect: the Google app the grant was started with, so the code is exchanged with the same one. */
+  clientId?: string;
   returnTo: string;
 }
 

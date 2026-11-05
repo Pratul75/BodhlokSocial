@@ -188,7 +188,7 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
             </button>
             <p className="mt-1.5 text-xs text-muted">
               {c.oauthEnabled
-                ? "Needs the Google OAuth client. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET."
+                ? "Needs a Google app: save the Google sign-in app for connections card, or set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET."
                 : c.prerequisite
                   ? `Switched on once the ${c.prerequisite} comes through.`
                   : "Connect flow not built yet."}

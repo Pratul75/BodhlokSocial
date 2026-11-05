@@ -133,6 +133,18 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
       { name: "base_url", label: "CRM address", optional: true, placeholder: "https://agentic.rechargestudio.com" },
     ],
   },
+  {
+    key: "google_app",
+    name: "Google sign-in app for connections",
+    usedFor:
+      "Growth OS's own Google app for connecting YouTube, Google Ads and Search Console. Once Google verifies it, any account can connect, Gmail included; until then up to 100, past a warning. Without it, connections use the staff sign-in app.",
+    method: "api_key",
+    group: "Search",
+    fields: [
+      { name: "client_id", label: "Client ID (ends .apps.googleusercontent.com)", placeholder: "1234-abc.apps.googleusercontent.com" },
+      { name: "client_secret", label: "Client secret (starts GOCSPX-)", secret: true },
+    ],
+  },
   { key: "search_console", name: "Google Search Console", usedFor: "Search data, keyword positions", method: "oauth", group: "Search", googleOAuth: { scopes: ["https://www.googleapis.com/auth/webmasters.readonly"], enabled: true } },
   {
     key: "dataforseo",
