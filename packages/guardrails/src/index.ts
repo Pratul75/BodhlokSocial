@@ -165,12 +165,12 @@ export function lintAdCopy(text: string, kind: "ad" | "page" = "ad"): CopyIssue[
   return issues;
 }
 
-/** Nothing goes public without approval for the first 60 days after launch. */
-export function requiresPublishApproval(launchDate: Date, now: Date, channelAutoApprove: boolean): boolean {
-  const days = (now.getTime() - launchDate.getTime()) / 86_400_000;
-  if (days < 60) return true;
-  return !channelAutoApprove;
-}
+/*
+ * Publishing approval: every post needs a person's approval, always. The publisher enforces it
+ * (packages/integrations/src/publisher.ts refuses any item without an approved approval row),
+ * so there is no time-based auto-approve rule here. Add one only together with a per-channel
+ * setting an admin controls.
+ */
 
 /* ---------- positioning (from the launch film) ---------- */
 

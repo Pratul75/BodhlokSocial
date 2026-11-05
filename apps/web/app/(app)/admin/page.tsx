@@ -3,7 +3,8 @@ import { agentRuns, auditLog, budgets, db, users } from "@bodh/db";
 import { CHANNEL_LABELS, ROLE_LABELS, ROLES, type Channel } from "@bodh/shared";
 import { requireModule } from "@/lib/auth";
 import { ago, num } from "@/lib/format";
-import { Card, CardHeader, PageHeader, Pill, Table } from "@/components/ui";
+import { MONTHLY_BUDGET_USD } from "@bodh/agents";
+import { Card, CardHeader, EmptyState, PageHeader, Pill, Table } from "@/components/ui";
 import { AccessForm, AddUserForm, CapsForm, RoleForm } from "./forms";
 import { allowedDomains } from "@/lib/google";
 
@@ -51,7 +52,7 @@ export default async function AdminPage() {
                   <td className="font-medium">{p.name}{!p.active && <span className="ml-2 text-xs font-normal text-muted">No access</span>}</td>
                   <td className="text-muted">{p.email}</td>
                   <td><RoleForm id={p.id} role={p.role} roles={roles} self={p.id === me.id} /></td>
-                  <td className="text-right"><AccessForm id={p.id} active={p.active} self={p.id === me.id} /></td>
+                  <td className="text-right"><AccessForm id={p.id} name={p.name} active={p.active} self={p.id === me.id} /></td>
                 </tr>
               ))}
             </tbody>
@@ -72,7 +73,10 @@ export default async function AdminPage() {
           </Card>
 
           <Card>
-            <CardHeader title="AI usage this month" sub={`$${totalCost.toFixed(2)} across all agents`} />
+            <CardHeader title="AI usage this month" sub={`$${totalCost.toFixed(2)} of the $${MONTHLY_BUDGET_USD} monthly budget, across agents, chat and AI-visibility checks`} />
+            {usage.length === 0 ? (
+              <EmptyState title="No AI runs this month" />
+            ) : (
             <Table>
               <thead><tr><th>Agent</th><th className="text-right">Runs</th><th className="text-right">Tokens</th><th className="text-right">Cost (USD)</th></tr></thead>
               <tbody className="font-mono text-[13px] tabular">
@@ -86,12 +90,16 @@ export default async function AdminPage() {
                 ))}
               </tbody>
             </Table>
+            )}
           </Card>
         </div>
       </div>
 
       <Card className="mt-6">
         <CardHeader title="Audit log" sub="Every action by people and agents: who, what, why and the result" />
+        {log.length === 0 ? (
+          <EmptyState title="Nothing logged yet" />
+        ) : (
         <Table>
           <thead><tr><th>When</th><th>Who</th><th>Action</th><th>On</th><th>Why</th><th>Result</th></tr></thead>
           <tbody>
@@ -107,6 +115,7 @@ export default async function AdminPage() {
             ))}
           </tbody>
         </Table>
+        )}
       </Card>
     </>
   );

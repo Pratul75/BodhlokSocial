@@ -36,7 +36,7 @@ export async function saveFile(path: string, data: Buffer | Uint8Array, contentT
     await (await bucket()).file(path).save(Buffer.from(data), { contentType, resumable: false });
     return;
   }
-  if (process.env.NODE_ENV === "production" && process.env.ALLOW_LOCAL_STORAGE !== "true" && process.env.ALLOW_DEV_AUTH !== "true") {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_LOCAL_STORAGE !== "true") {
     throw new Error("Set STORAGE_BACKEND=gcs in production. Local files are lost when Cloud Run restarts.");
   }
   await mkdir(LOCAL_DIR, { recursive: true });

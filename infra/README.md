@@ -11,7 +11,7 @@ Terraform in this folder creates everything the app runs on, in one GCP project:
 | Secret Manager | Database URL, session secret, worker token, OAuth client secret, and every integration key or grant. |
 | Cloud Storage | Uploaded images and videos, private, served through 15-minute signed links. |
 | Artifact Registry `bodh` | Container images. |
-| Cloud Scheduler | Tracking jobs (every 5 minutes, hourly, daily), and one job per agent schedule, off until the agent runtime ships. All in India time. |
+| Cloud Scheduler | Every worker job the VM timers run, at the same times (`scripts/check-schedules.mjs` keeps them in step): tracking, ad account sync, publishing, video polling, SEO and site publishing, the daily ops digest, and the agents (off until `scheduler_enabled = true`). All in India time. |
 | Workload Identity Federation | Lets GitHub Actions on `main` deploy without a stored key. |
 
 You need `gcloud`, Terraform 1.6 or later, and Docker.
@@ -120,5 +120,5 @@ Set `postiz_domain` (e.g. `postiz.rechargestudio.com`) and re-apply. Terraform c
 
 - **Org policy.** If your organization restricts `allUsers` on Cloud Run (domain restricted sharing), the web service's public invoker binding fails. Either allow it for this project, or put the app behind a load balancer with IAP.
 - **Spend caps start at ₹0**, which blocks all ad spend. Set real caps in **Admin** before connecting Google Ads or Meta.
-- **Agent schedules** are off. Set `scheduler_enabled = true` once the agent runtime ships in Phase 4.
+- **Agent schedules** are off by default. Set `scheduler_enabled = true` once the Anthropic key is in Connections; agent starts that find a run already going answer 409 and are not retried.
 - **Custom domain.** Map one in Cloud Run, set `app_url` to it, re-apply, and add its redirect URIs to the OAuth client.

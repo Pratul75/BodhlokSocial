@@ -1,0 +1,10 @@
+[Unit]
+Description=Community agent, daily 08:00 IST
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 Asia/Kolkata
+Persistent=true
+Unit=bodh-job@agent-community.service
+
+[Install]
+WantedBy=timers.target

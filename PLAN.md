@@ -8,6 +8,7 @@ product plan into a build plan for this repository. Repo: github.com/Pratul75/Bo
 
 | Date | What landed |
 |---|---|
+| 2026-11-05 | Audit follow-up (merged onto the live release 47ff99c on branch `merge/audit-on-live`, not deployed; migration 0012 is additive, CRM leads, re-plan history and CMS publishing kept as live has them): dev sign-in impossible in production, sign-out and removed access end sessions everywhere, worker-only agent runs, one active run per agent, budget reserved under a lock and priced per model; credentials checked with the provider before saving, a daily re-check and an alert digest; Google Ads and YouTube on the shared OAuth client, Reddit OAuth; Community, Mentions and Analyst agents with disclosure guardrails, directory listings, weekly and monthly reports; Meta and Google lead-form webhooks; ad changes re-checked at approval, retry for failed ones; database constraints, foreign keys and IST event day (migrations 0007–0008); structured logs, nightly backups, timer/Scheduler parity check, lint, Playwright smoke test, image and Terraform checks in CI; runbook in `docs/operations.md`. Not verified here: database tests, e2e, Docker builds, Terraform validate, live integrations. |
 | 2026-11-02 | The team steers the agents: a **Positioning brief** on the Strategy page (every agent's prompt, wins over the built-in skill; source pages the agents may read with `read_website`) and **Save and re-plan this month** (Strategy rewrites the plan and the rest of the calendar, Content drafts the first week). Every run now keeps a step log; the **Agent runs** page shows what each run read, searched, said and wrote, with links to what it produced. Instruction boxes take 6,000 characters (the 2,000 limit had cut off the launch document on 27 Oct). |
 | 2026-10-27 | Agentic CRM feeds (`docs/crm.md`): signed receivers for the CRM's billing webhooks (invoice amounts read from its Monetization API; first paid invoice becomes the `paid` conversion; nightly re-read catches refunds) and lead webhooks (mirrored without names or raw contact details; Facebook Lead Ads IDs give the ad). The funnel and Analytics gain Leads and Revenue per channel and per ad; the Leads page is now a read-only view of CRM leads. Needs the two webhooks and keys set up in the CRM. |
 | 2026-10-25 | Publishing to bodhlok.com moved from pull requests to the site's CMS: approved pages are published as CMS post documents the moment they are approved (client `bodhlok-cms.ts`, Markdown → the CMS's rich text, SEO fields, categories and author created on first use; failures carry the CMS's own error list; withdrawn pages are unpublished). Needs the site's `POST /api/cms/token` automation sign-in (Jyotish-web-app pull request) and a Bodhlok CMS member account with self-approval on. |
@@ -203,14 +204,14 @@ Order follows doc section 11. Durations assume one to two engineers.
 
 ## 7. Guardrails checklist (doc section 8, enforced in code)
 
-- [ ] Hard daily and monthly spend caps, admin-only, agents cannot raise them
-- [ ] Auto-allow list limited to pause-losing-ad and ±20% bid changes
-- [ ] Nothing public without approval for the first 60 days; per-channel auto-approve flag later
-- [ ] No fake accounts, reviews or undisclosed promotion; disclosure template for influencers
-- [ ] Platform rate limits respected in `packages/integrations`; community replies human-approved
-- [ ] Ad copy linter rejects guaranteed predictions and health/financial promises
-- [ ] Audit log on every agent action with who, what, why, result
-- [ ] Per-user and per-month token and video-generation limits
+- [x] Hard daily and monthly spend caps, admin-only, agents cannot raise them
+- [x] Auto-allow list limited to pause-losing-ad and ±20% bid changes
+- [x] Nothing public without approval for the first 60 days; per-channel auto-approve flag later
+- [x] No fake accounts, reviews or undisclosed promotion; disclosure template for influencers
+- [x] Platform rate limits respected in `packages/integrations`; community replies human-approved
+- [x] Ad copy linter rejects guaranteed predictions and health/financial promises
+- [x] Audit log on every agent action with who, what, why, result
+- [ ] Per-user and per-month token and video-generation limits (monthly AI budget, team and optional per-person image/video limits are in; per-person token limits are not)
 
 ## 8. Roles (doc section 10)
 

@@ -62,13 +62,13 @@ variable "github_repository" {
 }
 
 variable "scheduler_enabled" {
-  description = "Create Cloud Scheduler jobs for the agents. Off until the agent runtime ships."
+  description = "Create Cloud Scheduler jobs that start the agents (Content, Ads, SEO, Strategy, Community, Mentions, Analyst). They need the Anthropic key in Connections."
   type        = bool
   default     = false
 }
 
 variable "tracking_scheduler_enabled" {
-  description = "Run the tracking jobs: conversion forwarding, spend loading, GA4 sessions and funnel rebuilds."
+  description = "Run the tracking jobs: conversion forwarding, spend loading, GA4 sessions, funnel rebuilds and the hourly ad account sync."
   type        = bool
   default     = true
 }
@@ -140,7 +140,13 @@ variable "publishing_scheduler_enabled" {
 }
 
 variable "github_deploy_enabled" {
-  description = "Let GitHub Actions deploy through Workload Identity Federation. Off: deploy from a laptop with scripts/deploy.sh."
+  description = "Let GitHub Actions deploy through Workload Identity Federation. Off: deploy by hand (see infra/README.md), or use the VM path in scripts/deploy-vm.sh."
   type        = bool
   default     = false
+}
+
+variable "seo_scheduler_enabled" {
+  description = "Run the SEO jobs: weekly keyword sync and site audit, AI-visibility checks, and publishing approved pages to the website."
+  type        = bool
+  default     = true
 }

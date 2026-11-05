@@ -7,7 +7,8 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56 has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -42,6 +43,45 @@ jobs:
         env:
           BOOTSTRAP_ADMIN_EMAIL: kshitij@rechargestudio.com
       - run: pnpm db:seed
+        env:
+          SEED_CONFIRM: "yes"
+      - run: pnpm lint
+      - run: pnpm check:schedules
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter @bodh/web build
+      - name: End-to-end smoke tests (dev sign-in, seeded database)
+        run: |
+          pnpm --filter @bodh/web exec playwright install --with-deps chromium
+          pnpm --filter @bodh/web e2e
+        env:
+          CI: "true"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the web and worker images
+        run: |
+          docker build --target web -t bodh-web:ci .
+          docker build --target worker -t bodh-worker:ci .
+      - name: The worker refuses the example token in production
+        run: |
+          out=$(docker run --rm -e NODE_ENV=production -e WORKER_TOKEN=change-me-dev-token bodh-worker:ci 2>&1 || true)
+          echo "$out" | grep -q "placeholder" || (echo "$out"; exit 1)
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=infra fmt -check -recursive
+      - run: terraform -chdir=infra init -backend=false
+      - run: terraform -chdir=infra validate

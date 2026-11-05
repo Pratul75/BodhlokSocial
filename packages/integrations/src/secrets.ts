@@ -113,7 +113,7 @@ export async function secretStore(): Promise<SecretStore> {
     const { SecretManagerServiceClient } = await import("@google-cloud/secret-manager");
     cached = gcpStore(new SecretManagerServiceClient() as unknown as SecretManagerLike, projectId);
   } else {
-    if (process.env.NODE_ENV === "production" && process.env.ALLOW_LOCAL_SECRETS !== "true" && process.env.ALLOW_DEV_AUTH !== "true") {
+    if (process.env.NODE_ENV === "production" && process.env.ALLOW_LOCAL_SECRETS !== "true") {
       throw new Error("Set SECRETS_BACKEND=gcp in production. Local secret files are for development only.");
     }
     cached = localStore;

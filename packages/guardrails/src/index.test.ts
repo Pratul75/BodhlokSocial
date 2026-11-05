@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkAdChange, lintAdCopy, requiresPublishApproval } from "./index";
+import { checkAdChange, lintAdCopy } from "./index";
 
 const caps = { dailyCap: 5000, monthlyCap: 120000 };
 const fresh = { spentToday: 1000, spentThisMonth: 20000 };
@@ -55,17 +55,6 @@ describe("lintAdCopy", () => {
   });
 });
 
-describe("requiresPublishApproval", () => {
-  const launch = new Date("2026-11-01");
-  it("always requires approval in the first 60 days", () => {
-    expect(requiresPublishApproval(launch, new Date("2026-12-15"), true)).toBe(true);
-  });
-  it("follows the channel flag after 60 days", () => {
-    expect(requiresPublishApproval(launch, new Date("2027-01-15"), true)).toBe(false);
-    expect(requiresPublishApproval(launch, new Date("2027-01-15"), false)).toBe(true);
-  });
-});
-
 describe("losing ads and committed budgets", () => {
   const caps = { dailyCap: 5000, monthlyCap: 100000 };
   it("judges an ad against the best proven peer in its ad set", async () => {
@@ -100,5 +89,42 @@ describe("copy lint disclaimers", () => {
     expect(lintAdCopy("Gemstones are not a cure.")).toEqual([]);
     expect(lintAdCopy("Ayurveda and healing traditions", "page")).toEqual([]);
     expect(lintAdCopy("A healing reading", "ad").map((i) => i.why)).toEqual(["Health promises"]);
+  });
+});
+
+describe("guardrail cases not covered above", () => {
+  const caps = { dailyCap: 5000, monthlyCap: 100000 };
+  const spend = { spentToday: 1000, spentThisMonth: 20000 };
+
+  it("sends a pause to approval when the ad isn't judged losing", () => {
+    expect(checkAdChange({ type: "pause_ad", adId: "a", isLosing: false }, caps, spend).outcome).toBe("needs_approval");
+  });
+
+  it("always asks before resuming an ad", () => {
+    expect(checkAdChange({ type: "resume_ad", adId: "a" }, caps, spend).outcome).toBe("needs_approval");
+  });
+
+  it("asks before setting a bid where there was none", () => {
+    expect(checkAdChange({ type: "bid_change", adSetId: "s", currentBid: 0, newBid: 50 }, caps, spend).outcome).toBe("needs_approval");
+  });
+
+  it("allows a budget decrease at once", () => {
+    expect(checkAdChange({ type: "budget_change", adSetId: "s", currentDaily: 2000, newDaily: 1500 }, caps, spend).outcome).toBe("allow");
+  });
+
+  it("blocks A/B tests with no variants or more than three", () => {
+    expect(checkAdChange({ type: "ab_test", adSetId: "s", variants: 0 }, caps, spend).outcome).toBe("block");
+    expect(checkAdChange({ type: "ab_test", adSetId: "s", variants: 4 }, caps, spend).outcome).toBe("block");
+    expect(checkAdChange({ type: "ab_test", adSetId: "s", variants: 3 }, caps, spend).outcome).toBe("needs_approval");
+  });
+
+  it("still allows pausing when the monthly cap is reached", () => {
+    expect(checkAdChange({ type: "pause_ad", adId: "a", isLosing: true }, caps, { spentToday: 0, spentThisMonth: 100000 }).outcome).toBe("allow");
+  });
+
+  it("catches the other banned claims", () => {
+    expect(lintAdCopy("We are 100% accurate").length).toBe(1);
+    expect(lintAdCopy("Win the lottery with your chart").length).toBe(1);
+    expect(lintAdCopy("This will definitely happen this year").length).toBe(1);
   });
 });

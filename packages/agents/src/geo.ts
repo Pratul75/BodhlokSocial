@@ -5,10 +5,13 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
-import { aiVisibilityChecks, db, geoQuestions } from "@bodh/db";
+import { agentRuns, aiVisibilityChecks, db, geoQuestions } from "@bodh/db";
 import { readJsonSecret, secretName, secretStore } from "@bodh/integrations/secrets";
 import { vertexAuth, type ServiceAccountKey } from "@bodh/integrations/vertex";
 import { anthropicClient, MODEL } from "./client";
+import { reserveBudget, usageCost } from "./cost";
+import { queueRun } from "./run";
+import { log } from "@bodh/shared/log";
 
 export const DEFAULT_QUESTIONS = [
   "What is the best Vedic astrology software for professional astrologers?",
@@ -37,6 +40,8 @@ export function analyse(answer: string): { mentioned: boolean; competitors: stri
 export interface EngineAnswer {
   answer: string;
   citations: string[];
+  /** What the call cost in USD, when the engine's price is known (Claude). */
+  costUsd?: number;
 }
 
 const PROMPT = (q: string) => `${q}\n\nAnswer as you would for someone in India, naming specific software, apps or sites where relevant.`;
@@ -118,6 +123,7 @@ async function askClaude(q: string, client?: Anthropic): Promise<EngineAnswer | 
   return {
     answer: text.map((b) => b.text).join("").trim(),
     citations: [...new Set(text.flatMap((b) => b.citations ?? []).map((c) => ("url" in c ? c.url : null)).filter((u): u is string => !!u))],
+    costUsd: usageCost(msg.usage, msg.model),
   };
 }
 
@@ -128,8 +134,39 @@ export async function ensureGeoQuestions(): Promise<void> {
   if (!any) await db.insert(geoQuestions).values(DEFAULT_QUESTIONS.map((question) => ({ question }))).onConflictDoNothing();
 }
 
+/**
+ * Starts this week's checks in the background, recorded as an agent_runs row (agent "geo") so the
+ * cost counts toward the monthly AI budget and two starts (worker timer, web button) cannot overlap.
+ * Returns at once with what happened.
+ */
+export async function startVisibilityChecks(trigger: "schedule" | "manual" = "schedule"): Promise<string> {
+  const queued = await queueRun("geo", trigger);
+  if (!queued.created) return "Already running: the AI-visibility checks started earlier are still going.";
+  const budget = await reserveBudget(queued.id, GEO_RESERVE_USD);
+  if (!budget.ok) {
+    await db.update(agentRuns).set({ status: "failed", summary: budget.reason, costUsd: "0", finishedAt: new Date() }).where(eq(agentRuns.id, queued.id));
+    return budget.reason;
+  }
+  await db.update(agentRuns).set({ status: "running" }).where(eq(agentRuns.id, queued.id));
+  const spend = { usd: 0 };
+  void runVisibilityChecks(ENGINES, ASK, spend)
+    .then((summary) => ({ status: "succeeded" as const, summary }))
+    .catch((e: unknown) => ({ status: "failed" as const, summary: e instanceof Error ? e.message : String(e) }))
+    .then(({ status, summary }) =>
+      db
+        .update(agentRuns)
+        .set({ status, summary: summary.slice(0, 4000), costUsd: spend.usd.toFixed(4), finishedAt: new Date() })
+        .where(eq(agentRuns.id, queued.id)),
+    )
+    .catch((e) => log.error("geo: could not record the run", e));
+  return "Started the AI-visibility checks. They take a few minutes.";
+}
+
+/** Claude's share of a weekly check is small; this is what a run holds against the budget meanwhile. */
+const GEO_RESERVE_USD = 2;
+
 /** Runs this week's checks. One row per question and engine; a failed call is stored with its error. */
-export async function runVisibilityChecks(engines: readonly Engine[] = ENGINES, ask = ASK): Promise<string> {
+export async function runVisibilityChecks(engines: readonly Engine[] = ENGINES, ask = ASK, spend?: { usd: number }): Promise<string> {
   await ensureGeoQuestions();
   const questions = await db.select().from(geoQuestions).where(eq(geoQuestions.active, true));
   const day = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
@@ -146,6 +183,7 @@ export async function runVisibilityChecks(engines: readonly Engine[] = ENGINES, 
           skipped.add(engine);
           break;
         }
+        if (spend && res.costUsd) spend.usd += res.costUsd;
         const a = analyse(res.answer);
         used.add(engine);
         total++;

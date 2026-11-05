@@ -59,6 +59,9 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
     const payload = a.payload as Record<string, unknown>;
     const flags: string[] = [];
     if (payload.needsJyotishReview) flags.push("Needs Jyotish review");
+    // Community answers and listings carry the guardrail's warnings for the reviewer.
+    for (const w of Array.isArray(payload.warnings) ? (payload.warnings as unknown[]).slice(0, 4) : []) if (typeof w === "string") flags.push(w);
+    if (a.kind === "reply" && typeof payload.url === "string") flags.push(`Replying on ${a.channel}${typeof payload.place === "string" ? ` in ${payload.place}` : ""}`);
     return {
       id: a.id,
       kind: a.kind,

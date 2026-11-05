@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { canAccess } from "@bodh/shared";
-import { requestChange, syncAdStructure, type ChangeRequest } from "@bodh/integrations/ads";
+import { requestChange, retryChange, syncAdStructure, type ChangeRequest } from "@bodh/integrations/ads";
 import { getCurrentUser } from "@/lib/auth";
+import { audit } from "@/lib/audit";
 import type { JobState } from "@/app/(app)/seo/actions";
 
 export async function syncAdsAction(_prev: JobState, _formData: FormData): Promise<JobState> {
@@ -28,4 +29,16 @@ export async function pauseAdAction(_prev: JobState, formData: FormData): Promis
   const r = await requestChange(req, `Paused from the Ads manager by ${user.name}.`, { name: user.email, kind: "user" });
   revalidatePath("/ads");
   return r.outcome === "blocked" || r.outcome === "failed" ? { error: r.message } : { message: r.message };
+}
+
+/** Tries a change the platform refused again, after checking the caps as they stand now. */
+export async function retryChangeAction(_prev: JobState, formData: FormData): Promise<JobState> {
+  const user = await getCurrentUser();
+  if (!canAccess(user.role, "ads")) return { error: "Your role can't manage ads." };
+  const id = String(formData.get("changeId") ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return { error: "Unknown change." };
+  const r = await retryChange(id);
+  await audit({ actor: user.email, actorType: "user", action: "retry_ad_change", target: id, result: r.ok ? "applied" : r.error });
+  revalidatePath("/ads");
+  return r.ok ? { message: "Applied." } : { error: r.error };
 }

@@ -23,7 +23,7 @@ import {
   type VariantCopy,
 } from "./ads-platforms";
 import { googleAdsConfigFromEnv, type GoogleAdsConfig } from "./google-ads";
-import { refreshAccessToken, type StoredGoogleGrant } from "./google-oauth";
+import { googleAccessToken } from "./google-oauth";
 import type { MarketingCredentials } from "./meta";
 import { readJsonSecret } from "./secrets";
 
@@ -40,9 +40,8 @@ export async function metaCreds(): Promise<MarketingCredentials | null> {
 
 export async function googleAuth(): Promise<{ cfg: GoogleAdsConfig; token: string } | null> {
   const cfg = googleAdsConfigFromEnv();
-  const grant = cfg ? await readJsonSecret<StoredGoogleGrant>("google_ads") : null;
-  if (!cfg || !grant?.refresh_token) return null;
-  return { cfg, token: (await refreshAccessToken(grant.refresh_token)).access_token };
+  const token = cfg ? await googleAccessToken("google_ads") : null;
+  return cfg && token ? { cfg, token } : null;
 }
 
 /* ---------- structure sync ---------- */
@@ -284,23 +283,27 @@ export async function requestChange(req: ChangeRequest, reason: string, actor: A
   if (decision.outcome === "block") return { outcome: "blocked", changeId: row!.id, message: `Blocked: ${decision.reason}` };
   if (decision.outcome === "needs_approval") {
     const variantsText = req.type === "ab_test" ? `\n\n${req.variants.map((v) => `${v.name}:\n${v.headline ?? v.headlines?.join(" | ") ?? ""}\n${v.text ?? v.descriptions?.join(" | ") ?? ""}`).join("\n\n")}` : "";
-    if (req.type === "ab_test") {
-      await db.insert(experiments).values({ platform: req.platform, hypothesis: req.hypothesis, status: "proposed", startedAt: istDay(), entityId: target!.parentId, entityName: label, variants: [{ name: `Control: ${target!.name}`, cpa: null, adId: target!.platformId }, ...req.variants.map((v) => ({ name: v.name, cpa: null }))], runId: actor.runId ?? null });
-    }
-    const [appr] = await db
-      .insert(approvals)
-      .values({
-        kind: "ad_change",
-        channel: req.platform,
-        agent: actor.kind === "agent" ? actor.name.replace(/ agent$/, "") : "ads",
-        title: label,
-        body: `${reason}${variantsText}`,
-        reason: `Guardrail: ${decision.reason}`,
-        payload: { adChangeId: row!.id, type: req.type, platform: req.platform },
-        sourceRunId: actor.runId ?? null,
-      })
-      .returning({ id: approvals.id });
-    await db.update(adChanges).set({ approvalId: appr!.id }).where(eq(adChanges.id, row!.id));
+    // The proposed test, the approval and its link on the change log are written together, so a
+    // failure can't leave a change that says "sent to approval" with nothing in Approvals.
+    await db.transaction(async (tx) => {
+      if (req.type === "ab_test") {
+        await tx.insert(experiments).values({ platform: req.platform, hypothesis: req.hypothesis, status: "proposed", startedAt: istDay(), entityId: target!.parentId, entityName: label, variants: [{ name: `Control: ${target!.name}`, cpa: null, adId: target!.platformId }, ...req.variants.map((v) => ({ name: v.name, cpa: null }))], runId: actor.runId ?? null });
+      }
+      const [appr] = await tx
+        .insert(approvals)
+        .values({
+          kind: "ad_change",
+          channel: req.platform,
+          agent: actor.kind === "agent" ? actor.name.replace(/ agent$/, "") : "ads",
+          title: label,
+          body: `${reason}${variantsText}`,
+          reason: `Guardrail: ${decision.reason}`,
+          payload: { adChangeId: row!.id, type: req.type, platform: req.platform },
+          sourceRunId: actor.runId ?? null,
+        })
+        .returning({ id: approvals.id });
+      await tx.update(adChanges).set({ approvalId: appr!.id }).where(eq(adChanges.id, row!.id));
+    });
     return { outcome: "sent_to_approval", changeId: row!.id, message: `Sent to Approvals: ${decision.reason}` };
   }
   const applied = await applyChange(row!.id);
@@ -313,6 +316,66 @@ async function record(req: ChangeRequest, target: typeof adEntities.$inferSelect
     .values({ change: `${req.type.replace(/_/g, " ")}${target ? ` "${target.name}"` : ""}`, outcome, reason, guardrail: why, actor: actor.name, platform: req.platform, type: req.type, entityId: target?.platformId ?? null, entityName: target?.name ?? null, runId: actor.runId ?? null })
     .returning({ id: adChanges.id });
   return { outcome, changeId: row!.id, message: `Blocked: ${why}` };
+}
+
+/**
+ * Runs the spend-cap guardrail again for a stored change, with today's spend and the entity's
+ * current state, just before it is applied. A change approved hours after it was proposed is
+ * judged by the caps that hold now, not the ones that held then. Only "block" stops it: a person
+ * is approving it, so "needs approval" is already satisfied.
+ */
+export async function recheckChange(changeId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const [c] = await db.select().from(adChanges).where(eq(adChanges.id, changeId)).limit(1);
+  if (!c?.platform || !c.type) return { ok: false, reason: "Unknown change." };
+  const platform = c.platform as Platform;
+  const caps = await spendNow(platform);
+  if (!caps) return { ok: false, reason: `No spend caps set for ${PLATFORM_LABELS[platform]}.` };
+  const after = c.after ?? {};
+  const target = c.entityId ? await entity(platform, c.entityId) : null;
+  let guard: AdChange;
+  switch (c.type) {
+    case "pause_ad":
+      if (!target || target.status !== "active") return { ok: false, reason: "The ad isn't running any more." };
+      return { ok: true }; // pausing never spends money
+    case "resume_ad":
+      if (!target) return { ok: false, reason: "The ad no longer exists. Sync the accounts." };
+      if (target.status === "active") return { ok: false, reason: "The ad is already running." };
+      guard = { type: "resume_ad", adId: target.platformId };
+      break;
+    case "bid_change":
+      if (!target?.bid) return { ok: false, reason: "The campaign or ad set no longer has a manual bid." };
+      guard = { type: "bid_change", adSetId: target.platformId, currentBid: Number(target.bid), newBid: Number(after.bid) };
+      break;
+    case "budget_change":
+      if (!target?.dailyBudget) return { ok: false, reason: "The campaign or ad set no longer owns a daily budget." };
+      guard = { type: "budget_change", adSetId: target.platformId, currentDaily: Number(target.dailyBudget), newDaily: Number(after.dailyBudget) };
+      break;
+    case "new_campaign":
+      guard = { type: "new_campaign", name: String(after.name ?? ""), dailyBudget: Number(after.dailyBudget) };
+      break;
+    case "ab_test":
+      if (!target?.parentId) return { ok: false, reason: "The base ad no longer exists. Sync the accounts." };
+      guard = { type: "ab_test", adSetId: target.parentId, variants: ((after.variants as unknown[]) ?? []).length };
+      break;
+    default:
+      return { ok: false, reason: `Unknown change type ${c.type}.` };
+  }
+  const decision = checkAdChange(guard, { dailyCap: caps.dailyCap, monthlyCap: caps.monthlyCap }, caps);
+  if (decision.outcome === "block") {
+    await db.update(adChanges).set({ outcome: "blocked", guardrail: `At approval: ${decision.reason}` }).where(eq(adChanges.id, changeId));
+    return { ok: false, reason: decision.reason };
+  }
+  return { ok: true };
+}
+
+/** A failed change, tried again by a person from the change log: the caps are checked again first. */
+export async function retryChange(changeId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const [c] = await db.select().from(adChanges).where(eq(adChanges.id, changeId)).limit(1);
+  if (!c) return { ok: false, error: "Unknown change." };
+  if (c.outcome !== "failed") return { ok: false, error: "Only a change the platform refused can be tried again." };
+  const check = await recheckChange(changeId);
+  if (!check.ok) return { ok: false, error: `Blocked: ${check.reason}` };
+  return applyChange(changeId);
 }
 
 /* ---------- applying ---------- */

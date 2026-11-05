@@ -3,7 +3,10 @@ import type { BetaMessage, BetaMessageParam } from "@anthropic-ai/sdk/resources/
 import { eq } from "drizzle-orm";
 import { agentRuns, db } from "@bodh/db";
 import { anthropicClient, FALLBACK_BETA, MODEL } from "./client";
-import { addUsage, costUsd, emptyTotals, MONTHLY_BUDGET_USD, spentThisMonthUsd } from "./cost";
+import { addUsage, costUsd, emptyTotals, MONTHLY_BUDGET_USD, reserveBudget } from "./cost";
+
+/** Held against the monthly budget while a chat answer is being written; replaced by the real cost. */
+const CHAT_RESERVE_USD = 1;
 import { systemPrompt, userMessage } from "./prompts";
 import { chatTools, readTools, type RunStarter } from "./tools";
 
@@ -46,10 +49,13 @@ export async function* chat(history: ChatTurn[], userEmail: string, client?: Ant
 
   const anthropic = client ?? (await anthropicClient());
   if (!anthropic) return yield { type: "error", message: "No Anthropic API key yet. An admin can add one in Connections → Claude." };
-  if ((await spentThisMonthUsd()) >= MONTHLY_BUDGET_USD) return yield { type: "error", message: `This month's AI budget ($${MONTHLY_BUDGET_USD}) is used up.` };
-
   const [run] = await db.insert(agentRuns).values({ agent: "chat", trigger: "chat", status: "running", summary: turns.at(-1)!.text.slice(0, 300) }).returning({ id: agentRuns.id });
   const runId = run!.id;
+  const budget = await reserveBudget(runId, CHAT_RESERVE_USD);
+  if (!budget.ok) {
+    await db.update(agentRuns).set({ status: "failed", summary: budget.reason, costUsd: "0", finishedAt: new Date() }).where(eq(agentRuns.id, runId));
+    return yield { type: "error", message: `This month's AI budget ($${MONTHLY_BUDGET_USD}) is used up.` };
+  }
   const tools = [...readTools({ agent: "chat", runId, drafts: 0 }), ...(start ? chatTools(start) : [])].map((t) => ({ ...t, eager_input_streaming: true }));
   const messages: BetaMessageParam[] = turns.map((t, i) => ({
     role: t.role,
@@ -80,7 +86,7 @@ export async function* chat(history: ChatTurn[], userEmail: string, client?: Ant
         }
       }
       const message: BetaMessage = await stream.finalMessage();
-      totals = addUsage(totals, message.usage);
+      totals = addUsage(totals, message.usage, message.model);
       if (message.stop_reason === "refusal") {
         yield { type: "text", text: "\n\nI can't help with that one." };
         break;

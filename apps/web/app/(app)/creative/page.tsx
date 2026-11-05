@@ -1,5 +1,4 @@
 import { desc, eq } from "drizzle-orm";
-import { RefreshCw } from "lucide-react";
 import { assets, connections, creativeJobs, db } from "@bodh/db";
 import { loadBrand, MONTHLY_LIMITS, monthlyUsage } from "@bodh/integrations/creative";
 import { requireModule } from "@/lib/auth";
@@ -7,7 +6,8 @@ import { vertexConfiguredByRuntime } from "@/lib/creative";
 import { ago, num } from "@/lib/format";
 import { AssetThumb } from "@/components/asset-thumb";
 import { Meter } from "@/components/charts";
-import { Card, CardHeader, PageHeader, Pill, StatusPill, btn } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageHeader, Pill, StatusPill } from "@/components/ui";
+import { JobButton } from "@/components/job-button";
 import { checkVideos } from "./actions";
 import { BrandKitForm } from "./brand-kit-form";
 import { GenerateForm } from "./generate-form";
@@ -69,9 +69,7 @@ export default async function CreativePage() {
             title="Recent generations"
             aside={
               running ? (
-                <form action={checkVideos}>
-                  <button className={btn.ghost}><RefreshCw size={14} /> Check videos now</button>
-                </form>
+                <JobButton action={checkVideos} job="poll" label="Check videos now" pendingLabel="Checking…" variant="ghost" />
               ) : undefined
             }
           />
@@ -97,6 +95,11 @@ export default async function CreativePage() {
       )}
 
       <h2 className="mb-3 font-display text-lg font-semibold tracking-tight">Library</h2>
+      {rows.length === 0 && (
+        <Card className="mb-8">
+          <EmptyState title="No images or videos yet">Upload files above or generate one; they show here and in every calendar item&apos;s media picker.</EmptyState>
+        </Card>
+      )}
       <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {rows.map((a) => (
           <figure key={a.id} className="overflow-hidden rounded-xl border border-rule bg-card">

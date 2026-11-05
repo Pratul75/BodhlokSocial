@@ -9,6 +9,9 @@ import { NAKSHATRAS, RASHIS } from "./panchang";
 
 export type Template = "compare" | "guide" | "planet_house" | "nakshatra" | "yoga" | "lagna" | "panchang_city" | "blog";
 
+/** Catalog templates the SEO agent writes from list_pages_to_write (blogs have their own tool; city Panchang is retired). */
+export const WRITABLE_TEMPLATES = ["compare", "guide", "planet_house", "nakshatra", "yoga", "lagna"] as const satisfies readonly Template[];
+
 export const TEMPLATE_LABELS: Record<Template, string> = {
   compare: "Software comparisons",
   guide: "Module guides",

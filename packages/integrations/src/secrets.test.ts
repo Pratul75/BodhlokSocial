@@ -71,3 +71,25 @@ describe("gcpStore", () => {
     await expect(store.put("../other-project", "x")).rejects.toThrow("Invalid secret name");
   });
 });
+
+describe("secretStore in production", () => {
+  it("refuses local secret files unless ALLOW_LOCAL_SECRETS, and the old ALLOW_DEV_AUTH no longer bypasses it", async () => {
+    const { vi } = await import("vitest");
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SECRETS_BACKEND", "local");
+    vi.stubEnv("ALLOW_DEV_AUTH", "true");
+    vi.stubEnv("ALLOW_LOCAL_SECRETS", "");
+    try {
+      const { secretStore } = await import("./secrets");
+      await expect(secretStore()).rejects.toThrow(/SECRETS_BACKEND=gcp/);
+      vi.resetModules();
+      vi.stubEnv("ALLOW_LOCAL_SECRETS", "true");
+      const again = await import("./secrets");
+      await expect(again.secretStore()).resolves.toBeTruthy();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+});

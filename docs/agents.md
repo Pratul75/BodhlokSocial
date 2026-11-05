@@ -1,6 +1,6 @@
 # Agents
 
-The Strategy and Content agents and the "Ask the agents" chat live in `packages/agents`. They call the Claude API directly (TypeScript SDK, tool runner) with `claude-opus-5-5`; set `AGENT_MODEL` to change it.
+Seven agents and the "Ask the agents" chat live in `packages/agents`. They call the Claude API directly (TypeScript SDK, tool runner) with `claude-opus-5-5`; set `AGENT_MODEL` to change it. Publishing and AI-visibility checks are scheduled jobs, not agents.
 
 ## What each one does
 
@@ -9,7 +9,11 @@ The Strategy and Content agents and the "Ask the agents" chat live in `packages/
 | Strategy | 25th of each month, 09:00 IST, or **Plan next month** / **Save and re-plan this month** on the Strategy page's brief card | funnel, ads, calendar, recent posts, brand kit, plans, keywords, web search | a **draft** plan for this month or next. An approved plan is replaced only by a re-plan from the brief (it becomes `superseded`). |
 | Content | daily 06:00 IST, or **Draft next week** on Calendar | the same | **drafted** calendar posts, 12 hours to 35 days out, up to 21 per run; fills the Strategy agent's ideas in place |
 | SEO | Monday 07:00 IST, or **Run SEO agent** on SEO & GEO | the same, plus the page catalog | page and blog drafts, sent to Approvals (up to 25 per run); tracked keywords |
-| Chat | on each question | the same | nothing itself; it can start a Strategy, Content or SEO run for someone whose role can |
+| Ads | daily 07:30 IST, or **Run Ads agent** on Ads manager | the same, plus the ad accounts and A/B tests | changes through the guardrails only (see `docs/ads.md`), up to 20 a run; blocked requests don't count |
+| Community | daily 08:00 IST, or **Run Community agent** on Community | the same, plus Reddit search and YouTube comments when connected | saved questions, and answers sent to Approvals (kind "reply", up to 8 per run) |
+| Mentions | Tuesday 05:00 IST, or **Run Mentions agent** on Directory listings | the same, plus web search | tracked directories, and listings sent to Approvals (kind "listing", up to 6 per run) |
+| Analyst | Monday 09:00 IST (weekly) and the 1st 09:30 IST (monthly), or **Write a report now** on Analytics | the same, plus what the team and agents did | one report per period, shown on Today and Analytics |
+| Chat | on each question | the same | nothing itself; it can start any agent run for someone whose role can |
 
 The Strategy agent also lays the month out as **idea** items on the calendar (date, channel, format, pillar). Every agent can read Google Trends and keyword ideas from DataForSEO when it's connected, the latest site audit and AI-visibility results.
 
@@ -27,6 +31,8 @@ Instruction boxes (the Run buttons, chat) take up to 6,000 characters; longer do
 
 Every run keeps a step log on its row (`agent_runs.steps`): each tool it called with the few inputs that matter, each web search, each page it read, what it wrote (post, page, plan), and what it said between steps. The **Agent runs** page lists runs; a run's page shows the steps in order with their time, the summary, the cost, and links to every post or page it produced. Each Run button links to its last run ("See what it did"), and a calendar item drafted or planned by an agent links to the run that made it.
 
+Community answers pass `packages/guardrails/src/community.ts` before they reach Approvals: an answer that names Bodhlok must say the writer works on it, it may never read like a customer testimonial, and the claim and positioning rules apply. Approving a Reddit or YouTube answer posts it from the connected team account; Quora answers wait for a person to post them and record the link on Community. Listings are submitted by hand after approval.
+
 ## Skills
 
 `packages/agents/skills/*.md` hold BODH's house rules: brand voice, Jyotish accuracy, formats and timing, funnel metrics. They go in the system prompt in full (cached). After editing one, run
@@ -43,12 +49,14 @@ Left out on purpose: the Instagram pack's ig-viral (it browses Instagram), ig-co
 
 ## Key, costs and limits
 
-- The Anthropic API key goes in **Connections → Anthropic API** (or `ANTHROPIC_API_KEY` in the environment).
-- `AI_MONTHLY_BUDGET_USD` (default 150): once agent and chat runs this month (India time) have cost this much, new runs refuse to start.
-- `AI_RUN_CAP_USD` (default 6): a single run stops when it passes this.
-- Every run is an `agent_runs` row with tokens and cost; the last run shows under each Run button.
-- Requests opt into server-side fallbacks (`fallbacks: "default"`), so Anthropic can retry on another model if Opus 5.5 is overloaded.
+- The Anthropic API key goes in **Connections → Anthropic API** (or `ANTHROPIC_API_KEY` in the environment). Saving it lists one model first, so a wrong key is refused instead of shown as connected.
+- `AI_MONTHLY_BUDGET_USD` (default 150) covers agents, chat and the Claude part of the AI-visibility checks, in India-time months.
+- `AI_RUN_CAP_USD` (default 6): when a run starts it reserves this much of the monthly budget (or whatever is left), under a database lock, so runs started together can't overshoot the budget; the real cost replaces the reservation when it finishes. A run stops when it passes its reservation.
+- Each message is priced at the rates of the model that produced it (server-side fallbacks can switch models).
+- Only one run of an agent can be queued or running at a time (a database index enforces it); a second start answers "already running".
+- Every run is an `agent_runs` row with tokens and cost; the last run shows under each Run button. Chat answers are rows too (agent "chat"), not shown on Today.
+- Requests opt into server-side fallbacks (`fallbacks: "default"`).
 
 ## Where runs happen
 
-On the VM, the web app asks the worker (`WORKER_URL`) to start a run and the worker runs it in the background, so a page reload doesn't stop it. A worker restart (such as a deploy) marks unfinished runs as failed. Without `WORKER_URL` (local development) the web app runs it in its own process.
+The web app asks the worker (`WORKER_URL`) to start a run and the worker runs it in the background, so a page reload or a web restart doesn't stop it. On Cloud Run the web service signs those calls with its own identity token. In production there is no fallback: without `WORKER_URL` the Run buttons say the agent service isn't configured. Only local development (no `WORKER_URL`) runs agents inside the web process. A worker restart marks unfinished runs as failed.

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { and, asc, count, desc, eq, gte, ne } from "drizzle-orm";
-import { agentRuns, approvals, calendarItems, connections, db } from "@bodh/db";
+import { agentRuns, approvals, calendarItems, connections, db, reports } from "@bodh/db";
 import { CHANNEL_LABELS, FORMAT_LABELS, type Channel, type Format } from "@bodh/shared";
 import { requireModule } from "@/lib/auth";
 import { change, dayLabel, isoWeek, num, timeLabel, ago } from "@/lib/format";
@@ -25,11 +25,12 @@ export default async function TodayPage() {
   const startOfDay = new Date(now);
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [week, prevWeek, pendingByKind, runs, upcoming, notConnected] = await Promise.all([
+  const [week, prevWeek, pendingByKind, runs, upcoming, notConnected, [latestReport]] = await Promise.all([
     funnelTotals(7),
     funnelTotals(7, 7),
     db.select({ kind: approvals.kind, n: count() }).from(approvals).where(eq(approvals.status, "pending")).groupBy(approvals.kind),
-    db.select().from(agentRuns).orderBy(desc(agentRuns.startedAt)).limit(5),
+    // Agent and job runs only: each chat answer is also an agent_runs row (for the AI budget).
+    db.select().from(agentRuns).where(ne(agentRuns.agent, "chat")).orderBy(desc(agentRuns.startedAt)).limit(5),
     db
       .select()
       .from(calendarItems)
@@ -37,6 +38,7 @@ export default async function TodayPage() {
       .orderBy(asc(calendarItems.scheduledAt))
       .limit(6),
     db.select({ n: count() }).from(connections).where(eq(connections.status, "not_connected")),
+    db.select().from(reports).orderBy(desc(reports.periodStart), desc(reports.createdAt)).limit(1),
   ]);
 
   const delta = change(week.activations, prevWeek.activations);
@@ -72,9 +74,18 @@ export default async function TodayPage() {
           </Link>
         </div>
         <FunnelStrip totals={week} />
+        {latestReport && (
+          <Link href={`/analytics/reports/${latestReport.id}`} className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-rule bg-card px-5 py-3 text-sm hover:bg-paper">
+            <span className="min-w-0">
+              <span className="text-xs text-muted">Latest {latestReport.kind} report, {latestReport.periodStart} to {latestReport.periodEnd}</span>
+              <span className="block font-medium">{latestReport.title}</span>
+            </span>
+            <span className="shrink-0 text-dusk">Read</span>
+          </Link>
+        )}
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader title="Waiting for approval" aside={<Link href="/approvals" className="text-sm text-dusk hover:underline">Open queue</Link>} />
           {pendingByKind.length === 0 ? (
@@ -95,6 +106,7 @@ export default async function TodayPage() {
 
         <Card>
           <CardHeader title="Agent runs" sub="Most recent first" />
+          {runs.length === 0 && <EmptyState title="No agent runs yet">Agents run on their schedules once the Anthropic key is in Connections, or from each module&apos;s Run button.</EmptyState>}
           <ul className="divide-y divide-rule">
             {runs.map((r) => (
               <li key={r.id} className="flex items-start justify-between gap-3 px-5 py-3 text-sm">

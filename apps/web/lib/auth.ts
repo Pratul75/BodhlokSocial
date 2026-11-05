@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { db, users } from "@bodh/db";
 import { canAccess, isRole, type ModuleKey, type Role } from "@bodh/shared";
-import { authEnabled, SESSION_COOKIE, verifySessionToken } from "./session";
+import { authEnabled, devAuthAllowed, SESSION_COOKIE, verifySessionToken } from "./session";
 
 export interface CurrentUser {
   id: string;
@@ -34,17 +34,24 @@ export async function getCurrentUser(): Promise<CurrentUser> {
       .where(and(eq(users.id, claims.sub), eq(users.active, true)))
       .limit(1);
     if (!row) redirect("/signin?error=no_access");
+    // Signed out elsewhere, or access was removed and restored: this cookie is from before that.
+    if (row.sessionVersion !== claims.sv) redirect("/signin?error=session_ended");
     const role: Role = isRole(row.role) ? row.role : "social_manager";
     return { id: row.id, email: row.email, name: row.name, role, devMode: false };
   }
 
-  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEV_AUTH !== "true") {
+  if (!devAuthAllowed()) {
     throw new Error("Google sign-in is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");
   }
 
-  const email = process.env.DEV_USER_EMAIL ?? "kshitij@rechargestudio.com";
-  const [row] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  if (!row) throw new Error(`No user ${email}. Run "pnpm db:seed" or add the user in Admin.`);
+  const email = process.env.DEV_USER_EMAIL?.trim().toLowerCase();
+  if (!email) throw new Error("Set DEV_USER_EMAIL in .env to run without Google sign-in.");
+  const [row] = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.email, email), eq(users.active, true)))
+    .limit(1);
+  if (!row) throw new Error(`No active user ${email}. Run "pnpm db:seed" or add the user in Admin.`);
   const override = jar.get(DEV_ROLE_COOKIE)?.value;
   const role: Role = isRole(override) ? override : isRole(row.role) ? row.role : "social_manager";
   return { id: row.id, email: row.email, name: row.name, role, devMode: true };

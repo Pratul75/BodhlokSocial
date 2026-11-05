@@ -1,0 +1,10 @@
+[Unit]
+Description=BODH Growth OS: database backup, nightly 02:00 IST (before the 02:30 CRM sync)
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Kolkata
+Persistent=true
+Unit=bodh-db-backup.service
+
+[Install]
+WantedBy=timers.target

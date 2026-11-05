@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { and, desc, eq } from "drizzle-orm";
+import type { StartableAgent } from "@bodh/shared";
 import { agentRuns, db } from "@bodh/db";
 import { CardHeader, StatusPill } from "./ui";
 import { AgentRunForm } from "./agent-run-form";
@@ -7,7 +8,7 @@ import { AgentRunForm } from "./agent-run-form";
 const fmt = (d: Date) => d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 /** The agent's Run button, with how its last run went. */
-export async function AgentRunPanel({ agent, title, sub, label, placeholder }: { agent: "strategy" | "content" | "seo" | "ads"; title: string; sub: string; label: string; placeholder: string }) {
+export async function AgentRunPanel({ agent, title, sub, label, placeholder }: { agent: StartableAgent; title: string; sub: string; label: string; placeholder: string }) {
   const [last] = await db.select().from(agentRuns).where(and(eq(agentRuns.agent, agent))).orderBy(desc(agentRuns.startedAt)).limit(1);
   const busy = last?.status === "queued" || last?.status === "running";
   return (

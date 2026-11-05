@@ -64,7 +64,7 @@ export function ChatPanel({ examples }: { examples: string[] }) {
         {turns.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center py-10 text-center">
             <p className="font-display text-lg font-semibold">Ask anything about BODH&apos;s marketing</p>
-            <p className="mt-1 max-w-md text-sm text-muted">Answers come from the funnel, ads, calendar and plan in this app. Chat reads; it doesn&apos;t change anything.</p>
+            <p className="mt-1 max-w-md text-sm text-muted">Answers come from the funnel, ads, calendar and plan in this app. Chat only reads, except that it can start a Strategy, Content, SEO or Ads run when you ask, if your role allows it.</p>
             <div className="mt-6 flex max-w-xl flex-wrap justify-center gap-2">
               {examples.map((e) => (
                 <button key={e} type="button" onClick={() => void ask(e)} className="rounded-full bg-paper px-3 py-1.5 text-sm text-muted ring-1 ring-rule hover:text-ink">

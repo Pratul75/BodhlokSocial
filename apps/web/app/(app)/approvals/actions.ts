@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { approvals, calendarItems, db, seoPages } from "@bodh/db";
-import { applyChange, rejectChange } from "@bodh/integrations/ads";
+import { approvals, calendarItems, communityItems, db, directoryListings, seoPages } from "@bodh/db";
+import { applyChange, recheckChange, rejectChange } from "@bodh/integrations/ads";
+import { postCommunityReply } from "@bodh/integrations/community";
 import { APPROVAL_KINDS, canApprove, type ApprovalKind } from "@bodh/shared";
 import { runSeoJob } from "@/lib/agents";
 import { getCurrentUser } from "@/lib/auth";
@@ -56,6 +57,25 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
   if (item.kind === "page") {
     if (!page) return { ok: false, error: "The page was deleted." };
     if (page.status !== "in_review") return { ok: false, error: "The page changed after it was sent. It needs a fresh approval request." };
+  }
+
+  // Ad changes: the caps are checked again now, with today's spend, before anyone approves.
+  const pendingChangeId = item.kind === "ad_change" ? (item.payload as { adChangeId?: string }).adChangeId : undefined;
+  if (pendingChangeId && decision === "approve") {
+    const check = await recheckChange(pendingChangeId);
+    if (!check.ok) {
+      const blocked = await db
+        .update(approvals)
+        .set({ status: "rejected", decidedBy: user.id, decidedAt: new Date(), decisionNote: `Blocked at approval: ${check.reason}` })
+        .where(and(eq(approvals.id, id), eq(approvals.status, "pending")))
+        .returning({ id: approvals.id });
+      if (blocked.length) {
+        await audit({ actor: user.email, actorType: "user", action: "approve", target: `${item.kind}: ${item.title}`, result: `blocked by the caps: ${check.reason}` });
+        revalidatePath("/approvals");
+        revalidatePath("/ads");
+      }
+      return { ok: false, error: `The spend caps block this now: ${check.reason} It was not applied.` };
+    }
   }
 
   // Only update while still pending, so two people can't decide the same item.
@@ -120,13 +140,42 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
     revalidatePath("/seo");
   }
 
+  // Community answers: approving posts it from the team account (Quora: a person posts it).
+  let postNote = "";
+  const communityItemId = item.kind === "reply" ? String((item.payload as { communityItemId?: string }).communityItemId ?? "") : "";
+  if (communityItemId) {
+    if (decision === "approve") {
+      const r = await postCommunityReply(communityItemId, body, user.email);
+      revalidatePath("/community");
+      if (!r.ok) {
+        await audit({ actor: user.email, actorType: "user", action: "approve", target: `${item.kind}: ${item.title}`, reason: note, result: `approved, but posting failed: ${r.error}` });
+        revalidatePath("/approvals");
+        return { ok: false, error: `Approved, but posting failed: ${r.error} It's on the Community page to try again.` };
+      }
+      postNote = r.manual ? "; waiting for a person to post it on Quora" : `; posted ${r.url}`;
+    } else {
+      await db.update(communityItems).set({ status: "drafted", reviewNote: note, updatedAt: new Date() }).where(eq(communityItems.id, communityItemId));
+      revalidatePath("/community");
+    }
+  }
+
+  // Directory listings: approved ones wait for a person to submit them by hand.
+  const listingId = item.kind === "listing" ? String((item.payload as { listingId?: string }).listingId ?? "") : "";
+  if (listingId) {
+    await db
+      .update(directoryListings)
+      .set(decision === "approve" ? { status: "approved", reviewNote: null, updatedAt: new Date() } : { status: "drafted", reviewNote: note, updatedAt: new Date() })
+      .where(eq(directoryListings.id, listingId));
+    revalidatePath("/seo/listings");
+  }
+
   await audit({
     actor: user.email,
     actorType: "user",
     action: decision === "approve" ? (edited ? "edit_and_approve" : "approve") : "reject",
     target: `${item.kind}: ${item.title}`,
     reason: note,
-    result: decision === "approve" ? "approved" : "rejected",
+    result: decision === "approve" ? `approved${postNote}` : "rejected",
   });
 
   revalidatePath("/approvals");

@@ -26,11 +26,15 @@ export async function siteUrl(): Promise<string> {
   return creds ? `https://${normalizeTarget(creds.target)}` : "https://www.bodhlok.com";
 }
 
-/** The feed is off unless SEO_FEED_TOKEN is set; callers send it as a Bearer token or ?token=. */
+/**
+ * The feed is off unless SEO_FEED_TOKEN is set; callers send it as `Authorization: Bearer <token>`.
+ * A ?token= query parameter is not accepted: URLs end up in proxy and access logs.
+ */
 export function feedAuthorized(req: Request): boolean {
   const token = process.env.SEO_FEED_TOKEN;
   if (!token) return false;
-  const given = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? new URL(req.url).searchParams.get("token") ?? "";
+  const given = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
+  if (!given) return false;
   const h = (s: string) => createHash("sha256").update(s).digest();
   return timingSafeEqual(h(given), h(token));
 }

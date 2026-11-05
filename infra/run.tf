@@ -85,6 +85,32 @@ resource "google_cloud_run_v2_service" "web" {
         value = "true"
       }
       env {
+        name  = "WORKER_URL"
+        value = google_cloud_run_v2_service.worker.uri
+      }
+      env {
+        name  = "WORKER_USE_ID_TOKEN"
+        value = "true"
+      }
+      env {
+        name = "WORKER_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.generated["app-worker-token"].secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "SEO_FEED_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.generated["app-seo-feed-token"].secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
         name = "DATABASE_URL"
         value_source {
           secret_key_ref {
@@ -322,6 +348,15 @@ resource "google_cloud_run_v2_service_iam_member" "worker_scheduler" {
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler.email}"
+}
+
+# The web app hands agent runs and SEO jobs to the worker (WORKER_URL), signing each call
+# with its own identity token, so long runs never execute inside the throttled web service.
+resource "google_cloud_run_v2_service_iam_member" "worker_web" {
+  name     = google_cloud_run_v2_service.worker.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.web.email}"
 }
 
 # Applies migrations, fills connection rows and spend caps, and creates the first admin.

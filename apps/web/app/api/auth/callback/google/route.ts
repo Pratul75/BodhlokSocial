@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { log } from "@bodh/shared/log";
 import { cookies } from "next/headers";
 import { and, eq } from "drizzle-orm";
 import { db, users } from "@bodh/db";
@@ -38,7 +39,9 @@ export async function GET(req: Request) {
     const tokens = await exchangeCode(code, `${appUrl(req)}/api/auth/callback/google`, saved.verifier);
     if (!tokens.id_token) return fail(req, "google");
     claims = await verifyIdToken(tokens.id_token, saved.nonce);
-  } catch {
+  } catch (e) {
+    // Usually a redirect URI or client secret mismatch; the reason only shows in the server log.
+    log.warn("google sign-in failed", { error: e });
     return fail(req, "google");
   }
 
@@ -58,6 +61,6 @@ export async function GET(req: Request) {
   await audit({ actor: user.email, actorType: "user", action: "sign_in", target: "app", result: "signed in" });
   const res = NextResponse.redirect(new URL(saved.returnTo, appUrl(req)));
   res.cookies.delete(OAUTH_COOKIE);
-  res.cookies.set(SESSION_COOKIE, await createSessionToken({ sub: user.id, email: user.email }), cookieOptions(SESSION_DAYS * 86400));
+  res.cookies.set(SESSION_COOKIE, await createSessionToken({ sub: user.id, email: user.email, sv: user.sessionVersion }), cookieOptions(SESSION_DAYS * 86400));
   return res;
 }

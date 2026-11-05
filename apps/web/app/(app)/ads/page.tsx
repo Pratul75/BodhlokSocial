@@ -11,7 +11,7 @@ import { Meter } from "@/components/charts";
 import { AgentRunPanel } from "@/components/agent-run-panel";
 import { JobButton } from "@/components/job-button";
 import { Card, CardHeader, EmptyState, PageHeader, Pill, StatusPill, Table } from "@/components/ui";
-import { pauseAdAction, syncAdsAction } from "./actions";
+import { pauseAdAction, retryChangeAction, syncAdsAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Ads manager" };
@@ -208,6 +208,11 @@ export default async function AdsPage() {
                   <p className="mt-1 text-xs text-muted">{c.reason}</p>
                   {c.guardrail && <p className="mt-0.5 text-xs text-muted">Guardrail: {c.guardrail}</p>}
                   {c.error && <p className="mt-0.5 text-xs text-sindoor">{c.error}</p>}
+                  {c.outcome === "failed" && (
+                    <div className="mt-1.5">
+                      <JobButton action={retryChangeAction} job="retry" label="Try again" pendingLabel="Checking caps…" variant="ghost" fields={{ changeId: c.id }} />
+                    </div>
+                  )}
                   <p className="mt-1 text-xs text-muted">
                     <Pill>{c.actor}</Pill> <span className="ml-1">{ago(c.createdAt, now)}</span>
                     {c.approvalId && c.outcome === "sent_to_approval" && <Link href="/approvals?kind=ad_change" className="ml-2 text-dusk hover:underline">In Approvals</Link>}

@@ -28,11 +28,30 @@ resource "google_project_iam_member" "sql_client" {
   member  = "serviceAccount:${each.value}"
 }
 
+# Exactly what packages/integrations/src/secrets.ts does with an integration secret: create it,
+# add a version, read it, list and destroy old versions, delete it on disconnect. Unlike
+# roles/secretmanager.admin it cannot change who may access a secret.
+resource "google_project_iam_custom_role" "integration_secrets" {
+  role_id     = "bodhIntegrationSecrets"
+  title       = "BODH integration secrets"
+  description = "Manage integration-* secrets without IAM policy rights"
+  permissions = [
+    "secretmanager.secrets.create",
+    "secretmanager.secrets.get",
+    "secretmanager.secrets.delete",
+    "secretmanager.versions.add",
+    "secretmanager.versions.access",
+    "secretmanager.versions.get",
+    "secretmanager.versions.list",
+    "secretmanager.versions.destroy",
+  ]
+}
+
 # The web app creates, updates and deletes integration secrets (API keys, OAuth grants),
 # limited by condition to secrets named integration-*.
 resource "google_project_iam_member" "web_integration_secrets" {
   project = var.project_id
-  role    = "roles/secretmanager.admin"
+  role    = google_project_iam_custom_role.integration_secrets.name
   member  = "serviceAccount:${google_service_account.web.email}"
   condition {
     title      = "integration-secrets-only"
@@ -53,7 +72,7 @@ resource "google_project_iam_member" "worker_integration_secrets" {
 
 # Runtime config secrets, read at startup.
 resource "google_secret_manager_secret_iam_member" "web_reads" {
-  for_each  = toset(["app-database-url", "app-auth-secret", "app-bodh-events-secret"])
+  for_each  = toset(["app-database-url", "app-auth-secret", "app-bodh-events-secret", "app-worker-token", "app-seo-feed-token"])
   secret_id = google_secret_manager_secret.generated[each.value].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.web.email}"

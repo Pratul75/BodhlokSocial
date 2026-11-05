@@ -12,6 +12,7 @@ locals {
     "searchconsole.googleapis.com",
     "bigquery.googleapis.com",
     "aiplatform.googleapis.com",
+    "googleads.googleapis.com",
   ]
 }
 

@@ -102,6 +102,7 @@ export async function sendCapiEvents(creds: CapiCredentials, events: ConversionF
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${creds.access_token}` },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw await graphError(res);
   const json = (await res.json()) as { events_received?: number };
@@ -133,7 +134,7 @@ export async function fetchMetaSpend(creds: MarketingCredentials, since: string,
   let url: string | null = `${GRAPH}/${GRAPH_VERSION}/${account}/insights?${params}`;
   const rows: AdSpendRow[] = [];
   while (url) {
-    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${creds.access_token}` } });
+    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${creds.access_token}` }, signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw await graphError(res);
     const body = (await res.json()) as {
       data: { date_start: string; campaign_id: string; campaign_name: string; ad_id: string; ad_name: string; spend?: string; impressions?: string; inline_link_clicks?: string }[];

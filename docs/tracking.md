@@ -65,5 +65,5 @@ Google, which are the platforms' own limits. The Tracking page shows the queue.
 | Many registrations under Direct | The landing page isn't storing UTM parameters until signup, or apps aren't sending the install referrer |
 | Paid registrations not matched to an ad | `utm_content` is missing or isn't the ad ID |
 | Spend is zero for a platform | Meta Marketing or Google Ads isn't connected, or its token expired. See Connections. |
-| Organic visits are zero | `GA4_BQ_DATASET` isn't set, or the GA4 BigQuery link isn't on |
+| Organic visits are zero | The GA4 BigQuery link isn't on, or the ga4 service account can't see the `analytics_` dataset (it is found automatically; `GA4_BQ_DATASET` only overrides it) |
 | Meta conversions failing | Check the Tracking page for the error. Usually an expired token or wrong dataset ID. |

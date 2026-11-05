@@ -1,0 +1,10 @@
+[Unit]
+Description=Mentions agent, Tuesday 05:00 IST
+
+[Timer]
+OnCalendar=Tue *-*-* 05:00:00 Asia/Kolkata
+Persistent=true
+Unit=bodh-job@agent-mentions.service
+
+[Install]
+WantedBy=timers.target

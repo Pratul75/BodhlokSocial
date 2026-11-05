@@ -5,13 +5,14 @@ import { addUser, setActive, setCaps, setRole, type AdminResult } from "./action
 import { btn, inputClass } from "@/components/ui";
 
 export function RoleForm({ id, role, roles, self }: { id: string; role: string; roles: { value: string; label: string }[]; self: boolean }) {
+  const [state, action, pending] = useActionState<AdminResult, FormData>(setRole, null);
   return (
-    <form action={setRole}>
+    <form action={action} className="flex flex-col gap-1">
       <input type="hidden" name="id" value={id} />
       <select
         name="role"
         defaultValue={role}
-        disabled={self}
+        disabled={self || pending}
         aria-label="Role"
         title={self ? "You can't change your own role" : undefined}
         className="rounded-md border border-rule bg-card px-2 py-1 text-sm disabled:opacity-60"
@@ -19,8 +20,15 @@ export function RoleForm({ id, role, roles, self }: { id: string; role: string; 
       >
         {roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
       </select>
+      <Inline state={state} pending={pending} />
     </form>
   );
+}
+
+function Inline({ state, pending }: { state: AdminResult; pending: boolean }) {
+  if (pending) return <span className="text-xs text-muted">Saving…</span>;
+  if (!state) return null;
+  return <span className={`text-xs ${state.ok ? "text-leaf" : "text-sindoor"}`} role={state.ok ? "status" : "alert"}>{state.ok ? state.message : state.error}</span>;
 }
 
 function Message({ state }: { state: AdminResult }) {
@@ -60,15 +68,23 @@ export function CapsForm({ platform, label, dailyCap, monthlyCap }: { platform: 
   );
 }
 
-export function AccessForm({ id, active, self }: { id: string; active: boolean; self: boolean }) {
+export function AccessForm({ id, name, active, self }: { id: string; name: string; active: boolean; self: boolean }) {
+  const [state, action, pending] = useActionState<AdminResult, FormData>(setActive, null);
   if (self) return null;
   return (
-    <form action={setActive}>
+    <form
+      action={action}
+      className="flex flex-col items-start gap-1"
+      onSubmit={(e) => {
+        if (active && !window.confirm(`Remove ${name}'s access? They are signed out and can't sign in until an admin restores it.`)) e.preventDefault();
+      }}
+    >
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="active" value={active ? "false" : "true"} />
-      <button className={active ? "text-xs text-sindoor hover:underline" : "text-xs text-leaf hover:underline"}>
+      <button className={active ? "text-xs text-sindoor hover:underline" : "text-xs text-leaf hover:underline"} disabled={pending}>
         {active ? "Remove access" : "Restore access"}
       </button>
+      <Inline state={state} pending={pending} />
     </form>
   );
 }

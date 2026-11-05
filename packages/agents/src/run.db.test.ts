@@ -78,6 +78,9 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
   });
 
   beforeEach(async () => {
+    await m.db.db.delete(m.db.communityItems);
+    await m.db.db.delete(m.db.directoryListings);
+    await m.db.db.delete(m.db.reports);
     await m.db.db.delete(m.db.approvals);
     await m.db.db.delete(m.db.calendarItems);
     await m.db.db.delete(m.db.strategyPlans);
@@ -399,6 +402,112 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
     expect(rows.find((r) => r.engine === "chatgpt" && r.mentioned)?.competitors).toEqual(["AstroSage"]);
     expect(rows.find((r) => r.engine === "chatgpt" && !r.mentioned)?.competitors).toEqual(["AstroSage", "Astrotalk"]);
     expect(rows.filter((r) => r.engine === "perplexity").every((r) => r.error === "Perplexity 401: bad key")).toBe(true);
+  });
+
+  it("the Community agent saves a Quora question and sends a disclosed answer to Approvals, after fixing a missing disclosure", async () => {
+    const { client, requests } = scripted([
+      message(
+        [
+          toolUse("c1", "save_question", {
+            platform: "quora",
+            url: "https://www.quora.com/Which-software-shows-Jaimini-aspects",
+            place: "Vedic astrology",
+            question: "Which software shows Jaimini rashi drishti properly?",
+            why: "A student comparing tools; the rule can be explained and checked.",
+          }),
+        ],
+        "tool_use",
+      ),
+      message([{ type: "text", text: "Saved." }], "end_turn"),
+    ]);
+    const first = await m.run.runAgent("community", { trigger: "manual", client });
+    expect(first.status).toBe("succeeded");
+    const [item] = await m.db.db.select().from(m.db.communityItems);
+    expect(item).toMatchObject({ platform: "quora", status: "found", externalId: "https://www.quora.com/Which-software-shows-Jaimini-aspects" });
+
+    const answer = "Jaimini rashi drishti works sign to sign: movable signs aspect fixed signs except the one next to them, fixed aspect movable except the adjacent one, dual signs aspect each other.";
+    const second = scripted([
+      message([toolUse("c2", "draft_answer", { item_id: item!.id, answer: `${answer} Bodhlok shows it next to Parashari aspects.` })], "tool_use"),
+      message([toolUse("c3", "draft_answer", { item_id: item!.id, answer: `${answer} Disclosure: I work on Bodhlok, which shows it next to Parashari aspects.` })], "tool_use"),
+      message([{ type: "text", text: "Drafted one answer." }], "end_turn"),
+    ]);
+    const res = await m.run.runAgent("community", { trigger: "manual", client: second.client });
+    expect(res.summary).toBe("1 answer drafted. Drafted one answer.");
+    expect(resultText(lastToolResults(second.requests[1]!.body)[0]!)).toMatch(/^Error: .*Disclosure: I work on Bodhlok/);
+    const [after] = await m.db.db.select().from(m.db.communityItems).where(m.drizzle.eq(m.db.communityItems.id, item!.id));
+    expect(after!.status).toBe("in_review");
+    const [approval] = await m.db.db.select().from(m.db.approvals).where(m.drizzle.eq(m.db.approvals.kind, "reply"));
+    expect(approval).toMatchObject({ status: "pending", channel: "quora", payload: { communityItemId: item!.id } });
+    expect(after!.approvalId).toBe(approval!.id);
+    const tools = (requests[0]!.body.tools as { name: string }[]).map((t) => t.name);
+    expect(tools).toEqual(expect.arrayContaining(["find_reddit_questions", "find_youtube_questions", "save_question", "draft_answer", "skip_question"]));
+
+    // Approving a Quora answer leaves it for a person to post by hand.
+    const { postCommunityReply } = await import("@bodh/integrations/community");
+    expect(await postCommunityReply(item!.id, approval!.body, "social@rechargestudio.com")).toEqual({ ok: true, url: null, manual: true });
+    const [approved] = await m.db.db.select().from(m.db.communityItems).where(m.drizzle.eq(m.db.communityItems.id, item!.id));
+    expect(approved!.status).toBe("approved");
+  });
+
+  it("the Mentions agent tracks a directory and drafts a listing into Approvals", async () => {
+    const { client } = scripted([
+      message([toolUse("m1", "save_directory", { name: "AlternativeTo", url: "https://alternativeto.net/software/jagannatha-hora/", category: "software_directory", why: "People looking for a JHora alternative find it here." })], "tool_use"),
+      message([{ type: "text", text: "Tracked one." }], "end_turn"),
+    ]);
+    await m.run.runAgent("mentions", { trigger: "manual", client });
+    const [l] = await m.db.db.select().from(m.db.directoryListings);
+    expect(l).toMatchObject({ name: "AlternativeTo", status: "found" });
+    const second = scripted([
+      message(
+        [
+          toolUse("m2", "draft_listing", {
+            listing_id: l!.id,
+            title: "Bodhlok",
+            tagline: "A Vedic astrology desk in the browser for practising astrologers",
+            description: "Charts, dashas, transits and KP in one browser desk, with client notes and an AI consult that cites the classical rule it used. Hindi and English.",
+            categories: ["Astrology software"],
+          }),
+        ],
+        "tool_use",
+      ),
+      message([{ type: "text", text: "Drafted one listing." }], "end_turn"),
+    ]);
+    const res = await m.run.runAgent("mentions", { trigger: "manual", client: second.client });
+    expect(res.summary).toBe("1 listing drafted. Drafted one listing.");
+    const [after] = await m.db.db.select().from(m.db.directoryListings);
+    expect(after!.status).toBe("in_review");
+    const [approval] = await m.db.db.select().from(m.db.approvals).where(m.drizzle.eq(m.db.approvals.kind, "listing"));
+    expect(approval).toMatchObject({ status: "pending", payload: { listingId: l!.id } });
+  });
+
+  it("the Analyst agent saves a weekly report, and saving again replaces it", async () => {
+    const report = (title: string) => ({
+      kind: "weekly",
+      period_start: "2026-10-26",
+      period_end: "2026-11-01",
+      title,
+      body: "## Headline\n\n" + "Activated users rose week on week and cost per activated user fell; details by channel follow. ".repeat(4),
+      metrics: { activations: 214, activations_prev: 188, spend_inr: 13054, cost_per_activated_inr: 61 },
+    });
+    const { client, requests } = scripted([
+      message([toolUse("a1", "get_activity", { days: 7 })], "tool_use"),
+      message([toolUse("a2", "save_report", report("First title for the week"))], "tool_use"),
+      message([toolUse("a3", "save_report", report("Week ahead: cost per activated user down 9%"))], "tool_use"),
+      message([{ type: "text", text: "Saved the weekly report." }], "end_turn"),
+    ]);
+    const res = await m.run.runAgent("analyst", { trigger: "manual", client });
+    expect(res.status).toBe("succeeded");
+    expect(resultText(lastToolResults(requests[1]!.body)[0]!)).toContain("posts_by_status");
+    const rows = await m.db.db.select().from(m.db.reports);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "weekly", title: "Week ahead: cost per activated user down 9%", periodEnd: "2026-11-01" });
+  });
+
+  it("two starts of the same agent at once make one run", async () => {
+    const [a, b] = await Promise.all([m.run.queueRun("strategy", "manual"), m.run.queueRun("strategy", "manual")]);
+    expect([a.created, b.created].sort()).toEqual([false, true]);
+    expect(a.id).toBe(b.id);
+    await m.db.db.update(m.db.agentRuns).set({ status: "failed" }).where(m.drizzle.eq(m.db.agentRuns.id, a.id));
   });
 
   it("records API failures and the budget stop on the run", async () => {

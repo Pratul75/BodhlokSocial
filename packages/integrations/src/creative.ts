@@ -10,7 +10,18 @@ export const MONTHLY_LIMITS = {
   videos: Number(process.env.CREATIVE_MONTHLY_VIDEOS ?? 30),
 };
 
-export async function monthlyUsage(): Promise<{ images: number; videos: number }> {
+/**
+ * Optional limits per person per month, on top of the team's. Off unless set, e.g.
+ * CREATIVE_MONTHLY_VIDEOS_PER_USER=10 so one person can't use the whole team's video allowance.
+ */
+const perUser = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
+export const PER_USER_LIMITS = {
+  images: perUser(process.env.CREATIVE_MONTHLY_IMAGES_PER_USER),
+  videos: perUser(process.env.CREATIVE_MONTHLY_VIDEOS_PER_USER),
+};
+
+/** This month's generations, for the team or (with `requestedBy`) for one person. */
+export async function monthlyUsage(requestedBy?: string): Promise<{ images: number; videos: number }> {
   const start = new Date();
   start.setDate(1);
   start.setHours(0, 0, 0, 0);
@@ -18,8 +29,21 @@ export async function monthlyUsage(): Promise<{ images: number; videos: number }
     SELECT
       coalesce(sum(CASE WHEN kind = 'video' THEN 0 ELSE greatest(jsonb_array_length(asset_ids), coalesce((params->>'count')::int, 1)) END) FILTER (WHERE status <> 'failed'), 0)::int AS images,
       count(*) FILTER (WHERE kind = 'video' AND status <> 'failed')::int AS videos
-    FROM creative_jobs WHERE created_at >= ${start.toISOString()}::timestamptz`)) as unknown as { images: number; videos: number }[];
+    FROM creative_jobs WHERE created_at >= ${start.toISOString()}::timestamptz
+      ${requestedBy ? sql`AND requested_by = ${requestedBy}` : sql``}`)) as unknown as { images: number; videos: number }[];
   return rows[0] ?? { images: 0, videos: 0 };
+}
+
+/** Why `requestedBy` can't generate `kind` (count of images, or one video) now, or null when they can. */
+export async function generationRefusal(requestedBy: string, kind: "images" | "videos", count = 1): Promise<string | null> {
+  const team = await monthlyUsage();
+  if (team[kind] + count > MONTHLY_LIMITS[kind]) return `This month's team limit of ${MONTHLY_LIMITS[kind]} ${kind} is reached (${team[kind]} used).`;
+  const cap = PER_USER_LIMITS[kind];
+  if (cap) {
+    const mine = await monthlyUsage(requestedBy);
+    if (mine[kind] + count > cap) return `Your limit of ${cap} ${kind} this month is reached (${mine[kind]} used).`;
+  }
+  return null;
 }
 
 export async function loadBrand() {
@@ -27,12 +51,21 @@ export async function loadBrand() {
   return kit ?? { palette: [], imageStyle: "", voice: "", bannedPhrases: [], defaultHashtags: [], stampLogo: false, logoAssetId: null };
 }
 
-export const vertexKey = () => readJsonSecret<ServiceAccountKey>("vertex");
+/**
+ * The Vertex service account from Connections. Without one, the runtime's own Google identity
+ * (ADC) is used only when VERTEX_USE_ADC=true, so disconnecting Vertex really stops generation.
+ */
+export async function vertexKey(): Promise<ServiceAccountKey | null> {
+  const key = await readJsonSecret<ServiceAccountKey>("vertex");
+  if (key) return key;
+  if (process.env.VERTEX_USE_ADC === "true") return null;
+  throw new Error("Vertex AI isn't connected. An admin can add its service account in Connections.");
+}
 
 /** Queue a Veo clip. The worker polls it; finished videos land in the asset library. */
 export async function startVideoJob(prompt: string, opts: Omit<VideoOptions, "storageUri">, requestedBy: string) {
-  const usage = await monthlyUsage();
-  if (usage.videos >= MONTHLY_LIMITS.videos) throw new Error(`This month's limit of ${MONTHLY_LIMITS.videos} videos is reached.`);
+  const refusal = await generationRefusal(requestedBy, "videos");
+  if (refusal) throw new Error(refusal);
   const brand = await loadBrand();
   const fullPrompt = brandPrompt(prompt, brand, "video");
   const [job] = await db

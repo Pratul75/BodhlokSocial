@@ -46,7 +46,7 @@ async function metaGetAll<T>(creds: MarketingCredentials, path: string, fields: 
   let url: string | null = `${GRAPH}/${GRAPH_VERSION}/${path}?${new URLSearchParams({ fields, limit: "200" })}`;
   const out: T[] = [];
   while (url) {
-    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${creds.access_token}` } });
+    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${creds.access_token}` }, signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw await graphError(res);
     const body = (await res.json()) as { data: T[]; paging?: { next?: string } };
     out.push(...body.data);
@@ -106,6 +106,7 @@ async function metaPost(creds: MarketingCredentials, path: string, params: Recor
     method: "POST",
     headers: { Authorization: `Bearer ${creds.access_token}`, "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw await graphError(res);
   return (await res.json()) as Record<string, unknown>;
@@ -122,7 +123,7 @@ export const metaSetBid = (creds: MarketingCredentials, id: string, inr: number)
 export async function metaCreateVariant(creds: MarketingCredentials, base: { platformId: string; parentId: string; details: Record<string, unknown> }, copy: VariantCopy): Promise<string> {
   const creativeId = String(base.details.creativeId ?? "");
   if (!creativeId) throw new Error("The base ad has no creative to copy.");
-  const res = await fetch(`${GRAPH}/${GRAPH_VERSION}/${creativeId}?fields=object_story_spec`, { headers: { Authorization: `Bearer ${creds.access_token}` } });
+  const res = await fetch(`${GRAPH}/${GRAPH_VERSION}/${creativeId}?fields=object_story_spec`, { headers: { Authorization: `Bearer ${creds.access_token}` }, signal: AbortSignal.timeout(60_000) });
   if (!res.ok) throw await graphError(res);
   const spec = ((await res.json()) as { object_story_spec?: { page_id?: string; instagram_user_id?: string; link_data?: Record<string, unknown> } }).object_story_spec;
   if (!spec?.link_data) throw new Error("Only link ads can be varied automatically; this one uses another format. Make the variant in Ads Manager.");
@@ -146,6 +147,7 @@ async function gSearch<T>(cfg: GoogleAdsConfig, token: string, query: string): P
       method: "POST",
       headers: headers(cfg, token),
       body: JSON.stringify({ query, ...(pageToken ? { pageToken } : {}) }),
+      signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) throw await adsError(res);
     const body = (await res.json()) as { results?: T[]; nextPageToken?: string };
@@ -224,7 +226,7 @@ export async function fetchGoogleStructure(cfg: GoogleAdsConfig, token: string):
 }
 
 async function gMutate(cfg: GoogleAdsConfig, token: string, resource: string, operations: unknown[]): Promise<{ results?: { resourceName: string }[] }> {
-  const res = await fetch(`${GADS}/${ADS_API_VERSION}/customers/${cfg.customerId}/${resource}:mutate`, { method: "POST", headers: headers(cfg, token), body: JSON.stringify({ operations }) });
+  const res = await fetch(`${GADS}/${ADS_API_VERSION}/customers/${cfg.customerId}/${resource}:mutate`, { method: "POST", headers: headers(cfg, token), body: JSON.stringify({ operations }), signal: AbortSignal.timeout(60_000) });
   if (!res.ok) throw await adsError(res);
   return (await res.json()) as { results?: { resourceName: string }[] };
 }

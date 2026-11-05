@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { desc, eq, inArray, sql } from "drizzle-orm";
-import { Check } from "lucide-react";
 import { agentRuns, brandKit, db, strategyPlans } from "@bodh/db";
 import { requireModule } from "@/lib/auth";
 import { ago } from "@/lib/format";
-import { Card, CardHeader, EmptyState, PageHeader, StatusPill, btn } from "@/components/ui";
-import { approvePlan, nextMonthIst } from "./actions";
+import { Card, CardHeader, EmptyState, PageHeader, StatusPill } from "@/components/ui";
+import { nextMonthIst } from "./actions";
+import { ApprovePlanButton } from "./approve-plan";
 import { PositioningForm } from "./positioning-form";
 
 const fmt = (d: Date) => d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -73,12 +73,7 @@ export default async function StrategyPage() {
         title={month}
         description="Written by the Strategy agent from the positioning brief, the funnel, ads, keywords and the month's astrological events. Approve it before the Content agent plans the calendar."
         actions={
-          user.role === "admin" && plan.status === "draft" ? (
-            <form action={approvePlan}>
-              <input type="hidden" name="id" value={plan.id} />
-              <button className={btn.approve}><Check size={16} /> Approve plan</button>
-            </form>
-          ) : undefined
+          user.role === "admin" && plan.status === "draft" ? <ApprovePlanButton id={plan.id} /> : undefined
         }
       />
 

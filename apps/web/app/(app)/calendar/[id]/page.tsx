@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ConfirmForm } from "@/components/confirm-form";
 import { notFound } from "next/navigation";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { ArrowLeft, ExternalLink, Send, Trash2, Undo2 } from "lucide-react";
@@ -64,10 +65,10 @@ export default async function CalendarItemPage({ params, searchParams }: { param
               </form>
             )}
             {["approved", "scheduled"].includes(item.status) && (
-              <form action={unschedule}>
+              <ConfirmForm action={unschedule} message="Take this post off the schedule? It goes back to draft and needs approval again; if Postiz already has it, the publisher removes it there.">
                 <input type="hidden" name="id" value={item.id} />
                 <button className={btn.secondary}><Undo2 size={15} /> Unschedule</button>
-              </form>
+              </ConfirmForm>
             )}
             {item.publishedUrl && (
               <a href={item.publishedUrl} target="_blank" rel="noopener noreferrer" className={btn.secondary}>
@@ -75,10 +76,10 @@ export default async function CalendarItemPage({ params, searchParams }: { param
               </a>
             )}
             {["idea", "drafted"].includes(item.status) && !item.postizId && (
-              <form action={deleteItem}>
+              <ConfirmForm action={deleteItem} message="Delete this calendar item? This can't be undone.">
                 <input type="hidden" name="id" value={item.id} />
                 <button className={btn.ghost} aria-label="Delete item"><Trash2 size={15} /> Delete</button>
-              </form>
+              </ConfirmForm>
             )}
           </>
         }

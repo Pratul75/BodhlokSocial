@@ -34,6 +34,7 @@ export async function GET(req: Request) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ grant_type: "authorization_code", code, client_id: app.client_id, client_secret: app.client_secret }),
+      signal: AbortSignal.timeout(30_000),
     });
     const body = (await res.json().catch(() => ({}))) as { access_token?: string; message?: string; error?: string };
     if (!res.ok || !body.access_token) throw new Error(`Postiz token exchange failed (${res.status})${body.message || body.error ? `: ${body.message ?? body.error}` : ""}`);

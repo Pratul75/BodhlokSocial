@@ -5,6 +5,7 @@ import { authEnabled } from "@/lib/session";
 import { getIntegration } from "@bodh/shared";
 import { ago } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
+import { CheckAllConnections } from "./check-all";
 import { ConnectionCard, type ConnectionView } from "./connection-card";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ const SYNCABLE = new Set(["bodhlok_cms", "crm_billing", "crm_leads"]);
 
 const NOTES: Record<string, string> = {
   postiz_app: `Redirect URL for the Postiz app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/postiz/callback`,
+  reddit_app: `Redirect URL for the Reddit app: ${(process.env.APP_URL ?? "").replace(/\/$/, "")}/api/connect/reddit/callback`,
   bodhlok_cms:
     "To verify: in a private browser window, log in at bodhlok.com as the Growth OS account (you pass reCAPTCHA there). Then open the browser console on bodhlok.com (Cmd+Option+J in Chrome), type copy(localStorage.refresh_token) and press Enter: the sign-in key is now on your clipboard. Paste it here and close the window without logging out. Growth OS renews the key every hour; if it ever lapses, this card asks you to do this again.",
 };
@@ -46,6 +48,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       method: i.method,
       fields: i.fields,
       prerequisite: i.prerequisite,
+      planned: i.planned,
       status: r?.status ?? "not_connected",
       accountLabel: r?.accountLabel ?? null,
       updatedLabel: r?.updatedAt ? ago(r.updatedAt, now) : null,
@@ -56,6 +59,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       hasCredential: Boolean(r?.secretRef),
       oauthClientReady: authEnabled(),
       postizSignIn: i.key === "postiz" && byKey.get("postiz_app")?.status === "connected",
+      customOAuth: i.customOAuth,
+      customOAuthReady: i.customOAuth === "reddit" && byKey.get("reddit_app")?.status === "connected",
       note: NOTES[i.key],
     };
   });
@@ -66,7 +71,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
     <>
       <PageHeader
         title="Connections"
-        description={`${connected} of ${views.length} connected. Agents can only use the accounts connected here.`}
+        description={`${connected} of ${views.length} connected. Agents can only use the accounts connected here. "Connected" means the provider accepted the credential when it was saved or last checked.`}
+        actions={<CheckAllConnections />}
       />
       {sp.connected && (
         <p className="mb-6 rounded-xl bg-leaf-soft px-5 py-3 text-sm text-leaf" role="status">

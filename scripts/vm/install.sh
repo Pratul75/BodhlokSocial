@@ -53,7 +53,6 @@ ALLOW_LOCAL_SECRETS=true
 STORAGE_BACKEND=local
 UPLOADS_DIR=$SHARED/uploads
 ALLOW_LOCAL_STORAGE=true
-DEMO_DATA=true
 ENV
   chown root:bodh "$ENVF"; chmod 640 "$ENVF"
 fi
@@ -99,18 +98,37 @@ log "migrating"
 (cd "$DEST/worker" && run_node node packages/db/node_modules/tsx/dist/cli.mjs packages/db/src/migrate.ts)
 if [ "$SEED" = "1" ] && [ "${FIRST_INSTALL:-0}" = "1" ]; then
   log "loading sample data"
-  (cd "$DEST/worker/apps/worker" && run_node node node_modules/tsx/dist/cli.mjs src/seed.ts)
+  (cd "$DEST/worker/apps/worker" && run_node SEED_CONFIRM=yes SEED_ALLOW_PRODUCTION=yes node node_modules/tsx/dist/cli.mjs src/seed.ts)
   (cd "$DEST/worker" && run_node node packages/db/node_modules/tsx/dist/cli.mjs packages/db/src/migrate.ts)
 fi
 
 # Switch to the new release.
 ln -sfn "$DEST" "$BASE/current"
 install -m 755 "$HERE/job.sh" "$BASE/bin/job"
+install -m 755 "$HERE/backup.sh" "$BASE/bin/backup"
+install -d -m 700 -o bodh -g bodh "$BASE/backups"
 install -m 644 "$HERE"/systemd/* /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now bodh-web bodh-worker >/dev/null
 systemctl restart bodh-web bodh-worker
-for t in "$HERE"/systemd/*.timer; do systemctl enable --now "$(basename "$t")" >/dev/null; done
+# Agents added after the first launch spend the AI budget, so their timers are installed but only
+# switched on when bodh.env lists them, e.g. ENABLE_NEW_AGENT_TIMERS="community mentions analyst"
+# (or "all"). A timer someone already enabled by hand stays on. Everything else starts as before.
+OPT_IN_AGENTS="community mentions analyst analyst-monthly"
+WANT="$(sed -n 's/^ENABLE_NEW_AGENT_TIMERS=//p' "$ENVF" | tr -d '"' | tr ',' ' ')"
+for t in "$HERE"/systemd/*.timer; do
+  unit="$(basename "$t")"
+  name="${unit#bodh-agent-}"; name="${name%.timer}"
+  if [[ "$unit" == bodh-agent-* ]] && [[ " $OPT_IN_AGENTS " == *" $name "* ]]; then
+    wanted=0
+    for w in $WANT; do [ "$w" = all ] || [ "$w" = "$name" ] || { [ "$w" = analyst ] && [ "$name" = analyst-monthly ]; } && wanted=1; done
+    if [ "$wanted" = 1 ]; then systemctl enable --now "$unit" >/dev/null
+    elif systemctl is-enabled --quiet "$unit" 2>/dev/null; then log "$unit already on, left on"
+    else log "$unit installed but off (add it to ENABLE_NEW_AGENT_TIMERS to start it)"; fi
+    continue
+  fi
+  systemctl enable --now "$unit" >/dev/null
+done
 
 # Caddy site, validated before reload so other sites are never affected. The block between
 # the BODH markers is ours; it is replaced on every run so the host can change.

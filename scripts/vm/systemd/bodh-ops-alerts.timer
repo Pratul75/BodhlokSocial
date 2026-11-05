@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily digest of failed jobs and agent runs, 09:00 IST
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Asia/Kolkata
+Persistent=true
+Unit=bodh-job@ops-alerts.service
+
+[Install]
+WantedBy=timers.target

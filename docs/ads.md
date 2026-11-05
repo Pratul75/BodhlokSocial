@@ -8,6 +8,8 @@ The Ads agent and the Ads manager page change Meta and Google Ads only through `
 | needs approval | An `ad_change` item in Approvals with the agent's reason and the guardrail's. Approving applies it; rejecting records it as rejected. |
 | block | Recorded as blocked, with why |
 
+Approving re-runs the guardrails on current spend and caps first (`recheckChange()`): if the change is no longer allowed, the approval is refused with the reason and nothing is applied. A change that failed on the platform shows **Try again** on Ads manager (`retryChange()`), which re-checks the same way. The approval item, its link on the change log and any proposed A/B test are written in one database transaction.
+
 ## The rules (packages/guardrails)
 
 - **Caps** are set by admins in Admin, per platform, daily and monthly (INR). Spend today and this month come from `ad_spend_daily` (loaded hourly). At either cap, everything except pausing is blocked. Caps of ₹0 block everything except pausing.

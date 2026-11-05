@@ -10,14 +10,16 @@ import { postizCredentials, runPublisher } from "@bodh/integrations/publisher";
 import { getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 
+import type { JobState } from "@/app/(app)/seo/actions";
+
 export type PubResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
-export async function retryPublish(formData: FormData) {
+export async function retryPublish(_prev: JobState, formData: FormData): Promise<JobState> {
   const user = await getCurrentUser();
-  if (!canAccess(user.role, "publishing")) return;
+  if (!canAccess(user.role, "publishing")) return { error: "Your role can't publish." };
   const id = String(formData.get("id"));
   const [item] = await db.select().from(calendarItems).where(eq(calendarItems.id, id)).limit(1);
-  if (!item || item.status !== "failed") return;
+  if (!item || item.status !== "failed") return { error: "Only a failed post can be retried." };
   // Back to approved: the publisher re-checks the approval and the post rules before sending.
   const soon = new Date(Date.now() + 10 * 60 * 1000);
   await db
@@ -27,6 +29,7 @@ export async function retryPublish(formData: FormData) {
   await audit({ actor: user.email, actorType: "user", action: "retry_publish", target: item.idea, result: "queued for the publisher" });
   revalidatePath("/publishing");
   revalidatePath(`/calendar/${id}`);
+  return { message: "Queued. The publisher tries again within five minutes." };
 }
 
 export async function mapChannel(_prev: PubResult, formData: FormData): Promise<PubResult> {
@@ -35,7 +38,8 @@ export async function mapChannel(_prev: PubResult, formData: FormData): Promise<
   const channel = String(formData.get("channel"));
   const integrationId = String(formData.get("integrationId") ?? "");
   if (!integrationId) {
-    await db.delete(publishingChannels).where(eq(publishingChannels.channel, channel));
+    const removed = await db.delete(publishingChannels).where(eq(publishingChannels.channel, channel)).returning({ name: publishingChannels.name });
+    if (removed.length) await audit({ actor: user.email, actorType: "user", action: "map_channel", target: channel, result: `cleared (was ${removed[0]!.name ?? "a Postiz channel"})` });
     revalidatePath("/publishing");
     return { ok: true, message: "Cleared." };
   }

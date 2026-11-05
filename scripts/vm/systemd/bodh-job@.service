@@ -4,5 +4,9 @@ After=bodh-worker.service
 
 [Service]
 Type=oneshot
-User=root
+# bodh.env is root:bodh 640, so the bodh user can read the worker token; no root needed.
+User=bodh
+Group=bodh
+NoNewPrivileges=true
+PrivateTmp=true
 ExecStart=/opt/bodh/bin/job %i
