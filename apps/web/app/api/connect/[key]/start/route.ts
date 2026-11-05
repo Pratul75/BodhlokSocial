@@ -22,7 +22,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
     state,
     verifier,
     offline: true,
-    loginHint: user.email,
   });
   const res = NextResponse.redirect(url);
   res.cookies.set(

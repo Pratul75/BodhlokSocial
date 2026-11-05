@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 
 const ERRORS: Record<string, string> = {
   no_access: "Your account hasn't been added yet. Ask an admin to add you in Admin, then sign in again.",
-  domain: "Sign in with your company Google account. Personal Gmail accounts can't sign in.",
-  unverified: "Google hasn't verified this email address. Use your company account.",
+  domain: "A company address has to sign in with the company's Google account, not a personal account made with that address.",
+  unverified: "Google hasn't verified this email address. Use the Google account for the address an admin added.",
   expired: "The sign-in took too long. Try again.",
   session_ended: "You were signed out, on this device or another one. Sign in again.",
   cancelled: "Sign-in was cancelled.",
@@ -33,7 +33,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
         </div>
 
         <h1 className="mt-8 font-display text-2xl font-semibold tracking-tight">Sign in</h1>
-        <p className="mt-1 text-sm text-muted">Use your {domains.map((d) => `@${d}`).join(" or ")} Google account.</p>
+        <p className="mt-1 text-sm text-muted">Use your {domains.map((d) => `@${d}`).join(" or ")} Google account, or the Google account for the address an admin added you with.</p>
 
         {sp.error && ERRORS[sp.error] && (
           <p className="mt-4 rounded-lg bg-sindoor-soft px-3 py-2 text-sm text-sindoor" role="alert">{ERRORS[sp.error]}</p>

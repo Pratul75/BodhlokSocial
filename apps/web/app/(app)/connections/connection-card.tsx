@@ -175,9 +175,12 @@ export function ConnectionCard({ c }: { c: ConnectionView }) {
             </div>
           )
         ) : c.method === "oauth" && c.oauthEnabled && c.oauthClientReady ? (
-          <a href={`/api/connect/${c.key}/start`} className={btn.primary}>
-            <Link2 size={15} /> Connect with Google
-          </a>
+          <div>
+            <a href={`/api/connect/${c.key}/start`} className={btn.primary}>
+              <Link2 size={15} /> Connect with Google
+            </a>
+            <p className="mt-1.5 text-xs text-muted">Google asks which account to use. Pick the one that owns Bodhlok&apos;s channel, ads or site, even if it isn&apos;t the one you sign in here with.</p>
+          </div>
         ) : c.method === "oauth" ? (
           <div>
             <button className={btn.secondary} disabled>

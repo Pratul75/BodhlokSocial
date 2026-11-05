@@ -34,7 +34,6 @@ export async function buildAuthUrl(opts: {
   verifier: string;
   nonce?: string;
   offline?: boolean;
-  loginHint?: string;
 }): Promise<string> {
   const p = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID!,
@@ -47,15 +46,16 @@ export async function buildAuthUrl(opts: {
   });
   if (opts.nonce) p.set("nonce", opts.nonce);
   if (opts.offline) {
+    // Connecting an integration: the account that owns the channel, ads or profile is often not the one
+    // the person signed into Growth OS with, so Google always asks which account, then asks for consent
+    // (consent always returns a refresh token). No login hint, which would skip the chooser.
     p.set("access_type", "offline");
-    p.set("prompt", "consent"); // always return a refresh token
+    p.set("prompt", "select_account consent");
     p.set("include_granted_scopes", "true");
   } else {
     p.set("prompt", "select_account");
   }
-  const domains = allowedDomains();
-  if (!opts.offline && domains.length === 1) p.set("hd", domains[0]!); // hint only; enforced on the ID token
-  if (opts.loginHint) p.set("login_hint", opts.loginHint);
+  // No `hd` hint: people added from outside the company domains must be able to pick their own account.
   return `${AUTH_URL}?${p.toString()}`;
 }
 
@@ -102,8 +102,12 @@ export function checkIdentityClaims(claims: Record<string, unknown>, domains: st
   if (!email || claims.email_verified !== true) return { ok: false, reason: "unverified" };
   const emailDomain = email.split("@")[1] ?? "";
   const hd = typeof claims.hd === "string" ? claims.hd.toLowerCase() : undefined;
-  // Workspace accounts carry `hd`; require it to match so personal Gmail accounts can't pass.
-  if (!domains.includes(emailDomain) || hd !== emailDomain) return { ok: false, reason: "domain" };
+  // A company address (ALLOWED_EMAIL_DOMAINS) must come from that Workspace, which carries `hd`, so a
+  // personal Google account registered with a company address can't pass for it.
+  if (domains.includes(emailDomain) && hd !== emailDomain) return { ok: false, reason: "domain" };
+  // Any other address (Gmail, a partner's company) is let through here only as Google verified it;
+  // the sign-in callback still lets in only an address an admin added in Admin.
+  if (hd !== undefined && hd !== emailDomain) return { ok: false, reason: "domain" };
   return { ok: true, identity: { email, name: typeof claims.name === "string" ? claims.name : email, hd } };
 }
 
