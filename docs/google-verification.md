@@ -71,7 +71,7 @@ Record in English, with the browser's address bar visible throughout:
 
 - **Google Ads developer token**: apply in the Ads manager account (Tools → API Center). Basic access covers one business's accounts; Standard access is for managing many businesses' accounts. Set `GOOGLE_ADS_DEVELOPER_TOKEN` (and the customer IDs) on the server.
 - **YouTube API quota and compliance audit**: the default 10,000 units a day covers a few channels (a reply costs 50 units). More channels need Google's YouTube API audit. YouTube's developer policies also require stored API data, such as comments, to be refreshed or deleted within 30 days; Growth OS doesn't do that yet and needs it before the audit.
-- **Business Profile**: request API access from Google with this project's number, then add `business.manage` to the app (which needs verifying again) and switch the card on.
+- **Business Profile**: posts (updates with a photo and an optional button) already go out through Postiz's Google My Business channel, chosen on the Publishing page; Postiz Cloud holds Google's approval for that. Reading reviews and replying from Growth OS needs Growth OS's own access: request it from Google with this project's number (the account management and business information APIs are already enabled here), then add `business.manage` to the app (which needs verifying again) and build the reviews feature. The Connections card was removed until then.
 
 ## Multi-team later
 

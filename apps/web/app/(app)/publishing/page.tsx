@@ -15,7 +15,7 @@ import { ChannelSelect, RunPublisherButton } from "./forms";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Publishing" };
 
-const PUBLISHED_CHANNELS = ["instagram", "facebook", "linkedin", "youtube"] as const;
+const PUBLISHED_CHANNELS = ["instagram", "facebook", "linkedin", "youtube", "gbp"] as const;
 
 export default async function PublishingPage() {
   const user = await requireModule("publishing");

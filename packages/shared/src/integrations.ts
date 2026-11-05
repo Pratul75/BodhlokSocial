@@ -95,7 +95,6 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
   },
   { key: "reddit", name: "Reddit", usedFor: "Finds questions in astrology subreddits and posts approved answers from the team's named account", method: "oauth", group: "Social", customOAuth: "reddit" },
   { key: "quora", name: "Quora", usedFor: "Find questions (drafts only, a person posts)", method: "none", group: "Social" },
-  { key: "gbp", name: "Google Business Profile API", usedFor: "Posts, reviews", method: "oauth", prerequisite: "access request", group: "Search", googleOAuth: { scopes: ["https://www.googleapis.com/auth/business.manage"], enabled: false } },
   {
     key: "bodhlok_cms",
     name: "bodhlok.com CMS",

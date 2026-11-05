@@ -4,8 +4,8 @@ import { lintAdCopy, lintPositioning } from "./index";
  * Rules a post must pass before it can be sent for approval, and again before it is
  * published. Errors block; warnings are shown to the approver.
  */
-export type PublishChannel = "instagram" | "facebook" | "linkedin" | "youtube";
-export const PUBLISH_CHANNELS: readonly PublishChannel[] = ["instagram", "facebook", "linkedin", "youtube"];
+export type PublishChannel = "instagram" | "facebook" | "linkedin" | "youtube" | "gbp";
+export const PUBLISH_CHANNELS: readonly PublishChannel[] = ["instagram", "facebook", "linkedin", "youtube", "gbp"];
 
 export const isPublishChannel = (c: string): c is PublishChannel => (PUBLISH_CHANNELS as readonly string[]).includes(c);
 
@@ -29,6 +29,7 @@ const LIMITS: Record<PublishChannel, { caption: number; name: string }> = {
   facebook: { caption: 63206, name: "Facebook" },
   linkedin: { caption: 3000, name: "LinkedIn" },
   youtube: { caption: 5000, name: "YouTube" },
+  gbp: { caption: 1500, name: "Google Business Profile" },
 };
 
 export function checkPost(p: PostDraft): PostCheck {
@@ -72,6 +73,16 @@ export function checkPost(p: PostDraft): PostCheck {
     case "facebook":
       if (p.settings?.post_type === "story" && images + videos === 0) errors.push("A Facebook story needs an image or a video.");
       break;
+    case "gbp": {
+      // Business Profile updates (through Postiz's Google My Business channel) carry photos, not video.
+      if (videos > 0) errors.push("Google Business Profile posts take photos, not video. Remove the video or post it on YouTube.");
+      if (images === 0) warnings.push("Business Profile posts without a photo get far less attention. Add one.");
+      if (images > 1) warnings.push("Business Profile shows one photo per update; the first is used.");
+      const url = String(p.settings?.cta_url ?? "").trim();
+      if (p.settings?.cta_type && p.settings.cta_type !== "NONE" && !/^https:\/\/\S+$/.test(url)) errors.push("The button needs a link starting with https://.");
+      if (/(?:\+91[\s-]?)?\b[6-9]\d{4}[\s-]?\d{5}\b/.test(caption)) warnings.push("Google often rejects Business Profile posts with a phone number in the text. Use the button instead.");
+      break;
+    }
   }
 
   for (const issue of lintAdCopy(`${p.title ?? ""}\n${caption}`)) {
