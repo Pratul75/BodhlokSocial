@@ -43,7 +43,7 @@ export default async function AdminPage() {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
-          <CardHeader title="People" sub={`Only people added here can sign in, with an ${allowedDomains().map((d) => `@${d}`).join(" or ")} Google account`} />
+          <CardHeader title="People" sub={`Only people added here can sign in. ${allowedDomains().map((d) => `@${d}`).join(" or ")} addresses use their company Google account; anyone else, such as a Gmail address, uses the Google account for the address you add.`} />
           <Table>
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th><span className="sr-only">Access</span></th></tr></thead>
             <tbody>

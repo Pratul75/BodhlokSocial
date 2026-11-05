@@ -23,5 +23,7 @@ describe("buildAuthUrl", () => {
     const url = new URL(await buildAuthUrl({ ...base, scopes: ["openid", "email"], nonce: "n" }));
     expect(url.searchParams.get("prompt")).toBe("select_account");
     expect(url.searchParams.has("access_type")).toBe(false);
+    // No domain hint, so someone added with a Gmail address can pick that account.
+    expect(url.searchParams.has("hd")).toBe(false);
   });
 });

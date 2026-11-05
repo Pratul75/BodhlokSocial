@@ -37,8 +37,17 @@ describe("checkIdentityClaims", () => {
     expect(checkIdentityClaims({ email: "a@rechargestudio.com", email_verified: false, hd: "rechargestudio.com" }, domains)).toEqual({ ok: false, reason: "unverified" });
   });
 
-  it("rejects other domains", () => {
-    expect(checkIdentityClaims({ email: "a@gmail.com", email_verified: true }, domains)).toEqual({ ok: false, reason: "domain" });
+  it("lets a verified address on another domain through (only an address an admin added gets in)", () => {
+    expect(checkIdentityClaims({ email: "Partner@Gmail.com", email_verified: true, name: "P" }, domains)).toEqual({ ok: true, identity: { email: "partner@gmail.com", name: "P", hd: undefined } });
+    expect(checkIdentityClaims({ email: "a@agency.in", email_verified: true, hd: "agency.in" }, domains).ok).toBe(true);
+  });
+
+  it("rejects an unverified address on another domain", () => {
+    expect(checkIdentityClaims({ email: "a@gmail.com", email_verified: false }, domains)).toEqual({ ok: false, reason: "unverified" });
+  });
+
+  it("rejects another domain whose hd doesn't match", () => {
+    expect(checkIdentityClaims({ email: "a@agency.in", email_verified: true, hd: "other.in" }, domains)).toEqual({ ok: false, reason: "domain" });
   });
 
   it("rejects a matching email without the Workspace hd claim", () => {

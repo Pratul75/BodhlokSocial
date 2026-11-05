@@ -47,10 +47,8 @@ export async function addUser(_prev: AdminResult, formData: FormData): Promise<A
     const email = String(formData.get("email") ?? "").trim().toLowerCase();
     const name = String(formData.get("name") ?? "").trim();
     const role = formData.get("role");
-    const domains = allowedDomains();
-    if (!domains.includes(email.split("@")[1] ?? "")) {
-      return { ok: false, error: `Use an ${domains.map((d) => `@${d}`).join(" or ")} address. Only those domains can sign in.` };
-    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "That isn't an email address." };
+    const company = allowedDomains().includes(email.split("@")[1] ?? "");
     if (!name) return { ok: false, error: "Add the person's name." };
     if (!isRole(role)) return { ok: false, error: "Pick a role." };
     const existing = await db.select().from(users).where(eq(users.email, email));
@@ -58,7 +56,12 @@ export async function addUser(_prev: AdminResult, formData: FormData): Promise<A
     await db.insert(users).values({ email, name, role });
     await audit({ actor: u.email, actorType: "user", action: "add_user", target: email, result: role });
     revalidatePath("/admin");
-    return { ok: true, message: `${name} can now sign in.` };
+    return {
+      ok: true,
+      message: company
+        ? `${name} can now sign in.`
+        : `${name} can now sign in with the Google account for ${email}. If that address isn't Gmail, they need a Google account made with it.`,
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Couldn't add the user." };
   }

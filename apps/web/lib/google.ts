@@ -55,8 +55,7 @@ export async function buildAuthUrl(opts: {
   } else {
     p.set("prompt", "select_account");
   }
-  const domains = allowedDomains();
-  if (!opts.offline && domains.length === 1) p.set("hd", domains[0]!); // hint only; enforced on the ID token
+  // No `hd` hint: people added from outside the company domains must be able to pick their own account.
   return `${AUTH_URL}?${p.toString()}`;
 }
 
@@ -103,8 +102,12 @@ export function checkIdentityClaims(claims: Record<string, unknown>, domains: st
   if (!email || claims.email_verified !== true) return { ok: false, reason: "unverified" };
   const emailDomain = email.split("@")[1] ?? "";
   const hd = typeof claims.hd === "string" ? claims.hd.toLowerCase() : undefined;
-  // Workspace accounts carry `hd`; require it to match so personal Gmail accounts can't pass.
-  if (!domains.includes(emailDomain) || hd !== emailDomain) return { ok: false, reason: "domain" };
+  // A company address (ALLOWED_EMAIL_DOMAINS) must come from that Workspace, which carries `hd`, so a
+  // personal Google account registered with a company address can't pass for it.
+  if (domains.includes(emailDomain) && hd !== emailDomain) return { ok: false, reason: "domain" };
+  // Any other address (Gmail, a partner's company) is let through here only as Google verified it;
+  // the sign-in callback still lets in only an address an admin added in Admin.
+  if (hd !== undefined && hd !== emailDomain) return { ok: false, reason: "domain" };
   return { ok: true, identity: { email, name: typeof claims.name === "string" ? claims.name : email, hd } };
 }
 
