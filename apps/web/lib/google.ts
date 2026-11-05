@@ -34,9 +34,11 @@ export async function buildAuthUrl(opts: {
   verifier: string;
   nonce?: string;
   offline?: boolean;
+  /** The OAuth app; the staff sign-in app when left out. */
+  clientId?: string;
 }): Promise<string> {
   const p = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID!,
+    client_id: opts.clientId ?? process.env.GOOGLE_CLIENT_ID!,
     redirect_uri: opts.redirectUri,
     response_type: "code",
     scope: opts.scopes.join(" "),
@@ -68,14 +70,20 @@ export interface GoogleTokens {
   token_type: string;
 }
 
-export async function exchangeCode(code: string, redirectUri: string, verifier: string): Promise<GoogleTokens> {
+/** Trades an authorization code for tokens, with the app that started the grant (the staff sign-in app by default). */
+export async function exchangeCode(
+  code: string,
+  redirectUri: string,
+  verifier: string,
+  client: { client_id: string; client_secret: string } = { client_id: process.env.GOOGLE_CLIENT_ID!, client_secret: process.env.GOOGLE_CLIENT_SECRET! },
+): Promise<GoogleTokens> {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      client_id: client.client_id,
+      client_secret: client.client_secret,
       redirect_uri: redirectUri,
       grant_type: "authorization_code",
       code_verifier: verifier,

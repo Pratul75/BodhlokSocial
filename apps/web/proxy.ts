@@ -28,6 +28,7 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Everything except sign-in, the auth routes, health check, signed BODH events and static files.
-  matcher: ["/((?!signin|api/auth|api/health|api/events|api/feed|_next/static|_next/image|favicon.ico).*)"],
+  // Everything except sign-in, the public pages (home, privacy policy, terms: Google's OAuth
+  // verification reads them signed out), the auth routes, health check, signed BODH events and static files.
+  matcher: ["/((?!signin|about|privacy|terms|api/auth|api/health|api/events|api/feed|_next/static|_next/image|favicon.ico).*)"],
 };

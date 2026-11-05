@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { connections, db } from "@bodh/db";
 import { getIntegration } from "@bodh/shared";
+import { googleConnectClient, staffGoogleClient } from "@bodh/integrations/google-oauth";
 import { audit } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { appUrl, exchangeCode } from "@/lib/google";
@@ -32,8 +33,12 @@ export async function GET(req: Request) {
   const def = getIntegration(key);
   if (!def?.googleOAuth?.enabled) return back("error=not_enabled");
 
+  // The same app that started the grant; it can have been saved or removed in between.
+  const client = [await googleConnectClient(), staffGoogleClient()].find((c) => c && c.client_id === (saved.clientId ?? staffGoogleClient()?.client_id));
+  if (!client) return back("error=expired");
+
   try {
-    const tokens = await exchangeCode(code, `${appUrl(req)}/api/connect/google/callback`, saved.verifier);
+    const tokens = await exchangeCode(code, `${appUrl(req)}/api/connect/google/callback`, saved.verifier, client);
     if (!tokens.refresh_token) return back(`error=no_refresh_token&key=${key}`);
     const missing = def.googleOAuth.scopes.filter((s) => !tokens.scope.split(" ").includes(s));
     if (missing.length) return back(`error=scopes&key=${key}`);
@@ -44,6 +49,7 @@ export async function GET(req: Request) {
       scope: tokens.scope,
       connected_by: user.email,
       connected_at: new Date().toISOString(),
+      client_id: client.client_id,
     };
     const ref = await (await secretStore()).put(secretName(key), JSON.stringify(grant));
     await db

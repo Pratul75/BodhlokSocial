@@ -22,7 +22,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
   const domains = (process.env.ALLOWED_EMAIL_DOMAINS ?? process.env.ALLOWED_EMAIL_DOMAIN ?? "rechargestudio.com").split(",").map((d) => d.trim());
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-night px-4">
+    <main className="relative flex min-h-dvh items-center justify-center bg-night px-4 pb-16">
       <div className="w-full max-w-sm rounded-2xl bg-card p-8 shadow-xl">
         <div className="flex items-center gap-2.5 text-ink">
           <span className="text-turmeric"><KundliMark className="h-8 w-8" /></span>
@@ -66,6 +66,11 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
           </div>
         )}
       </div>
+      <nav className="absolute bottom-6 flex gap-5 text-xs text-night-3">
+        <Link href="/about" className="hover:text-white">About</Link>
+        <Link href="/privacy" className="hover:text-white">Privacy policy</Link>
+        <Link href="/terms" className="hover:text-white">Terms of service</Link>
+      </nav>
     </main>
   );
 }

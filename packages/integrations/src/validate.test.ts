@@ -22,6 +22,26 @@ describe("validateCredential", () => {
     expect(await validateCredential("postiz_app", "{}")).toEqual({ ok: true });
   });
 
+  it("accepts a Google app when only the made-up code is refused, with the secret in the body", async () => {
+    const calls = stubFetch([{ status: 400, body: { error: "invalid_grant", error_description: "Malformed auth code." } }]);
+    const r = await validateCredential("google_app", JSON.stringify({ client_id: "123-abc.apps.googleusercontent.com", client_secret: "GOCSPX-s" }));
+    expect(r).toEqual({ ok: true, label: "Google Cloud project 123" });
+    expect(calls[0]!.url).toBe("https://oauth2.googleapis.com/token");
+    expect(String(calls[0]!.init?.body)).toContain("client_secret=GOCSPX-s");
+  });
+
+  it("refuses a Google app with a wrong secret, with Google's reason", async () => {
+    stubFetch([{ status: 401, body: { error: "invalid_client", error_description: "The provided client secret is invalid" } }]);
+    const r = await validateCredential("google_app", JSON.stringify({ client_id: "123-abc.apps.googleusercontent.com", client_secret: "x" }));
+    expect(r).toEqual({ ok: false, error: "Google refused the app: The provided client secret is invalid." });
+  });
+
+  it("refuses something that isn't a Google client ID without asking Google", async () => {
+    const calls = stubFetch([]);
+    expect((await validateCredential("google_app", JSON.stringify({ client_id: "pca_1", client_secret: "x" }))).ok).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
   it("checks a Meta ad account with the token in a header, not the URL", async () => {
     const calls = stubFetch([{ body: { name: "Bodhlok ads", account_status: 1, currency: "INR", id: "act_1" } }]);
     const r = await validateCredential("meta_marketing", JSON.stringify({ ad_account_id: "1", access_token: "tok" }));
