@@ -156,7 +156,7 @@ export function createApp(token: string, deps: WorkerDeps = defaultDeps): Hono {
    * yesterday through today, which covers late-arriving spend and events.
    *   forward-conversions  every 5 minutes
    *   hourly               spend for yesterday and today, then rebuild the last 7 days
-   *   daily                GA4 sessions for yesterday, then rebuild the last 35 days
+   *   daily                GA4 (Data API: last 3 days, 90 the first time; else the BigQuery export for yesterday), then rebuild the last 35 days
    */
   app.post("/jobs/tracking/:job", async (c) => {
     const job = c.req.param("job");
@@ -173,9 +173,20 @@ export function createApp(token: string, deps: WorkerDeps = defaultDeps): Hono {
           results.push(await run("load_meta_spend", () => jobs.loadMetaSpend(since, until)));
           results.push(await run("load_google_spend", () => jobs.loadGoogleSpend(since, until)));
           break;
-        case "load-ga4":
-          results.push(await run("load_ga4_sessions", () => jobs.loadGa4Sessions(dateParam(c.req.query("day"), istDate(new Date(), -1)))));
+        case "load-ga4": {
+          // ?days=N (1-90): the GA4 Data API window ending on ?day (default yesterday), e.g. the
+          // one-off 90-day backfill; the funnel is rebuilt for the same window afterwards.
+          const end = dateParam(c.req.query("day"), istDate(new Date(), -1));
+          const rawDays = c.req.query("days");
+          const days = rawDays === undefined ? undefined : Number(rawDays);
+          if (days !== undefined && (!Number.isInteger(days) || days < 1 || days > 90)) return c.json({ error: "days must be a whole number from 1 to 90" }, 400);
+          results.push(await run("load_ga4_sessions", () => jobs.loadGa4Sessions(end, days ? { days } : {})));
+          if (days) {
+            const start = istDate(new Date(`${end}T12:00:00Z`), -(days - 1));
+            results.push(await run("rebuild_funnel", () => jobs.rebuild(start, istDate())));
+          }
           break;
+        }
         case "rebuild-funnel":
           results.push(await run("rebuild_funnel", () => jobs.rebuild(dateParam(c.req.query("from"), istDate(new Date(), -7)), until)));
           break;

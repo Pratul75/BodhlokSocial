@@ -15,7 +15,7 @@ const JOBS: { key: string; label: string; schedule: string }[] = [
   { key: "forward_google", label: "Send conversions to Google Ads", schedule: "Every 5 minutes" },
   { key: "load_meta_spend", label: "Load Meta ad spend", schedule: "Hourly" },
   { key: "load_google_spend", label: "Load Google Ads spend", schedule: "Hourly" },
-  { key: "load_ga4_sessions", label: "Load GA4 sessions", schedule: "Daily, 06:30" },
+  { key: "load_ga4_sessions", label: "Load GA4 (Data API, or the BigQuery export)", schedule: "Daily, 06:30" },
   { key: "rebuild_funnel", label: "Rebuild the funnel", schedule: "Hourly, and daily for 35 days" },
 ];
 

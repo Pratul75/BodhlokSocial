@@ -116,5 +116,9 @@ the VM) to copy each dump off the machine. Restoring is in `docs/operations.md`.
 - New agents: the Community, Mentions and Analyst timers are installed but off. Turn them on with
   `ENABLE_NEW_AGENT_TIMERS="community mentions analyst"` (or `all`) in `bodh.env` and re-run the
   installer, or `sudo systemctl enable --now bodh-agent-<name>.timer`. They share the monthly AI budget.
+- GA4 on Analytics: enable "Google Analytics Data API" in the ga4 service account's Google Cloud project,
+  add that service account as Viewer on the GA4 property, set `GA4_PROPERTY_ID=<numeric id>` in `bodh.env`,
+  restart web and worker, then load 90 days once:
+  `sudo -u bodh /opt/bodh/bin/job tracking-daily` (it backfills 90 days automatically the first time).
 - Alerts: set `ALERT_WEBHOOK_URL` to a Slack-compatible incoming webhook for the 09:00 digest.
 - Postiz: write here whether the team uses Postiz Cloud or a self-hosted Postiz, and who upgrades it.

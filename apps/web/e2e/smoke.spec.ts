@@ -65,3 +65,24 @@ test("Today has no horizontal scroll on a phone @phone", async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test("Analytics shows GA4 traffic from the GA4 tables", async ({ page }) => {
+  await page.goto("/analytics?days=28");
+  const ga4 = page.locator("section", { hasText: "Website & app (GA4)" });
+  await expect(ga4.getByText("GA4 property 123456789")).toBeVisible();
+  // KPI tiles (some labels also head table columns, hence first()).
+  for (const label of ["Sessions", "Users", "Engaged sessions", "Engagement rate", "Page and screen views"]) await expect(ga4.getByText(label, { exact: true }).first()).toBeVisible();
+  await expect(ga4.getByRole("cell", { name: "/blog/what-is-vimshottari-dasha" })).toBeVisible();
+  await expect(ga4.getByRole("cell", { name: "Organic Search" })).toBeVisible();
+  await page.goto("/analytics?days=90");
+  await expect(page.getByText("Sessions per week (7-day blocks ending yesterday)")).toBeVisible();
+  await noErrorPage(page);
+});
+
+test("Analytics has no horizontal scroll on a phone @phone", async ({ page }) => {
+  await page.goto("/analytics");
+  await page.waitForLoadState("networkidle");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+

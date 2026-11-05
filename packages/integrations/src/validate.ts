@@ -7,6 +7,7 @@ import { GRAPH_VERSION } from "./meta";
 import { listIntegrations, type PostizCredentials } from "./postiz";
 import { vertexAuth, type ServiceAccountKey } from "./vertex";
 import { findGa4Dataset } from "./ga4";
+import { ga4Client, ga4PropertyId } from "./ga4-data";
 
 export type Validation = { ok: true; label?: string; warning?: string } | { ok: false; error: string };
 export type Validator = (value: string) => Promise<Validation>;
@@ -102,6 +103,21 @@ export const VALIDATORS: Record<string, Validator> = {
   async ga4(value) {
     const key = parse<ServiceAccountKey & { project_id?: string }>(value);
     if (!key?.client_email || !key.private_key) return fail("Paste the full service account JSON.");
+    // With a GA4 property configured, the Data API is the source: check this key can read it.
+    let propertyId: string | null;
+    try {
+      propertyId = ga4PropertyId();
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+    if (propertyId) {
+      try {
+        await ga4Client(propertyId, key).checkAccess();
+        return { ok: true, label: `GA4 property ${propertyId} via ${key.client_email}` };
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    }
     const projectId = process.env.GA4_BQ_PROJECT || key.project_id || process.env.GCP_PROJECT_ID;
     if (!projectId) return fail("The service account JSON has no project_id; set GA4_BQ_PROJECT on the server.");
     try {

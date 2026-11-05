@@ -48,7 +48,7 @@ async function main() {
   const adminEmail = process.env.DEV_USER_EMAIL!.trim().toLowerCase();
   console.log(`Seeding ${targetHost(process.env.DATABASE_URL)} with sample data.`);
   console.log("Clearing tables…");
-  await sql`TRUNCATE pipeline_runs, conversion_forwards, conversion_events, ad_spend_daily, web_sessions_daily, audit_log, leads, community_items, directory_listings, reports, ai_visibility_checks, seo_pages, keywords, funnel_daily,
+  await sql`TRUNCATE pipeline_runs, conversion_forwards, conversion_events, ad_spend_daily, web_sessions_daily, ga4_daily, ga4_daily_sources, ga4_daily_pages, ga4_period_totals, audit_log, leads, community_items, directory_listings, reports, ai_visibility_checks, seo_pages, keywords, funnel_daily,
     budgets, experiments, ad_changes, campaigns, strategy_plans, calendar_items, assets, approvals, agent_runs,
     connections, users RESTART IDENTITY CASCADE`;
   // CASCADE also empties brand_kit (it points at assets); put back the default row migrate creates.
@@ -477,6 +477,7 @@ async function seedTracking() {
 
   for (let i = 0; i < spend.length; i += 500) await db.insert(s.adSpendDaily).values(spend.slice(i, i + 500));
   await db.insert(s.webSessionsDaily).values(sessions);
+  await seedGa4(sessions);
 
   events.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
   let accepted = 0;
@@ -505,3 +506,80 @@ main().catch(async (err) => {
   await sql.end();
   process.exit(1);
 });
+
+/* ---------- GA4 Data API sample (property SAMPLE_GA4_PROPERTY; set GA4_PROPERTY_ID to it to see it) ---------- */
+
+export const SAMPLE_GA4_PROPERTY = "123456789";
+
+const GA4_SOURCE: Record<string, [string, string, string]> = {
+  seo: ["Organic Search", "google", "organic"],
+  direct: ["Direct", "(direct)", "(none)"],
+  youtube: ["Organic Video", "youtube.com", "referral"],
+  instagram: ["Organic Social", "instagram.com", "referral"],
+  facebook: ["Organic Social", "facebook.com", "referral"],
+  linkedin: ["Organic Social", "linkedin.com", "referral"],
+  whatsapp: ["Organic Social", "whatsapp", "referral"],
+  referral: ["Referral", "astrologyforum.in", "referral"],
+  email: ["Email", "newsletter", "email"],
+};
+const GA4_PAGES: [string, number][] = [
+  ["/", 0.24],
+  ["/desk", 0.16],
+  ["/blog/what-is-vimshottari-dasha", 0.11],
+  ["/pricing", 0.08],
+  ["/learn/nakshatras", 0.07],
+  ["/blog/saturn-in-the-7th-house", 0.06],
+  ["/signup", 0.05],
+  ["/blog/jupiter-special-aspects", 0.04],
+];
+
+/** GA4 tables built from the seed's organic sessions, so the Analytics GA4 section has something to show. */
+async function seedGa4(sessions: (typeof s.webSessionsDaily.$inferInsert)[]) {
+  const property = SAMPLE_GA4_PROPERTY;
+  const byDay = new Map<string, number>();
+  const sources: (typeof s.ga4DailySources.$inferInsert)[] = [];
+  for (const r of sessions) {
+    byDay.set(r.day, (byDay.get(r.day) ?? 0) + r.sessions);
+    const [channelGroup, source, medium] = GA4_SOURCE[r.channel] ?? ["Unassigned", "(not set)", "(not set)"];
+    sources.push({ propertyId: property, day: r.day, channelGroup, source, medium, sessions: r.sessions, engagedSessions: Math.round(r.sessions * 0.62), newUsers: Math.round(r.sessions * 0.45) });
+  }
+  const daily: (typeof s.ga4Daily.$inferInsert)[] = [];
+  const pages: (typeof s.ga4DailyPages.$inferInsert)[] = [];
+  for (const [day, total] of byDay) {
+    for (const [platform, share] of [["web", 0.7], ["android", 0.25], ["ios", 0.05]] as const) {
+      const sess = Math.round(total * share);
+      daily.push({ propertyId: property, day, platform, sessions: sess, engagedSessions: Math.round(sess * 0.62), activeUsers: Math.round(sess * 0.8), newUsers: Math.round(sess * 0.45), totalUsers: Math.round(sess * 0.84), screenPageViews: Math.round(sess * 2.6), userEngagementSeconds: sess * 95 });
+    }
+    const views = Math.round(total * 2.6);
+    let used = 0;
+    for (const [pagePath, w] of GA4_PAGES) {
+      const v = Math.round(views * w);
+      used += v;
+      pages.push({ propertyId: property, day, pagePath, screenPageViews: v, activeUsers: Math.round(v * 0.55), userEngagementSeconds: v * 40 });
+    }
+    pages.push({ propertyId: property, day, pagePath: "(other)", screenPageViews: Math.max(0, views - used), activeUsers: Math.round(Math.max(0, views - used) * 0.5), userEngagementSeconds: Math.max(0, views - used) * 30 });
+  }
+  for (let i = 0; i < sources.length; i += 1000) await db.insert(s.ga4DailySources).values(sources.slice(i, i + 1000));
+  for (let i = 0; i < daily.length; i += 1000) await db.insert(s.ga4Daily).values(daily.slice(i, i + 1000));
+  for (let i = 0; i < pages.length; i += 1000) await db.insert(s.ga4DailyPages).values(pages.slice(i, i + 1000));
+  const yesterday = isoDate(dayOffset(-1));
+  for (const days of [7, 28, 90]) {
+    const startDay = isoDate(dayOffset(-days));
+    const inWindow = daily.filter((r) => r.day >= startDay && r.day <= yesterday);
+    const sum = (k: "sessions" | "engagedSessions" | "activeUsers" | "newUsers" | "screenPageViews") => inWindow.reduce((t, r) => t + (r[k] ?? 0), 0);
+    await db.insert(s.ga4PeriodTotals).values({
+      propertyId: property,
+      rangeDays: days,
+      startDay,
+      endDay: yesterday,
+      sessions: sum("sessions"),
+      engagedSessions: sum("engagedSessions"),
+      activeUsers: Math.round(sum("activeUsers") * 0.7),
+      totalUsers: Math.round(sum("activeUsers") * 0.74),
+      newUsers: sum("newUsers"),
+      screenPageViews: sum("screenPageViews"),
+    });
+  }
+  console.log(`GA4 sample: ${daily.length} daily rows, ${sources.length} source rows, ${pages.length} page rows for property ${property}.`);
+}
+

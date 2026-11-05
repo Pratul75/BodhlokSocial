@@ -147,7 +147,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     ],
   },
   { key: "semrush", name: "Semrush or Ahrefs", usedFor: "Competitor data (optional)", method: "api_key", group: "Search", planned: "Not built: DataForSEO covers keywords and rankings today." },
-  { key: "ga4", name: "GA4 / Firebase", usedFor: "Web sessions per channel, from the BigQuery export", method: "service_account", group: "Analytics" },
+  { key: "ga4", name: "GA4 / Firebase", usedFor: "Website and app traffic for Analytics (sessions, users, pages, sources) through the GA4 Data API, with GA4_PROPERTY_ID set on the server; otherwise web sessions from the BigQuery export", method: "service_account", group: "Analytics" },
   { key: "whatsapp", name: "WhatsApp Business API", usedFor: "Onboarding messages", method: "api_key", group: "Messaging", planned: "Planned with the lifecycle messages (build plan phase 9)." },
   { key: "email", name: "Email (Brevo or SendGrid)", usedFor: "Onboarding emails", method: "api_key", group: "Messaging", planned: "Planned with the lifecycle messages (build plan phase 9)." },
   { key: "bodh", name: "BODH backend", usedFor: "Registration, first-chart and paid events", method: "internal", group: "Internal" },

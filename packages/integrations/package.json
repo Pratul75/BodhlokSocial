@@ -27,6 +27,7 @@
     "./ads-platforms": "./src/ads-platforms.ts",
     "./ads": "./src/ads.ts",
     "./site-publisher": "./src/site-publisher.ts",
+    "./ga4-data": "./src/ga4-data.ts",
     "./bodhlok-cms": "./src/bodhlok-cms.ts",
     "./crm": "./src/crm.ts",
     "./worker-auth": "./src/worker-auth.ts",

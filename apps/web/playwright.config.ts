@@ -18,5 +18,12 @@ export default defineConfig({
   ],
   webServer: process.env.E2E_BASE_URL
     ? undefined
-    : { command: "pnpm dev", url: "http://localhost:3000/api/health", timeout: 180_000, reuseExistingServer: true },
+    : {
+        command: "pnpm dev",
+        url: "http://localhost:3000/api/health",
+        timeout: 180_000,
+        reuseExistingServer: true,
+        // The seed's sample GA4 property, so the Analytics GA4 section is tested with data.
+        env: { ...(process.env as Record<string, string>), GA4_PROPERTY_ID: process.env.GA4_PROPERTY_ID ?? "123456789" },
+      },
 });

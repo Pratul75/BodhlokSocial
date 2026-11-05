@@ -200,3 +200,26 @@ describe("live 47ff99c routes carried into the merged worker", () => {
   });
 });
 
+describe("GA4 Data API backfill route", () => {
+  it("loads the requested window and rebuilds the funnel for it", async () => {
+    const loadGa4Sessions = vi.fn(async () => ({ status: "succeeded" as const, detail: "ok", rows: 1 }));
+    const { deps, calls } = fakeDeps();
+    deps.jobs.loadGa4Sessions = loadGa4Sessions as unknown as WorkerDeps["jobs"]["loadGa4Sessions"];
+    const res = await post(createApp(TOKEN, deps), "/jobs/tracking/load-ga4?days=90&day=2026-11-04");
+    expect(res.status).toBe(200);
+    expect(loadGa4Sessions).toHaveBeenCalledWith("2026-11-04", { days: 90 });
+    expect(calls).toContain("rebuild");
+  });
+
+  it("keeps the old single-day call without days, and refuses a bad window", async () => {
+    const loadGa4Sessions = vi.fn(async () => ({ status: "skipped" as const, detail: "no export" }));
+    const { deps, calls } = fakeDeps();
+    deps.jobs.loadGa4Sessions = loadGa4Sessions as unknown as WorkerDeps["jobs"]["loadGa4Sessions"];
+    const app = createApp(TOKEN, deps);
+    expect((await post(app, "/jobs/tracking/load-ga4?day=2026-11-04")).status).toBe(200);
+    expect(loadGa4Sessions).toHaveBeenCalledWith("2026-11-04", {});
+    expect(calls).not.toContain("rebuild");
+    for (const bad of ["0", "91", "7.5", "abc"]) expect((await post(app, `/jobs/tracking/load-ga4?days=${bad}`)).status).toBe(400);
+  });
+});
+

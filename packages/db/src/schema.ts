@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, date, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, check, date, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -687,7 +687,7 @@ export const adSpendDaily = pgTable(
   (t) => [uniqueIndex("spend_day_ad_uq").on(t.day, t.platform, t.adId)],
 );
 
-/** Daily web sessions per channel, from the GA4 BigQuery export. */
+/** Daily web sessions per attribution channel (the funnel's organic "visits"), from the GA4 Data API or the GA4 BigQuery export. */
 export const webSessionsDaily = pgTable(
   "web_sessions_daily",
   {
@@ -697,6 +697,86 @@ export const webSessionsDaily = pgTable(
     loadedAt: timestamp("loaded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("sessions_day_channel_uq").on(t.day, t.channel)],
+);
+
+/*
+ * GA4 Data API reports for the property in GA4_PROPERTY_ID (packages/integrations/src/ga4-data.ts).
+ * Aggregates only: no user ids, client ids or IPs; page paths without query strings. Each loaded
+ * date range is replaced in one transaction, so re-running a load never duplicates rows.
+ */
+const ga4Loaded = () => timestamp("loaded_at", { withTimezone: true }).notNull().defaultNow();
+
+/** Daily totals per platform (web, android, ios: Firebase app streams in the same property show as apps). */
+export const ga4Daily = pgTable(
+  "ga4_daily",
+  {
+    propertyId: text("property_id").notNull(),
+    day: date("day").notNull(),
+    platform: text("platform").notNull(),
+    sessions: integer("sessions").notNull().default(0),
+    engagedSessions: integer("engaged_sessions").notNull().default(0),
+    activeUsers: integer("active_users").notNull().default(0),
+    newUsers: integer("new_users").notNull().default(0),
+    totalUsers: integer("total_users").notNull().default(0),
+    screenPageViews: integer("screen_page_views").notNull().default(0),
+    userEngagementSeconds: integer("user_engagement_seconds").notNull().default(0),
+    loadedAt: ga4Loaded(),
+  },
+  (t) => [primaryKey({ name: "ga4_daily_pk", columns: [t.propertyId, t.day, t.platform] }), index("ga4_daily_day_idx").on(t.day)],
+);
+
+/** Daily sessions per GA4 channel group and source / medium. */
+export const ga4DailySources = pgTable(
+  "ga4_daily_sources",
+  {
+    propertyId: text("property_id").notNull(),
+    day: date("day").notNull(),
+    channelGroup: text("channel_group").notNull(),
+    source: text("source").notNull(),
+    medium: text("medium").notNull(),
+    sessions: integer("sessions").notNull().default(0),
+    engagedSessions: integer("engaged_sessions").notNull().default(0),
+    newUsers: integer("new_users").notNull().default(0),
+    loadedAt: ga4Loaded(),
+  },
+  (t) => [
+    primaryKey({ name: "ga4_daily_sources_pk", columns: [t.propertyId, t.day, t.channelGroup, t.source, t.medium] }),
+    index("ga4_daily_sources_day_idx").on(t.day),
+  ],
+);
+
+/** Daily views per page: the top 500 pages of each day, the rest summed as "(other)". */
+export const ga4DailyPages = pgTable(
+  "ga4_daily_pages",
+  {
+    propertyId: text("property_id").notNull(),
+    day: date("day").notNull(),
+    pagePath: text("page_path").notNull(),
+    screenPageViews: integer("screen_page_views").notNull().default(0),
+    activeUsers: integer("active_users").notNull().default(0),
+    userEngagementSeconds: integer("user_engagement_seconds").notNull().default(0),
+    loadedAt: ga4Loaded(),
+  },
+  (t) => [primaryKey({ name: "ga4_daily_pages_pk", columns: [t.propertyId, t.day, t.pagePath] }), index("ga4_daily_pages_day_idx").on(t.day)],
+);
+
+/** Totals for the last 7, 28 and 90 days, asked for as whole periods so users are counted once. */
+export const ga4PeriodTotals = pgTable(
+  "ga4_period_totals",
+  {
+    propertyId: text("property_id").notNull(),
+    rangeDays: integer("range_days").notNull(),
+    startDay: date("start_day").notNull(),
+    endDay: date("end_day").notNull(),
+    sessions: integer("sessions").notNull().default(0),
+    engagedSessions: integer("engaged_sessions").notNull().default(0),
+    activeUsers: integer("active_users").notNull().default(0),
+    totalUsers: integer("total_users").notNull().default(0),
+    newUsers: integer("new_users").notNull().default(0),
+    screenPageViews: integer("screen_page_views").notNull().default(0),
+    loadedAt: ga4Loaded(),
+  },
+  (t) => [primaryKey({ name: "ga4_period_totals_pk", columns: [t.propertyId, t.rangeDays] })],
 );
 
 /** Each run of a tracking job, shown on the Tracking page. */

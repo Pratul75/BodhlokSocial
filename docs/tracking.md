@@ -7,7 +7,7 @@ registered and generated their first chart. This page explains where each number
 |---|---|---|
 | Registrations, first charts, paid | Events from the BODH backend ([bodh-events.md](bodh-events.md)) | As they happen |
 | Ad spend and clicks | Meta Marketing API and Google Ads API, per ad per day | Hourly |
-| Organic visits | GA4 BigQuery export, `session_start` events | Daily at 06:30 |
+| Organic visits, and the Analytics GA4 section (sessions, users, pages, sources) | GA4 Data API for the property in `GA4_PROPERTY_ID` (last 3 days each run, 90 days the first time). Without it: the GA4 BigQuery export, `session_start` events | Daily at 06:30 |
 | Funnel by channel | Rebuilt from the three above | Hourly for 7 days, daily for 35 days |
 
 ## Attribution
@@ -65,5 +65,6 @@ Google, which are the platforms' own limits. The Tracking page shows the queue.
 | Many registrations under Direct | The landing page isn't storing UTM parameters until signup, or apps aren't sending the install referrer |
 | Paid registrations not matched to an ad | `utm_content` is missing or isn't the ad ID |
 | Spend is zero for a platform | Meta Marketing or Google Ads isn't connected, or its token expired. See Connections. |
-| Organic visits are zero | The GA4 BigQuery link isn't on, or the ga4 service account can't see the `analytics_` dataset (it is found automatically; `GA4_BQ_DATASET` only overrides it) |
+| Organic visits are zero / the GA4 section says "isn't set up" | With the Data API (recommended): `GA4_PROPERTY_ID` isn't set, the "Google Analytics Data API" isn't enabled in the ga4 service account's Google Cloud project, or the service account isn't a Viewer on the property; the Tracking page shows which. Without it: the GA4 BigQuery link isn't on, or the service account can't see the `analytics_` dataset |
+| GA4 numbers for yesterday move | GA4 keeps processing the last two days; the daily job re-reads the last 3 days |
 | Meta conversions failing | Check the Tracking page for the error. Usually an expired token or wrong dataset ID. |

@@ -1,10 +1,14 @@
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, sql, type AnyColumn } from "drizzle-orm";
 import {
   adSpendDaily,
   connections,
   conversionEvents,
   conversionForwards,
   db,
+  ga4Daily,
+  ga4DailyPages,
+  ga4DailySources,
+  ga4PeriodTotals,
   pipelineRuns,
   rebuildFunnel,
   reconcileAttribution,
@@ -13,6 +17,22 @@ import {
 import { attribute } from "./attribution";
 import type { NormalizedEvent } from "./bodh-events";
 import { fetchGa4Sessions, findGa4Dataset } from "./ga4";
+import {
+  addDays,
+  chunkRange,
+  fetchDaily,
+  fetchPages,
+  fetchSources,
+  fetchTotals,
+  ga4Client,
+  ga4PropertyId,
+  sessionsByAttributionChannel,
+  type Ga4ClientDeps,
+  type Ga4DayRow,
+  type Ga4PageRow,
+  type Ga4ServiceAccount,
+  type Ga4SourceRow,
+} from "./ga4-data";
 import { buildClickConversion, fetchGoogleAdsSpend, googleAdsConfigFromEnv, uploadClickConversions } from "./google-ads";
 import { googleAccessToken } from "./google-oauth";
 import { fetchMetaSpend, sendCapiEvents, type CapiCredentials, type ConversionForCapi, type MarketingCredentials } from "./meta";
@@ -408,22 +428,120 @@ interface ServiceAccount {
   private_key: string;
 }
 
-export async function loadGa4Sessions(day: string): Promise<JobResult> {
+/**
+ * GA4 traffic for the funnel and the Analytics page.
+ * With GA4_PROPERTY_ID set: the GA4 Data API (loadGa4Report). The daily run re-reads the last
+ * 3 days (GA4 keeps updating them for up to 48 h), and backfills 90 days the first time.
+ * `opts.days` asks for a specific window ending on `day` (at most 90 days).
+ * Without it: the GA4 BigQuery export for one day, as before.
+ */
+export async function loadGa4Sessions(day: string, opts: { days?: number } = {}): Promise<JobResult> {
   const sa = await readJsonSecret<ServiceAccount>("ga4");
+  const propertyId = ga4PropertyId();
+  if (propertyId) {
+    if (!sa?.client_email || !sa.private_key) return { status: "skipped", detail: "GA4_PROPERTY_ID is set but no GA4 service account is saved. Add it in Connections → GA4 / Firebase." };
+    let days = opts.days ? Math.min(Math.max(Math.trunc(opts.days), 1), GA4_MAX_DAYS) : GA4_DAILY_DAYS;
+    if (!opts.days) {
+      const [have] = await db.select({ n: sql<number>`count(*)::int` }).from(ga4Daily).where(eq(ga4Daily.propertyId, propertyId));
+      if (!have?.n) days = GA4_MAX_DAYS;
+    }
+    try {
+      return await loadGa4Report(propertyId, sa, addDays(day, -(days - 1)), day);
+    } catch (e) {
+      await db
+        .update(connections)
+        .set({ status: "error", error: (e instanceof Error ? e.message : String(e)).slice(0, 500), updatedAt: new Date() })
+        .where(eq(connections.key, "ga4"));
+      throw e;
+    }
+  }
   const projectId = process.env.GA4_BQ_PROJECT || sa?.project_id || process.env.GCP_PROJECT_ID;
   if (!projectId) return { status: "skipped", detail: "No BigQuery project. Set GA4_BQ_PROJECT or connect GA4." };
   // Without GA4_BQ_DATASET, use the analytics_<property id> dataset once GA4 starts exporting.
   const dataset = process.env.GA4_BQ_DATASET || (await findGa4Dataset(projectId, sa ? { client_email: sa.client_email, private_key: sa.private_key } : undefined));
-  if (!dataset) return { status: "skipped", detail: `No GA4 export in BigQuery project ${projectId} yet. In GA4: Admin > Product links > BigQuery links.` };
+  if (!dataset) {
+    return { status: "skipped", detail: `No GA4 export in BigQuery project ${projectId} yet. In GA4: Admin > Product links > BigQuery links. Or set GA4_PROPERTY_ID to read GA4 through its Data API.` };
+  }
   const byChannel = await fetchGa4Sessions(
     { projectId, dataset, credentials: sa ? { client_email: sa.client_email, private_key: sa.private_key } : undefined },
     day,
   );
   const rows = Object.entries(byChannel).map(([channel, sessions]) => ({ day, channel, sessions: sessions ?? 0 }));
-  await db.delete(webSessionsDaily).where(eq(webSessionsDaily.day, day));
-  if (rows.length) await db.insert(webSessionsDaily).values(rows);
+  await db.transaction(async (tx) => {
+    await tx.delete(webSessionsDaily).where(eq(webSessionsDaily.day, day));
+    if (rows.length) await tx.insert(webSessionsDaily).values(rows);
+  });
   if (sa) await markSynced("ga4");
   return { status: "succeeded", detail: `Loaded sessions for ${rows.length} channels on ${day}.`, rows: rows.length };
+}
+
+export const GA4_DAILY_DAYS = 3;
+export const GA4_MAX_DAYS = 90;
+export const GA4_PERIODS = [7, 28, 90] as const;
+
+const insertChunks = async <T>(rows: T[], insert: (part: T[]) => Promise<unknown>) => {
+  for (let i = 0; i < rows.length; i += 1000) await insert(rows.slice(i, i + 1000));
+};
+
+/**
+ * Reads GA4 for [from, to] (in 30-day requests) and replaces that window in the ga4_* tables and
+ * web_sessions_daily in one transaction, then refreshes the 7/28/90-day totals ending on `to`.
+ * Re-running it for the same window gives the same rows; a failure part-way changes nothing.
+ */
+export async function loadGa4Report(propertyId: string, sa: Ga4ServiceAccount, from: string, to: string, deps: Ga4ClientDeps = {}): Promise<JobResult> {
+  const client = ga4Client(propertyId, sa, deps);
+  const daily: Ga4DayRow[] = [];
+  const sources: Ga4SourceRow[] = [];
+  const pages: Ga4PageRow[] = [];
+  const notes = new Set<string>();
+  let tokensLeft: number | undefined;
+  for (const [s, e] of chunkRange(from, to, 30)) {
+    const [dd, ss, pp] = [await fetchDaily(client, s, e), await fetchSources(client, s, e), await fetchPages(client, s, e)];
+    daily.push(...dd.rows);
+    sources.push(...ss.rows);
+    pages.push(...pp.rows);
+    for (const r of [dd, ss, pp]) {
+      if (r.meta?.subjectToThresholding) notes.add("GA4 withheld some small numbers (thresholding).");
+      if (r.meta?.dataLossFromOtherRow) notes.add("GA4 grouped some rows as (other).");
+      tokensLeft = r.quota?.tokensPerDay?.remaining ?? tokensLeft;
+    }
+  }
+  const totals: (typeof ga4PeriodTotals.$inferInsert)[] = [];
+  for (const days of GA4_PERIODS) {
+    const startDay = addDays(to, -(days - 1));
+    totals.push({ propertyId, rangeDays: days, startDay, endDay: to, ...(await fetchTotals(client, startDay, to)) });
+  }
+  const channels = sessionsByAttributionChannel(sources);
+  const window = (col: AnyColumn) => and(sql`${col} >= ${from}::date`, sql`${col} <= ${to}::date`);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(ga4Daily).where(and(eq(ga4Daily.propertyId, propertyId), window(ga4Daily.day)));
+    await tx.delete(ga4DailySources).where(and(eq(ga4DailySources.propertyId, propertyId), window(ga4DailySources.day)));
+    await tx.delete(ga4DailyPages).where(and(eq(ga4DailyPages.propertyId, propertyId), window(ga4DailyPages.day)));
+    await tx.delete(webSessionsDaily).where(window(webSessionsDaily.day));
+    await insertChunks(daily.map((r) => ({ propertyId, ...r })), (part) => tx.insert(ga4Daily).values(part));
+    await insertChunks(sources.map((r) => ({ propertyId, ...r })), (part) => tx.insert(ga4DailySources).values(part));
+    await insertChunks(pages.map((r) => ({ propertyId, ...r })), (part) => tx.insert(ga4DailyPages).values(part));
+    await insertChunks(channels, (part) => tx.insert(webSessionsDaily).values(part));
+    for (const t of totals) {
+      const { propertyId: _propertyId, rangeDays: _rangeDays, ...set } = t;
+      await tx
+        .insert(ga4PeriodTotals)
+        .values(t)
+        .onConflictDoUpdate({ target: [ga4PeriodTotals.propertyId, ga4PeriodTotals.rangeDays], set: { ...set, loadedAt: new Date() } });
+    }
+    await tx.update(connections).set({ status: "connected", lastSyncAt: new Date(), error: null, updatedAt: new Date() }).where(eq(connections.key, "ga4"));
+  });
+
+  const sessions = daily.reduce((t, r) => t + r.sessions, 0);
+  const detail = [
+    `GA4 property ${propertyId}, ${from} to ${to}: ${sessions.toLocaleString("en-IN")} sessions, ${sources.length} source rows, ${pages.length} page rows.`,
+    ...notes,
+    tokensLeft !== undefined ? `Quota left today: ${tokensLeft} tokens.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return { status: "succeeded", detail, rows: daily.length + sources.length + pages.length };
 }
 
 export async function rebuild(from: string, to: string): Promise<JobResult> {

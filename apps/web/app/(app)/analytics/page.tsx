@@ -8,25 +8,28 @@ import { costPerActivated, funnelByChannel, funnelTotals, returnOnSpend, weeklyA
 import { FunnelStrip, PeriodBars } from "@/components/charts";
 import { Card, CardHeader, EmptyState, PageHeader, Pill, StatusPill, Table } from "@/components/ui";
 import { AgentRunPanel } from "@/components/agent-run-panel";
+import { Ga4Section } from "@/components/ga4-section";
+import { ga4Overview } from "@/lib/ga4";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Analytics" };
 
-const RANGES = [7, 28] as const;
+const RANGES = [7, 28, 90] as const;
 const channelName = channelLabel;
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
-  await requireModule("analytics");
+  const user = await requireModule("analytics");
   const { days: d } = await searchParams;
-  const days = RANGES.includes(Number(d) as 7 | 28) ? Number(d) : 28;
+  const days = RANGES.includes(Number(d) as (typeof RANGES)[number]) ? Number(d) : 28;
 
-  const [totals, channels, weeks, ads, [lastRebuild], recentReports] = await Promise.all([
+  const [totals, channels, weeks, ads, [lastRebuild], recentReports, ga4] = await Promise.all([
     funnelTotals(days),
     funnelByChannel(days),
     weeklyActivations(8),
     creativePerformance(toIsoDate(daysAgo(days)), toIsoDate(daysAgo(1)), 15),
     db.select().from(pipelineRuns).where(eq(pipelineRuns.job, "rebuild_funnel")).orderBy(desc(pipelineRuns.startedAt)).limit(1),
     db.select().from(reports).orderBy(desc(reports.periodStart), desc(reports.createdAt)).limit(8),
+    ga4Overview(days),
   ]);
   const now = new Date();
   // Ads are judged against other ads, not against a blend that includes free organic signups.
@@ -64,6 +67,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       <div className="mb-6">
         <FunnelStrip totals={totals} />
       </div>
+
+      <Ga4Section data={ga4} days={days} isAdmin={user.role === "admin"} />
 
       <div className="mb-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
         <Card>
