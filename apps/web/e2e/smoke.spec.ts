@@ -19,6 +19,7 @@ const MODULES: [string, RegExp][] = [
   ["/chat", /Ask the agents/],
   ["/connections", /Connections/],
   ["/admin", /Admin/],
+  ["/runs", /Agent runs/],
 ];
 
 async function noErrorPage(page: Page) {
@@ -41,6 +42,15 @@ test("an idea added to the calendar opens in the editor", async ({ page }) => {
   await page.getByRole("button", { name: /add idea/i }).click();
   await page.getByRole("link", { name: /write the caption/i }).click();
   await expect(page.locator("input[name=\"idea\"]")).toHaveValue(idea);
+  await noErrorPage(page);
+});
+
+test("a run opens its step log (live's Run Steps page)", async ({ page }) => {
+  await page.goto("/runs");
+  await page.locator("a[href^='/runs/']").first().click();
+  await expect(page).toHaveURL(/\/runs\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("What it did")).toBeVisible();
+  await expect(page.getByText("Steps", { exact: true })).toBeVisible();
   await noErrorPage(page);
 });
 
