@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { CopyLink } from "@/components/copy-link";
-import { createClientWorkspace } from "./actions";
+import { addAgencyAdmin, createClientWorkspace, removeAgencyAdmin } from "./actions";
 import type { SecretResult } from "@/app/(platform)/super-admin/actions";
 
 const input = "w-full rounded-lg border border-rule bg-card px-3 py-2 text-sm";
@@ -73,6 +73,48 @@ export function NewClientForm() {
         <div className="sm:col-span-2">
           <CopyLink href={state.value} note={state.message} label="One-time password link for their first admin" />
         </div>
+      )}
+    </form>
+  );
+}
+
+/** Somebody new who runs the agency. */
+export function AddAgencyAdminForm() {
+  const [state, action, pending] = useActionState<SecretResult, FormData>(addAgencyAdmin, null);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-3 px-5 pb-5">
+      <label className="block min-w-[260px] flex-1 text-sm">
+        <span className="mb-1 block font-medium">Their email</span>
+        <input name="email" type="email" required className={input} placeholder="colleague@agency.com" />
+      </label>
+      <button
+        disabled={pending}
+        className="rounded-lg bg-night px-3 py-2 text-sm font-medium text-white hover:bg-night-2 disabled:opacity-60"
+      >
+        {pending ? "Adding…" : "Add"}
+      </button>
+      {state && (
+        <p role={state.ok ? "status" : "alert"} className={`w-full text-sm ${state.ok ? "text-leaf" : "text-sindoor"}`}>
+          {state.ok ? state.message : state.error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/** Takes one person off the agency. */
+export function RemoveAgencyAdminForm({ email }: { email: string }) {
+  const [state, action, pending] = useActionState<SecretResult, FormData>(removeAgencyAdmin, null);
+  return (
+    <form action={action} className="inline-flex flex-col items-end gap-1">
+      <input type="hidden" name="email" value={email} />
+      <button disabled={pending} className="text-sm font-medium text-sindoor hover:underline disabled:opacity-60">
+        {pending ? "Removing…" : "Remove"}
+      </button>
+      {state && !state.ok && (
+        <span role="alert" className="text-xs text-sindoor">
+          {state.error}
+        </span>
       )}
     </form>
   );

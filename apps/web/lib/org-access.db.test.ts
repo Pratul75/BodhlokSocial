@@ -144,4 +144,43 @@ describe.skipIf(!reachable)("how far an agency reaches", () => {
     await mod.setOrgLimits(agency.id, { maxWorkspaces: null, monthlyBudgetUsd: null });
     expect(await mod.roomForAnotherWorkspace(agency.id)).toEqual({ ok: true });
   });
+  it("somebody added to the agency gets an account in the clients it fully reaches, and only those", async () => {
+    // The other half of the model: `applyAccessLevel` is one client and every person,
+    // `grantAgencyAdminAccounts` is one person and every client. Without it a new agency admin
+    // holds a panel full of workspaces they cannot open.
+    const NEWBIE = "second@agency.test";
+    const accountFor = async (tenant: import("@bodh/db").TenantRef) =>
+      mod.withTenant(tenant, async () => {
+        const [row] = await mod.db.select().from(mod.users).where(eq(mod.users.email, NEWBIE)).limit(1);
+        return row ? row.active : null;
+      });
+
+    // The client is deliberately held at manage: adding a colleague must not widen the agency's
+    // reach, only match it.
+    await access.applyAccessLevel(agency, client, "manage", "super-admin@test");
+    await mod.addOrgAdmin(agency.id, NEWBIE, BOSS);
+
+    const grant = await access.grantAgencyAdminAccounts(agency, NEWBIE);
+    expect(grant.failed).toEqual([]);
+    expect(grant.granted).toBe(1);
+    expect(await accountFor(own)).toBe(true);
+    expect(await accountFor(client)).toBeNull();
+    expect((await ws.openableWorkspaces(NEWBIE, own)).map((t) => t.slug)).toEqual(["recharge-studio"]);
+
+    // Once the platform opens the client, the same call reaches it.
+    await access.applyAccessLevel(agency, client, "full", "super-admin@test");
+    const again = await access.grantAgencyAdminAccounts(agency, NEWBIE);
+    expect(again.granted).toBe(2);
+    expect(await accountFor(client)).toBe(true);
+    expect((await ws.openableWorkspaces(NEWBIE, own)).map((t) => t.slug).sort()).toEqual([
+      "client-abc",
+      "recharge-studio",
+    ]);
+
+    // Taking them off the agency closes the panel and leaves the accounts alone — the same rule
+    // the platform console follows, so neither door surprises the other.
+    await mod.removeOrgAdmin(agency.id, NEWBIE);
+    expect(await mod.runsOrg(NEWBIE, agency.id)).toBe(false);
+    expect(await accountFor(client)).toBe(true);
+  });
 });

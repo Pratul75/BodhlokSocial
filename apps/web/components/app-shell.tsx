@@ -39,7 +39,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   // The agency's own panel, shown only to whoever runs this agency. Showing the way in is not
   // what grants it: /org asks the control plane again on every request.
   const agency = await runsThisAgency(user);
-  if (agency) nav.push({ href: "/org", label: "My clients", group: "Settings", badge: undefined });
+  if (agency) nav.push({ href: "/org/clients", label: "My clients", group: "Settings", badge: undefined });
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">

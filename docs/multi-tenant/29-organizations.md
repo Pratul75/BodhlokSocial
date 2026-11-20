@@ -358,7 +358,7 @@ never sees the organization field.
   The workspace ceiling is checked before a client is built. The AI ceiling is checked where
   per-workspace budgets are set, because that is the only place one can be raised.
 
-### What this does not do yet
+### What is not built yet
 
 - **Module ceilings.** An agency's plan can cap workspaces and AI spend, not which modules its
   clients may be given. Each client's modules are still set per workspace by the platform.
@@ -368,3 +368,51 @@ never sees the organization field.
 - **Open questions 1 and 2 in section 9** — deleting an organization, and grouping the sign-in
   picker for somebody who works for two agencies — are untouched. Neither can happen yet without
   a platform operator doing it deliberately.
+
+**Phase 6.** The agency's panel stops being a smaller imitation of the console and becomes the
+console, asked about one agency.
+
+There is one implementation of the workspace pages — overview, People, Modules, Features,
+Integrations, Usage, Security, Settings — and two principals in front of it. `requireWorkspaceAdmin`
+decides which: a platform operator session wins; otherwise the signed-in person must run the
+agency that workspace belongs to, and its access level must not be `none`. Anything else is
+`notFound()`, never a refusal, because a refusal would confirm that another agency's client
+exists. `/org/clients/[id]/…` re-exports those same pages, so a tab added to the console appears
+in both panels or in neither; there is no second copy to forget.
+
+The rail carries the same questions the console's does:
+
+| Console | Agency |
+| --- | --- |
+| Overview | Overview — its own workspaces, approvals waiting, tokens, spend |
+| Workspaces | My clients — the same table, the same filters, scoped |
+| Token use | Token use — the same three windows |
+| Operators | Who runs this agency |
+| Audit log | Audit log — its workspaces, and the agency itself |
+
+Two things are read before anything else, not after:
+
+- **Which workspaces may be read.** `workspaceStatsFor` and `tokenUseByWorkspace` take the list
+  rather than fetching it, so an agency's pages open only its own schemas. A client at `none` is
+  absent from the tiles, the rail's badge, the trail and the usage table, not filtered out of
+  them afterwards.
+- **Who a change is attributed to.** Every workspace action takes the tenant id from the form,
+  then asks `requireWorkspaceManager` whether this person may change *that* workspace, and
+  writes the audit row against whoever they are. The UI hiding a button was never the guard.
+
+Adding somebody to an agency now does the thing: they get an admin account in each client the
+agency already fully reaches, and in none of the others — the same call from the platform console
+and from the agency's own Team page, so neither door behaves differently. Taking somebody off
+closes the panel and leaves their workspace accounts alone, which is the rule the console already
+followed: running the agency and being somebody inside a workspace are two facts, and nothing
+records which of them an account came from.
+
+### What an agency still cannot do
+
+These remain the platform's, and the agency's pages do not show the controls at all:
+
+- **Suspend, restore or archive a workspace.** The status form is the platform owner's.
+- **Set its own access level** into a client, or its own ceilings. An agency widening its own
+  reach is the one thing the model cannot allow.
+- **See the plumbing** — schema name, database role, secret rotation. An agency has no use for
+  them and no way to act on them.

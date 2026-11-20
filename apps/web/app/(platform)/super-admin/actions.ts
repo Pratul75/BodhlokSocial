@@ -41,7 +41,7 @@ import {
 } from "@bodh/shared";
 import { issueResetToken, platformAudit, requireOperator, requireOwner } from "@/lib/platform-auth";
 import { buildWorkspace } from "@/lib/provision";
-import { applyAccessLevel } from "@/lib/org-access";
+import { applyAccessLevel, grantAgencyAdminAccounts } from "@/lib/org-access";
 import { passwordProblem } from "@/lib/passwords";
 import { EVENTS_SECRET_KEY, FEED_TOKEN_KEY, rotateTenantSecret } from "@/lib/tenant-secrets";
 import { cookieOptions, createImpersonationToken, IMPERSONATION_COOKIE, verifyImpersonationToken } from "@/lib/session";
@@ -583,9 +583,22 @@ export async function addOrganizationAdmin(_prev: SecretResult, formData: FormDa
   if (!org) return { ok: false, error: "That organization no longer exists." };
 
   await addOrgAdmin(org.id, email, op.email);
-  await platformAudit({ actor: op.email, action: "add_org_admin", target: org.slug, detail: { email } });
+  // The same grant the agency's own panel does. Adding somebody to an agency and leaving them
+  // without an account in its clients is the gap, not the safeguard: the panel would open on
+  // workspaces they cannot enter, and nothing would say why.
+  const grant = await grantAgencyAdminAccounts(org, email);
+  await platformAudit({
+    actor: op.email,
+    action: "add_org_admin",
+    target: org.slug,
+    detail: { email, granted: grant.granted, failed: grant.failed.join(", ") || null },
+  });
   revalidatePath("/super-admin/orgs");
-  return { ok: true, message: `${email} runs ${org.name}. They sign in as they always have; /org is now open to them.` };
+  const trouble = grant.failed.length ? ` ${grant.failed.join(", ")} could not be reached.` : "";
+  return {
+    ok: true,
+    message: `${email} runs ${org.name}, with an admin account in ${grant.granted} of its workspaces.${trouble} /org is now open to them.`,
+  };
 }
 
 export async function removeOrganizationAdmin(_prev: SecretResult, formData: FormData): Promise<SecretResult> {

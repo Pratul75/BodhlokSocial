@@ -233,8 +233,11 @@ export interface WorkspaceTokens {
  * cannot be read says so instead of reporting zero. A zero and a failure look identical on a
  * usage page, and only one of them means the workspace is idle.
  */
-export async function tokenUseByWorkspace(window: UsageWindow): Promise<WorkspaceTokens[]> {
-  const tenants = await listTenants();
+export async function tokenUseByWorkspace(window: UsageWindow, only?: string[]): Promise<WorkspaceTokens[]> {
+  // An agency asks the same question about the workspaces it may see. Narrowing here rather than
+  // after the fact means no other workspace's schema is opened, not even to discard the answer.
+  const allow = only ? new Set(only) : null;
+  const tenants = (await listTenants()).filter((t) => !allow || allow.has(t.id));
   const plans = (await ownerSql()<{ id: string; plan: string }[]>`
     select id, plan from platform.tenants`) as unknown as { id: string; plan: string }[];
   const planOf = new Map(plans.map((p) => [p.id, p.plan]));

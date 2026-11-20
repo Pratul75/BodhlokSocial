@@ -38,7 +38,7 @@ export function AgencyWorkspaceFrame({
       email={email}
       clients={clients}
       title={name}
-      crumbs={[{ label: "My clients", href: "/org" }, { label: name }]}
+      crumbs={[{ label: "My clients", href: "/org/clients" }, { label: name }]}
       actions={
         <div className="flex items-center gap-3">
           <WorkspacePill status={status} />

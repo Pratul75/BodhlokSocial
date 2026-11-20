@@ -14,7 +14,16 @@ export function AgencyNav({ clients }: { clients: number }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const items = [{ href: "/org", label: "My clients", group: "Agency", badge: clients, exact: false }];
+  // The console's rail, asked about one agency. Same groups, same order: Super Admin's
+  // Workspaces are this agency's clients, and everything it can see about a workspace the
+  // agency can see about its own.
+  const items = [
+    { href: "/org", label: "Overview", group: "Agency", badge: undefined as number | undefined, exact: true },
+    { href: "/org/clients", label: "My clients", group: "Agency", badge: clients, exact: false },
+    { href: "/org/usage", label: "Token use", group: "Agency", badge: undefined as number | undefined, exact: false },
+    { href: "/org/team", label: "Who runs this agency", group: "People", badge: undefined as number | undefined, exact: false },
+    { href: "/org/audit", label: "Audit log", group: "People", badge: undefined as number | undefined, exact: false },
+  ];
   const groups = [...new Set(items.map((i) => i.group))];
 
   return (

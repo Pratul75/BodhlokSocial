@@ -15,9 +15,10 @@ export interface AgencyCrumb {
  * the same width, the same thin top bar, the same single content column.
  *
  * Running four clients and running forty is the same job, and somebody who has seen one of
- * these panels should not have to learn the other. What differs is what is in the rail — an
- * agency has clients, not operators and audit logs — and the way out, which for an agency goes
- * back to its own workspace rather than to a sign-in page.
+ * these panels should not have to learn the other. The rail carries the same questions, asked
+ * about one agency: its clients where the console has every workspace, the people who run it
+ * where the console has operators. What differs is the way out, which for an agency goes back
+ * to its own workspace rather than to a sign-in page.
  */
 export function AgencyShell({
   orgName,

@@ -85,3 +85,60 @@ export async function applyAccessLevel(
     message: `${org.name} can no longer open ${tenant.name}; it sees counts and totals only. ${who} lost their account there.${tail}`,
   };
 }
+
+export interface GrantResult {
+  /** Clients where this person now has an active admin account. */
+  granted: number;
+  /** Clients that could not be reached, by name, so the message can say so. */
+  failed: string[];
+}
+
+/**
+ * One person, newly running an agency, given an account in the clients that agency fully
+ * reaches.
+ *
+ * `applyAccessLevel` answers "this client, every one of the agency's people". This answers the
+ * other half — "this person, every client" — which is what adding somebody to an agency has to
+ * mean. Without it a new agency admin would hold a panel they cannot open anything from, until
+ * somebody thought to re-apply each client's access level, and nothing would say so.
+ *
+ * Only clients already at `full` are touched: adding a colleague is not a way to widen an
+ * agency's reach. One client that cannot be read is named in the result rather than thrown —
+ * the person is already on the agency by the time this runs, and a half-finished grant that
+ * reports itself can be finished, while a crash page cannot.
+ */
+export async function grantAgencyAdminAccounts(org: OrgRef, email: string): Promise<GrantResult> {
+  const { accessLevels, workspacesOf } = await import("@bodh/db");
+  const [held, levels] = await Promise.all([workspacesOf(org.id), accessLevels(org.id)]);
+  const out: GrantResult = { granted: 0, failed: [] };
+
+  for (const tenant of held) {
+    if ((levels.get(tenant.id) ?? "full") !== "full") continue;
+    if (!tenant.dbRole || tenant.status !== "active") continue;
+    try {
+      const existing = await withTenant(tenant, async () => {
+        const [row] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+        return row ?? null;
+      });
+      if (existing?.active) {
+        out.granted++;
+        continue;
+      }
+      if (existing) {
+        await withTenant(tenant, () => db.update(users).set({ active: true }).where(eq(users.id, existing.id)));
+      } else {
+        await withTenant(tenant, () =>
+          db
+            .insert(users)
+            .values({ email, name: email.split("@")[0]!, role: "admin" })
+            .onConflictDoNothing(),
+        );
+      }
+      await noteUserInDirectory(tenant.id, email, true);
+      out.granted++;
+    } catch {
+      out.failed.push(tenant.name);
+    }
+  }
+  return out;
+}
