@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { createClientWorkspace } from "./actions";
+import { switchWorkspace, type SwitchResult } from "@/app/(app)/switch-workspace";
 import type { SecretResult } from "@/app/(platform)/super-admin/actions";
 
 const input = "w-full rounded-lg border border-rule bg-card px-3 py-2 text-sm";
@@ -73,6 +74,27 @@ export function NewClientForm() {
         <div className="sm:col-span-2">
           <CopyLink href={state.value} note={state.message} label="One-time password link for their first admin" />
         </div>
+      )}
+    </form>
+  );
+}
+
+/** Walks into a client the agency has an account in — the switcher, as a button. */
+export function SwitchIntoClient({ tenantId, name }: { tenantId: string; name: string }) {
+  const [state, action, pending] = useActionState<SwitchResult, FormData>(switchWorkspace, null);
+  return (
+    <form action={action} className="flex items-center gap-2">
+      <input type="hidden" name="tenantId" value={tenantId} />
+      <button
+        disabled={pending}
+        className="rounded-lg bg-night px-3 py-2 text-sm font-medium text-white hover:bg-night-2 disabled:opacity-60"
+      >
+        {pending ? "Opening…" : `Open ${name}`}
+      </button>
+      {state?.error && (
+        <span role="alert" className="text-xs text-sindoor">
+          {state.error}
+        </span>
       )}
     </form>
   );

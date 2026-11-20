@@ -11,7 +11,18 @@ const field =
  * Search, filter and sort, kept in the address bar rather than in component state: a filtered
  * list is then a link an operator can keep or send, and the back button does what it should.
  */
-export function WorkspaceFilters({ q, status, sort }: { q: string; status: string; sort: string }) {
+export function WorkspaceFilters({
+  q,
+  status,
+  sort,
+  basePath = "/super-admin/workspaces",
+}: {
+  q: string;
+  status: string;
+  sort: string;
+  /** Where the filtered list lives. The agency's panel shows the same list at its own address. */
+  basePath?: string;
+}) {
   const router = useRouter();
   const params = useSearchParams();
   const [text, setText] = useState(q);
@@ -24,7 +35,7 @@ export function WorkspaceFilters({ q, status, sort }: { q: string; status: strin
       if (v && v !== "all" && !(k === "sort" && v === "name")) p.set(k, v);
       else p.delete(k);
     }
-    router.replace(`/super-admin/workspaces${p.toString() ? `?${p}` : ""}`);
+    router.replace(`${basePath}${p.toString() ? `?${p}` : ""}`);
   };
 
   return (

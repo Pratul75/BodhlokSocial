@@ -1,94 +1,66 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import {
-  accessLevels,
-  agentRuns,
-  approvals,
-  db,
-  orgLimits,
-  users,
-  withTenant,
-  workspacesOf,
-  type AccessLevel,
-  type TenantRef,
-} from "@bodh/db";
-import { count, eq, gte, sql as dsql } from "drizzle-orm";
+import { accessLevels, orgLimits, workspacesOf, type AccessLevel } from "@bodh/db";
 import { requireOrgAdmin } from "@/lib/org-auth";
-import { Card, CardHeader, PageHeader, StatusPill } from "@/components/ui";
+import { workspaceStatsFor } from "@/lib/platform-stats";
+import { Card, CardHeader, EmptyState, PageHeader, StatusPill } from "@/components/ui";
+import { WorkspaceFilters } from "@/app/(platform)/super-admin/workspaces/filters";
+import { ago } from "@/lib/format";
 import { NewClientForm } from "./forms";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "My clients" };
 
-interface Row {
-  tenant: TenantRef;
-  people: number;
-  pending: number;
-  runs30d: number;
-  tokens30d: number;
-  usd30d: number;
-  error?: string;
-}
-
-const since = (days: number) => new Date(Date.now() - days * 86_400_000);
+const short = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 10_000 ? `${Math.round(n / 1000)}k` : n.toLocaleString("en-IN");
 
 /**
- * Each workspace read through its own read-only role, the same way the platform console reads
- * them. Counts and totals only — what the agency needs to run the account. The content lives
- * behind the workspace's own door, and an agency with an account there opens it the ordinary
- * way, from the switcher.
+ * The agency's workspaces, shown the way the platform console shows workspaces — the same
+ * columns, the same search, the same sort. An agency running four clients is doing the same job
+ * an operator does across forty, and two lists that answer the same question should not have to
+ * be learned twice.
+ *
+ * What differs is the scope and what is on offer. Only this agency's workspaces are read — no
+ * other agency's schema is touched, not even to throw the answer away — and none of the
+ * platform's own business is here: no schema names, no database roles, no suspending and no
+ * deleting.
  */
-async function numbersFor(tenant: TenantRef): Promise<Row> {
-  const base = { tenant, people: 0, pending: 0, runs30d: 0, tokens30d: 0, usd30d: 0 };
-  if (!tenant.dbRole) return { ...base, error: "No database role yet" };
-  try {
-    return await withTenant({ ...tenant, readOnly: true }, async () => {
-      const [[people], [waiting], [ai]] = await Promise.all([
-        db.select({ n: count() }).from(users).where(eq(users.active, true)),
-        db.select({ n: count() }).from(approvals).where(eq(approvals.status, "pending")),
-        db
-          .select({
-            n: count(),
-            usd: dsql<number>`coalesce(sum(${agentRuns.costUsd}), 0)::float`,
-            tokens: dsql<string>`coalesce(sum(${agentRuns.tokensIn} + ${agentRuns.tokensOut}), 0)::bigint`,
-          })
-          .from(agentRuns)
-          .where(gte(agentRuns.startedAt, since(30))),
-      ]);
-      return {
-        tenant,
-        people: people?.n ?? 0,
-        pending: waiting?.n ?? 0,
-        runs30d: ai?.n ?? 0,
-        tokens30d: Number(ai?.tokens ?? 0),
-        usd30d: ai?.usd ?? 0,
-      };
-    });
-  } catch (e) {
-    // Named rather than reported as zero: on a page of numbers the two look identical, and only
-    // one of them means the client is idle.
-    return { ...base, error: e instanceof Error ? e.message.slice(0, 120) : "Could not read this workspace" };
-  }
-}
-
-const short = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 10_000 ? `${Math.round(n / 1000)}k` : n.toLocaleString("en-IN"));
-
-export default async function OrgHome() {
+export default async function OrgHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; status?: string; sort?: string }>;
+}) {
   const { user, org } = await requireOrgAdmin();
+  const { q = "", status = "all", sort = "name" } = await searchParams;
+
   const all = await workspacesOf(org.id);
   const [levels, limits] = await Promise.all([accessLevels(org.id), orgLimits(org.id)]);
   const levelOf = (id: string): AccessLevel => levels.get(id) ?? "full";
-  // A client set to `none` is not listed here at all. The workspace itself is untouched: it has
-  // its own people and carries on exactly as before.
-  const workspaces = all.filter((t) => t.id === user.tenant.id || levelOf(t.id) !== "none");
-  const hidden = all.length - workspaces.length;
-  const rows: Row[] = [];
-  for (const t of workspaces) rows.push(await numbersFor(t));
 
-  const clients = rows.filter((r) => r.tenant.id !== user.tenant.id);
-  const totalSpend = rows.reduce((n, r) => n + r.usd30d, 0);
-  const totalTokens = rows.reduce((n, r) => n + r.tokens30d, 0);
-  const waiting = rows.reduce((n, r) => n + r.pending, 0);
+  // A client set to `none` is not listed at all. The workspace itself is untouched: it has its
+  // own people and carries on exactly as before.
+  const visible = all.filter((t) => t.id === user.tenant.id || levelOf(t.id) !== "none");
+  const hidden = all.length - visible.length;
+  const stats = await workspaceStatsFor(visible);
+
+  const needle = q.trim().toLowerCase();
+  let rows = stats.filter((s) => {
+    if (status !== "all" && s.tenant.status !== status) return false;
+    if (!needle) return true;
+    return s.tenant.name.toLowerCase().includes(needle) || s.tenant.slug.includes(needle);
+  });
+  rows = [...rows].sort((a, b) => {
+    if (sort === "people") return b.people - a.people;
+    if (sort === "spend") return b.aiSpend30d - a.aiSpend30d;
+    if (sort === "activity") return (b.lastActivity?.getTime() ?? 0) - (a.lastActivity?.getTime() ?? 0);
+    return a.tenant.name.localeCompare(b.tenant.name);
+  });
+
+  const totalSpend = stats.reduce((n, r) => n + r.aiSpend30d, 0);
+  const totalTokens = stats.reduce((n, r) => n + r.tokensIn30d + r.tokensOut30d, 0);
+  const waiting = stats.reduce((n, r) => n + r.pendingApprovals, 0);
+  const clients = all.filter((t) => t.id !== user.tenant.id).length;
+  const now = new Date();
 
   return (
     <main className="mx-auto max-w-[1240px] px-4 py-6 sm:px-8 sm:py-8">
@@ -98,17 +70,15 @@ export default async function OrgHome() {
       <PageHeader
         eyebrow={org.name}
         title="My clients"
-        description={`${all.length} workspaces in this agency, including your own. Each one has its own schema, its own database role and its own credentials.`}
+        description={`${all.length} workspaces in this agency, including your own. Each has its own data, its own people and its own credentials.`}
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="px-5 py-4">
           <div className="text-xs font-medium tracking-wide text-muted uppercase">Clients</div>
-          <div className="mt-1.5 font-display text-[26px] leading-none font-semibold tabular">{clients.length}</div>
+          <div className="mt-1.5 font-display text-[26px] leading-none font-semibold tabular">{clients}</div>
           <div className="mt-1.5 text-xs text-muted">
-            {limits.maxWorkspaces === null
-              ? "plus your own workspace"
-              : `${all.length} of ${limits.maxWorkspaces} workspaces used`}
+            {limits.maxWorkspaces === null ? "plus your own workspace" : `${all.length} of ${limits.maxWorkspaces} workspaces used`}
           </div>
         </Card>
         <Card className="px-5 py-4">
@@ -130,50 +100,79 @@ export default async function OrgHome() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader title="Workspaces" sub="Your own first. Open one from the switcher in the corner." />
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead className="border-b border-rule text-left text-xs tracking-wide text-muted uppercase">
-              <tr>
-                <th className="px-5 py-2.5 font-medium">Workspace</th>
-                <th className="px-3 py-2.5 font-medium">Status</th>
-                <th className="px-3 py-2.5 font-medium">Your access</th>
-                <th className="px-3 py-2.5 font-medium">People</th>
-                <th className="px-3 py-2.5 font-medium">Waiting</th>
-                <th className="px-3 py-2.5 font-medium">Tokens (30d)</th>
-                <th className="px-5 py-2.5 text-right font-medium">AI (30d)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.tenant.id} className="border-b border-rule/60 last:border-0">
-                  <td className="px-5 py-3">
-                    <span className="font-medium">{r.tenant.name}</span>
-                    {r.tenant.id === user.tenant.id && <span className="ml-2 text-xs text-muted">you are here</span>}
-                    <div className="mt-0.5 font-mono text-xs text-muted">{r.tenant.slug}</div>
-                    {r.error && <div className="mt-0.5 text-xs text-sindoor">{r.error}</div>}
-                  </td>
-                  <td className="px-3 py-3">
-                    <StatusPill status={r.tenant.status} />
-                  </td>
-                  <td className="px-3 py-3 text-xs text-muted">
-                    {r.tenant.id === user.tenant.id
-                      ? "your own"
-                      : levelOf(r.tenant.id) === "full"
-                        ? "you can open it"
-                        : "numbers only"}
-                  </td>
-                  <td className="px-3 py-3 tabular">{r.error ? "—" : r.people}</td>
-                  <td className="px-3 py-3 tabular">{r.error ? "—" : r.pending}</td>
-                  <td className="px-3 py-3 font-mono tabular">{r.error ? "—" : short(r.tokens30d)}</td>
-                  <td className="px-5 py-3 text-right font-mono tabular">{r.error ? "—" : `$${r.usd30d.toFixed(2)}`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <WorkspaceFilters q={q} status={status} sort={sort} basePath="/org" />
+
+      <div className="mt-4">
+        <Card>
+          {rows.length === 0 ? (
+            <EmptyState title={stats.length === 0 ? "No workspaces yet" : "Nothing matches that"}>
+              {stats.length === 0 ? "Create your first client below." : "Try a different search."}
+            </EmptyState>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] text-sm">
+                <thead className="border-b border-rule text-left text-xs tracking-wide text-muted uppercase">
+                  <tr>
+                    <th className="px-5 py-2.5 font-medium">Workspace</th>
+                    <th className="px-3 py-2.5 font-medium">Status</th>
+                    <th className="px-3 py-2.5 font-medium">People</th>
+                    <th className="px-3 py-2.5 font-medium">Access</th>
+                    <th className="px-3 py-2.5 font-medium">Waiting</th>
+                    <th className="px-3 py-2.5 font-medium">AI (30d)</th>
+                    <th className="px-3 py-2.5 font-medium">Last activity</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((s) => {
+                    const here = s.tenant.id === user.tenant.id;
+                    const canOpen = here || levelOf(s.tenant.id) === "full";
+                    return (
+                      <tr key={s.tenant.id} className="border-b border-rule/60 last:border-0 hover:bg-paper/60">
+                        <td className="px-5 py-3">
+                          <Link href={`/org/clients/${s.tenant.id}`} className="font-medium hover:underline">
+                            {s.tenant.name}
+                          </Link>
+                          {here && <span className="ml-2 text-xs text-muted">you are here</span>}
+                          <div className="mt-0.5 font-mono text-xs text-muted">{s.tenant.slug}</div>
+                          {s.error && <div className="mt-0.5 text-xs text-sindoor">{s.error}</div>}
+                        </td>
+                        <td className="px-3 py-3">
+                          <StatusPill status={s.tenant.status} />
+                        </td>
+                        <td className="px-3 py-3 tabular">{s.error ? "—" : s.people}</td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className="tabular">
+                            {s.modulesOn}/{s.modulesTotal}
+                          </span>
+                          <span className="text-muted"> modules</span>
+                        </td>
+                        <td className="px-3 py-3 tabular">{s.error ? "—" : s.pendingApprovals}</td>
+                        <td className="px-3 py-3 font-mono tabular">{s.error ? "—" : `$${s.aiSpend30d.toFixed(2)}`}</td>
+                        <td className="px-3 py-3 text-xs whitespace-nowrap text-muted">
+                          {s.lastActivity ? ago(s.lastActivity, now) : "never"}
+                        </td>
+                        <td className="px-5 py-3 text-right text-xs">
+                          <Link href={`/org/clients/${s.tenant.id}`} className="text-dusk hover:underline">
+                            View
+                          </Link>
+                          {!canOpen && <div className="mt-0.5 text-muted">numbers only</div>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {hidden > 0 && (
+        <p className="mt-4 text-xs text-muted">
+          {hidden} workspace{hidden === 1 ? " is" : "s are"} not shown here. Ask the platform if that is wrong.
+        </p>
+      )}
 
       <div className="mt-6">
         <Card>
@@ -185,16 +184,10 @@ export default async function OrgHome() {
         </Card>
       </div>
 
-      {hidden > 0 && (
-        <p className="mt-4 text-xs text-muted">
-          {hidden} workspace{hidden === 1 ? " is" : "s are"} not shown here. Ask the platform if that is wrong.
-        </p>
-      )}
-
       <p className="mt-6 text-xs text-muted">
         Numbers here are read live from each workspace through its read-only role. Nothing on this page reaches a
         client&rsquo;s content — posts, leads and messages are behind that workspace&rsquo;s own door, which you open from
-        the switcher like anybody else who works there.
+        the switcher in the corner.
       </p>
     </main>
   );

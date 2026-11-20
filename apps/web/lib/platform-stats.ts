@@ -113,15 +113,25 @@ async function statsFor(tenant: TenantRef, plan: string): Promise<WorkspaceStats
   }
 }
 
-/** Every workspace with its own numbers. One workspace failing does not lose the others. */
-export async function allWorkspaceStats(): Promise<WorkspaceStats[]> {
-  const tenants = await listTenants();
+/**
+ * The same numbers for a named set of workspaces.
+ *
+ * Takes the list rather than fetching it, so a caller who may only see some of them reads only
+ * those. An agency's own panel passes its own workspaces: it never touches another agency's
+ * schema, not even to throw the answer away afterwards.
+ */
+export async function workspaceStatsFor(tenants: TenantRef[]): Promise<WorkspaceStats[]> {
   const plans = (await ownerSql()<{ id: string; plan: string }[]>`
     select id, plan from platform.tenants`) as unknown as { id: string; plan: string }[];
   const planOf = new Map(plans.map((p) => [p.id, p.plan]));
   const out: WorkspaceStats[] = [];
   for (const t of tenants) out.push(await statsFor(t, planOf.get(t.id) ?? "full"));
   return out.sort((a, b) => a.tenant.name.localeCompare(b.tenant.name));
+}
+
+/** Every workspace with its own numbers. One workspace failing does not lose the others. */
+export async function allWorkspaceStats(): Promise<WorkspaceStats[]> {
+  return workspaceStatsFor(await listTenants());
 }
 
 export interface PlatformTotals {
