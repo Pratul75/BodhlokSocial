@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { workspacesOf } from "@bodh/db";
 import { requireWorkspaceAdmin } from "@/lib/workspace-admin";
 import { ConsoleShell } from "../../shell";
 import { WorkspacePill } from "../../ui";
@@ -28,9 +29,19 @@ export default async function WorkspaceLayout({
   const { viewer, tenant, plan } = await requireWorkspaceAdmin(id);
   const tabs = TABS.map((t) => ({ href: tabHref(id, t.slug, viewer.base), label: t.label }));
 
-  if (viewer.kind === "agency") {
+  if (viewer.kind === "agency" && viewer.org) {
+    const held = await workspacesOf(viewer.org.id);
     return (
-      <AgencyWorkspaceFrame id={tenant.id} name={tenant.name} status={tenant.status} org={viewer.org?.name ?? ""} tabs={tabs}>
+      <AgencyWorkspaceFrame
+        id={tenant.id}
+        name={tenant.name}
+        status={tenant.status}
+        org={viewer.org.name}
+        workspaceName={viewer.workspaceName ?? tenant.name}
+        email={viewer.email}
+        clients={held.length}
+        tabs={tabs}
+      >
         {children}
       </AgencyWorkspaceFrame>
     );

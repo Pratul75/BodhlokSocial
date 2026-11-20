@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { accessLevels, orgLimits, workspacesOf, type AccessLevel } from "@bodh/db";
 import { requireOrgAdmin } from "@/lib/org-auth";
 import { workspaceStatsFor } from "@/lib/platform-stats";
-import { Card, CardHeader, EmptyState, PageHeader, StatusPill } from "@/components/ui";
+import { Card, CardHeader, EmptyState, StatusPill } from "@/components/ui";
 import { WorkspaceFilters } from "@/app/(platform)/super-admin/workspaces/filters";
 import { ago } from "@/lib/format";
 import { NewClientForm } from "./forms";
+import { AgencyShell } from "./shell";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "My clients" };
@@ -63,15 +63,15 @@ export default async function OrgHome({
   const now = new Date();
 
   return (
-    <main className="mx-auto max-w-[1240px] px-4 py-6 sm:px-8 sm:py-8">
-      <Link href="/" className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
-        <ArrowLeft size={14} /> Back to {user.tenant.name}
-      </Link>
-      <PageHeader
-        eyebrow={org.name}
-        title="My clients"
-        description={`${all.length} workspaces in this agency, including your own. Each has its own data, its own people and its own credentials.`}
-      />
+    <AgencyShell
+      orgName={org.name}
+      workspaceName={user.tenant.name}
+      email={user.email}
+      clients={all.length}
+      title="My clients"
+      description={`${all.length} workspaces in this agency, including your own. Each has its own data, its own people and its own credentials.`}
+      crumbs={[{ label: "My clients" }]}
+    >
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="px-5 py-4">
@@ -189,6 +189,6 @@ export default async function OrgHome({
         client&rsquo;s content — posts, leads and messages are behind that workspace&rsquo;s own door, which you open from
         the switcher in the corner.
       </p>
-    </main>
+    </AgencyShell>
   );
 }

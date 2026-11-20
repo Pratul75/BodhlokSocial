@@ -10,9 +10,9 @@ import { requireOrgAdmin } from "@/lib/org-auth";
 export default async function OrgLayout({ children }: { children: React.ReactNode }) {
   const { user } = await requireOrgAdmin();
   return (
-    <div className="min-h-dvh bg-paper">
+    <>
       <WorkspaceGuard tenantId={user.tenant.id} tenantName={user.tenant.name} />
       {children}
-    </div>
+    </>
   );
 }

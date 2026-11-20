@@ -30,6 +30,8 @@ export interface WorkspaceViewer {
   /** The console session, when that is who this is. The console shell needs the whole of it. */
   operator?: Operator;
   org?: OrgRef;
+  /** For an agency: the workspace they are signed in to, which is where "back" goes. */
+  workspaceName?: string;
 }
 
 export interface WorkspaceAdminContext {
@@ -95,6 +97,7 @@ export async function requireWorkspaceAdmin(id: string): Promise<WorkspaceAdminC
       isPlatform: false,
       base: "/org/clients",
       org,
+      workspaceName: user.tenant.name,
     },
     tenant,
     plan: row.plan,
