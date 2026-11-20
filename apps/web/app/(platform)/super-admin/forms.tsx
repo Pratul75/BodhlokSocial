@@ -20,6 +20,8 @@ import {
   restoreWorkspace,
   addOrganizationAdmin,
   createOrganization,
+  setClientAccess,
+  setOrganizationLimits,
   removeOrganizationAdmin,
   renameOrganization,
   setOrganizationStatus,
@@ -681,5 +683,82 @@ export function OrgAdminsForm({ id, admins }: { id: string; admins: string[] }) 
         </p>
       )}
     </div>
+  );
+}
+
+/** What an agency was sold. Empty means no ceiling, which is where every agency starts. */
+export function OrgLimitsForm({
+  id,
+  maxWorkspaces,
+  monthlyBudgetUsd,
+  held,
+}: {
+  id: string;
+  maxWorkspaces: number | null;
+  monthlyBudgetUsd: number | null;
+  held: number;
+}) {
+  const [state, action, pending] = useActionState<SecretResult, FormData>(setOrganizationLimits, null);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-3">
+      <input type="hidden" name="id" value={id} />
+      <label className="block text-sm">
+        <span className="mb-1 block text-xs text-muted">Workspaces</span>
+        <input
+          name="maxWorkspaces"
+          type="number"
+          min={held}
+          defaultValue={maxWorkspaces ?? ""}
+          placeholder="no ceiling"
+          className="w-32 rounded-lg border border-rule bg-card px-2 py-1 text-sm"
+        />
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block text-xs text-muted">AI a month (USD)</span>
+        <input
+          name="monthlyBudgetUsd"
+          type="number"
+          min={0}
+          step="1"
+          defaultValue={monthlyBudgetUsd ?? ""}
+          placeholder="no ceiling"
+          className="w-36 rounded-lg border border-rule bg-card px-2 py-1 text-sm"
+        />
+      </label>
+      <button disabled={pending} className="rounded-lg border border-rule px-2.5 py-1.5 text-xs font-medium hover:bg-paper">
+        {pending ? "Saving…" : "Save ceilings"}
+      </button>
+      <span className="text-xs text-muted">holds {held} now</span>
+      {state && (
+        <p role={state.ok ? "status" : "alert"} className={`w-full text-xs ${state.ok ? "text-leaf" : "text-sindoor"}`}>
+          {state.ok ? state.message : state.error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/** How far the agency reaches into one of its clients. */
+export function ClientAccessForm({ tenantId, level }: { tenantId: string; level: string }) {
+  const [state, action, pending] = useActionState<SecretResult, FormData>(setClientAccess, null);
+  return (
+    <form action={action} className="flex items-center gap-1.5">
+      <input type="hidden" name="tenantId" value={tenantId} />
+      <select
+        name="level"
+        defaultValue={level}
+        className="rounded-lg border border-rule bg-card px-2 py-1 text-xs"
+        aria-label="How far the agency reaches into this client"
+      >
+        <option value="full">Full — works inside</option>
+        <option value="manage">Manage — numbers only</option>
+        <option value="none">None — hidden</option>
+      </select>
+      <button disabled={pending} className="rounded-lg border border-rule px-2 py-1 text-xs font-medium hover:bg-paper">
+        {pending ? "…" : "Set"}
+      </button>
+      {state && !state.ok && <span className="text-xs text-sindoor">{state.error}</span>}
+      {state?.ok && <span className="text-xs text-leaf">{state.message}</span>}
+    </form>
   );
 }

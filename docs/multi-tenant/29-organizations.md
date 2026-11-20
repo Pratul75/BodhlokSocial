@@ -1,6 +1,9 @@
 # Organizations: an agency, its own workspace, and its clients
 
-**Status: plan only. No code and no database change has been made.**
+**Status: built. All five phases are in the branch this document arrived on.**
+
+What follows is the plan as it was agreed, kept as it was written so the reasoning can be
+read against the result. Section 11 says what was actually built and where it differs.
 
 This is what was agreed in conversation, written down so it can be argued with
 before anything is built.
@@ -297,3 +300,59 @@ These can wait until Phase 4, but they are decisions, not details:
 
 *Written before any code. The structure above was agreed in conversation on
 20 November 2026; the phases are a proposal.*
+
+---
+
+## 11. What was built
+
+All five phases. Where the result differs from the plan above, it is because building it
+settled a question the plan had left open.
+
+**Phase 1.** `platform.orgs`, `tenants.org_id`, and a migrate step that creates the first
+organization and puts every existing workspace in it — named from `FIRST_ORG_NAME`, or after
+the installation. The console lists workspaces grouped by agency and asks which one a new
+workspace belongs to. Two rules the database enforces rather than the application: an
+organization with workspaces cannot be deleted out from under them, and suspending an agency
+leaves its clients' workspaces exactly as they were.
+
+**Phase 2.** Creating an organization creates its own workspace in the same step, through the
+same function that builds every other workspace. If the organization is made but the workspace
+fails, that is reported as what it is rather than rolled back into "nothing happened".
+
+**Phase 3.** The switcher in the corner of the sidebar, shown only to people with somewhere to
+go, narrowed to the agency they are in. A switch is a server action that checks the person still
+has an active row in the target and then issues a new session cookie.
+
+And the guard. The session now also writes the workspace where the page can read it; every page
+compares, and covers itself when they disagree. It checks on focus, on visibility, on pageshow
+**and on a five-second timer** — the timer was added after the browser used for testing turned
+out not to deliver the events at all, which is exactly the failure a guard must not have.
+
+**Phase 4.** `platform.org_admins` and `/org`, the agency's own panel: its workspaces with
+people, approvals waiting, tokens and spend, and a form that makes a client. An organization
+admin is **not** a third principal — they sign in as everybody does, and this only says which
+agency they run. Read on every request, so losing it takes effect on the next click.
+
+**Phase 5.** Access levels and ceilings.
+
+- `full` / `manage` / `none` per client, set by the platform. The level is recorded in
+  `platform.org_access`, but what enforces it is accounts existing or not existing in the
+  client's own `users` table — so the client sees on its own People page exactly who from the
+  agency can reach it, and every existing permission check already understands the answer.
+- `none` differs from `manage` only in the agency's panel, where the client is not listed.
+  Neither reaches inside.
+- An agency's ceiling: how many workspaces it may hold and how much AI it was sold. Empty means
+  no ceiling, which is where every agency starts, so nothing that works today stops working.
+  The workspace ceiling is checked before a client is built. The AI ceiling is checked where
+  per-workspace budgets are set, because that is the only place one can be raised.
+
+### What this does not do yet
+
+- **Module ceilings.** An agency's plan can cap workspaces and AI spend, not which modules its
+  clients may be given. Each client's modules are still set per workspace by the platform.
+- **A cross-workspace budget at run time.** The AI ceiling is enforced when budgets are handed
+  out, not by summing live spend across an agency mid-run. A workspace still stops at its own
+  budget, as it always has.
+- **Open questions 1 and 2 in section 9** — deleting an organization, and grouping the sign-in
+  picker for somebody who works for two agencies — are untouched. Neither can happen yet without
+  a platform operator doing it deliberately.

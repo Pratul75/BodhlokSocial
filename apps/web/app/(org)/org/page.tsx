@@ -1,6 +1,17 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { agentRuns, approvals, db, users, withTenant, workspacesOf, type TenantRef } from "@bodh/db";
+import {
+  accessLevels,
+  agentRuns,
+  approvals,
+  db,
+  orgLimits,
+  users,
+  withTenant,
+  workspacesOf,
+  type AccessLevel,
+  type TenantRef,
+} from "@bodh/db";
 import { count, eq, gte, sql as dsql } from "drizzle-orm";
 import { requireOrgAdmin } from "@/lib/org-auth";
 import { Card, CardHeader, PageHeader, StatusPill } from "@/components/ui";
@@ -64,7 +75,13 @@ const short = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` 
 
 export default async function OrgHome() {
   const { user, org } = await requireOrgAdmin();
-  const workspaces = await workspacesOf(org.id);
+  const all = await workspacesOf(org.id);
+  const [levels, limits] = await Promise.all([accessLevels(org.id), orgLimits(org.id)]);
+  const levelOf = (id: string): AccessLevel => levels.get(id) ?? "full";
+  // A client set to `none` is not listed here at all. The workspace itself is untouched: it has
+  // its own people and carries on exactly as before.
+  const workspaces = all.filter((t) => t.id === user.tenant.id || levelOf(t.id) !== "none");
+  const hidden = all.length - workspaces.length;
   const rows: Row[] = [];
   for (const t of workspaces) rows.push(await numbersFor(t));
 
@@ -81,14 +98,18 @@ export default async function OrgHome() {
       <PageHeader
         eyebrow={org.name}
         title="My clients"
-        description={`${workspaces.length} workspaces in this agency, including your own. Each one has its own schema, its own database role and its own credentials.`}
+        description={`${all.length} workspaces in this agency, including your own. Each one has its own schema, its own database role and its own credentials.`}
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="px-5 py-4">
           <div className="text-xs font-medium tracking-wide text-muted uppercase">Clients</div>
           <div className="mt-1.5 font-display text-[26px] leading-none font-semibold tabular">{clients.length}</div>
-          <div className="mt-1.5 text-xs text-muted">plus your own workspace</div>
+          <div className="mt-1.5 text-xs text-muted">
+            {limits.maxWorkspaces === null
+              ? "plus your own workspace"
+              : `${all.length} of ${limits.maxWorkspaces} workspaces used`}
+          </div>
         </Card>
         <Card className="px-5 py-4">
           <div className="text-xs font-medium tracking-wide text-muted uppercase">Waiting for approval</div>
@@ -103,7 +124,9 @@ export default async function OrgHome() {
         <Card className="px-5 py-4">
           <div className="text-xs font-medium tracking-wide text-muted uppercase">AI spend</div>
           <div className="mt-1.5 font-display text-[26px] leading-none font-semibold tabular">${totalSpend.toFixed(2)}</div>
-          <div className="mt-1.5 text-xs text-muted">last 30 days</div>
+          <div className="mt-1.5 text-xs text-muted">
+            {limits.monthlyBudgetUsd === null ? "last 30 days" : `last 30 days, of $${limits.monthlyBudgetUsd} a month`}
+          </div>
         </Card>
       </div>
 
@@ -115,6 +138,7 @@ export default async function OrgHome() {
               <tr>
                 <th className="px-5 py-2.5 font-medium">Workspace</th>
                 <th className="px-3 py-2.5 font-medium">Status</th>
+                <th className="px-3 py-2.5 font-medium">Your access</th>
                 <th className="px-3 py-2.5 font-medium">People</th>
                 <th className="px-3 py-2.5 font-medium">Waiting</th>
                 <th className="px-3 py-2.5 font-medium">Tokens (30d)</th>
@@ -132,6 +156,13 @@ export default async function OrgHome() {
                   </td>
                   <td className="px-3 py-3">
                     <StatusPill status={r.tenant.status} />
+                  </td>
+                  <td className="px-3 py-3 text-xs text-muted">
+                    {r.tenant.id === user.tenant.id
+                      ? "your own"
+                      : levelOf(r.tenant.id) === "full"
+                        ? "you can open it"
+                        : "numbers only"}
                   </td>
                   <td className="px-3 py-3 tabular">{r.error ? "—" : r.people}</td>
                   <td className="px-3 py-3 tabular">{r.error ? "—" : r.pending}</td>
@@ -153,6 +184,12 @@ export default async function OrgHome() {
           <NewClientForm />
         </Card>
       </div>
+
+      {hidden > 0 && (
+        <p className="mt-4 text-xs text-muted">
+          {hidden} workspace{hidden === 1 ? " is" : "s are"} not shown here. Ask the platform if that is wrong.
+        </p>
+      )}
 
       <p className="mt-6 text-xs text-muted">
         Numbers here are read live from each workspace through its read-only role. Nothing on this page reaches a

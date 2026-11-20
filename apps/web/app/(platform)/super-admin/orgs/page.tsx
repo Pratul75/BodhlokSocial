@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { listOrgAdmins, listOrgs, listTenants, workspaceCounts } from "@bodh/db";
+import { listOrgAdmins, listOrgs, listTenants, orgLimits, workspaceCounts } from "@bodh/db";
 import { platformAudit, requireOperator } from "@/lib/platform-auth";
 import { ConsoleShell } from "../shell";
 import { ConsoleCard, ConsolePill, Empty, StatTile } from "../ui";
-import { CreateOrgForm, OrgAdminsForm, OrgRowActions } from "../forms";
+import { CreateOrgForm, OrgAdminsForm, OrgLimitsForm, OrgRowActions } from "../forms";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Organizations" };
@@ -20,6 +20,7 @@ export default async function OrgsPage() {
   const isOwner = op.role === "owner";
   const [orgs, counts, tenants] = await Promise.all([listOrgs(), workspaceCounts(), listTenants()]);
   const admins = new Map(await Promise.all(orgs.map(async (o) => [o.id, await listOrgAdmins(o.id)] as const)));
+  const limits = new Map(await Promise.all(orgs.map(async (o) => [o.id, await orgLimits(o.id)] as const)));
   // A workspace with no organization only exists between a deploy and its migrate step. Shown
   // rather than hidden: a number that should always be zero is worth seeing when it is not.
   const orphans = tenants.filter((t) => !t.orgId).length;
@@ -101,6 +102,26 @@ export default async function OrgsPage() {
           )}
         </ConsoleCard>
       </div>
+
+      {isOwner && orgs.length > 0 && (
+        <div className="mt-6">
+          <ConsoleCard title="What each agency was sold" sub="Empty means no ceiling. A ceiling an agency can raise itself is not one, so these are set here and nowhere else.">
+            <ul className="divide-y divide-rule">
+              {orgs.map((o) => (
+                <li key={o.id} className="px-5 py-3">
+                  <div className="mb-2 text-sm font-medium">{o.name}</div>
+                  <OrgLimitsForm
+                    id={o.id}
+                    maxWorkspaces={limits.get(o.id)?.maxWorkspaces ?? null}
+                    monthlyBudgetUsd={limits.get(o.id)?.monthlyBudgetUsd ?? null}
+                    held={counts.get(o.id) ?? 0}
+                  />
+                </li>
+              ))}
+            </ul>
+          </ConsoleCard>
+        </div>
+      )}
 
       {isOwner && (
         <div className="mt-6">

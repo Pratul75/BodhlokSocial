@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { passwordProblem } from "@/lib/passwords";
+import { roomForAnotherWorkspace } from "@bodh/db";
 import { requireOrgAdmin } from "@/lib/org-auth";
 import { buildWorkspace } from "@/lib/provision";
 import type { SecretResult } from "@/app/(platform)/super-admin/actions";
@@ -24,6 +25,11 @@ function normalisePhone(raw: string): string | null {
  */
 export async function createClientWorkspace(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
   const { user, org } = await requireOrgAdmin();
+
+  // The ceiling first, before anything is built: a workspace half-made and then refused is
+  // worse than one that was never started.
+  const room = await roomForAnotherWorkspace(org.id);
+  if (!room.ok) return { ok: false, error: room.reason };
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { ok: false, error: "Give the client a name." };

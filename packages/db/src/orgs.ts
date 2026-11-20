@@ -216,3 +216,80 @@ export async function workspacesOf(orgId: string): Promise<TenantRef[]> {
   const { listTenants } = await import("./tenancy");
   return (await listTenants()).filter((t) => t.orgId === orgId);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Ceilings, and how far into a client the agency reaches                     */
+/* -------------------------------------------------------------------------- */
+
+/** How far into one client an agency reaches. */
+export const ACCESS_LEVELS = ["full", "manage", "none"] as const;
+export type AccessLevel = (typeof ACCESS_LEVELS)[number];
+export const isAccessLevel = (v: string): v is AccessLevel => (ACCESS_LEVELS as readonly string[]).includes(v);
+
+export interface OrgLimits {
+  /** How many workspaces this agency may hold, its own included. Null means no ceiling. */
+  maxWorkspaces: number | null;
+  /** What it was sold in AI spend a month, across all of its workspaces. Null means no ceiling. */
+  monthlyBudgetUsd: number | null;
+}
+
+export async function orgLimits(orgId: string): Promise<OrgLimits> {
+  const rows = (await ownerSql()<{ max_workspaces: number | null; monthly_budget_usd: string | null }[]>`
+    select max_workspaces, monthly_budget_usd from platform.orgs where id = ${orgId}`) as unknown as {
+    max_workspaces: number | null;
+    monthly_budget_usd: string | null;
+  }[];
+  const r = rows[0];
+  return {
+    maxWorkspaces: r?.max_workspaces ?? null,
+    monthlyBudgetUsd: r?.monthly_budget_usd === null || r?.monthly_budget_usd === undefined ? null : Number(r.monthly_budget_usd),
+  };
+}
+
+export async function setOrgLimits(orgId: string, limits: OrgLimits): Promise<void> {
+  await ownerSql()`
+    update platform.orgs
+    set max_workspaces = ${limits.maxWorkspaces},
+        monthly_budget_usd = ${limits.monthlyBudgetUsd === null ? null : String(limits.monthlyBudgetUsd)},
+        updated_at = now()
+    where id = ${orgId}`;
+}
+
+/**
+ * Whether this agency may take another workspace.
+ *
+ * Counted from the registry rather than remembered anywhere, so it cannot drift. Its own
+ * workspace counts: the ceiling is how many workspaces the agency holds, not how many clients
+ * it has, because every one of them costs the same to run.
+ */
+export async function roomForAnotherWorkspace(orgId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const { maxWorkspaces } = await orgLimits(orgId);
+  if (maxWorkspaces === null) return { ok: true };
+  const held = (await workspacesOf(orgId)).length;
+  if (held < maxWorkspaces) return { ok: true };
+  return {
+    ok: false,
+    reason: `This agency is allowed ${maxWorkspaces} workspace${maxWorkspaces === 1 ? "" : "s"} and already has ${held}. Ask the platform to raise it.`,
+  };
+}
+
+/** How far into each of its workspaces this agency reaches. Anything unset is `full`. */
+export async function accessLevels(orgId: string): Promise<Map<string, AccessLevel>> {
+  const rows = (await ownerSql()<{ tenant_id: string; level: string }[]>`
+    select tenant_id, level from platform.org_access where org_id = ${orgId}`) as unknown as {
+    tenant_id: string;
+    level: string;
+  }[];
+  return new Map(rows.filter((r) => isAccessLevel(r.level)).map((r) => [r.tenant_id, r.level as AccessLevel]));
+}
+
+export async function accessLevel(orgId: string, tenantId: string): Promise<AccessLevel> {
+  return (await accessLevels(orgId)).get(tenantId) ?? "full";
+}
+
+export async function setAccessLevel(orgId: string, tenantId: string, level: AccessLevel, setBy: string): Promise<void> {
+  await ownerSql()`
+    insert into platform.org_access (org_id, tenant_id, level, set_by)
+    values (${orgId}, ${tenantId}, ${level}, ${setBy})
+    on conflict (org_id, tenant_id) do update set level = excluded.level, set_by = excluded.set_by, updated_at = now()`;
+}

@@ -4,19 +4,23 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql as dsql } from "drizzle-orm";
 import {
   db,
+  entitlementsFor,
   forgetEntitlements,
   forgetTenantSettings,
   forgetTenants,
   isTenantSettingKey,
   noteUserInDirectory,
+  orgById,
+  orgLimits,
   ownerSql,
   setTenantSetting,
   tenantById,
   users,
   withTenant,
+  workspacesOf,
   type TenantRef,
 } from "@bodh/db";
-import { CAPACITY_KEYS, FEATURE_KEYS, INTEGRATIONS, isRole, MODULES, type CapacityKey } from "@bodh/shared";
+import { CAPACITY_KEYS, capacity, FEATURE_KEYS, INTEGRATIONS, isRole, MODULES, type CapacityKey } from "@bodh/shared";
 import { presetContents } from "./access-presets";
 import { platformAudit, requireOperator, requireOwner } from "@/lib/platform-auth";
 import { clearUserPassword, issueUserInvite } from "@/lib/user-passwords";
@@ -223,6 +227,34 @@ export async function applyAccessPreset(_prev: WorkspaceResult, formData: FormDa
 /* -------------------------------------------------------------------------- */
 
 /** A number a workspace may not exceed: AI budget, images a month, audit pages. */
+
+/**
+ * Whether giving this workspace that monthly AI budget would put its agency over the total it
+ * was sold. Returns the refusal, or null when there is room.
+ *
+ * Every other workspace is counted at what it may actually spend — the value set for it, or the
+ * default it falls back to — because that is what it can spend, not what somebody meant to
+ * allow.
+ */
+async function wouldExceedAgencyBudget(tenantId: string, proposed: number): Promise<string | null> {
+  const tenant = await tenantById(tenantId);
+  if (!tenant?.orgId) return null;
+  const org = await orgById(tenant.orgId);
+  if (!org) return null;
+  const { monthlyBudgetUsd } = await orgLimits(org.id);
+  if (monthlyBudgetUsd === null) return null;
+
+  let others = 0;
+  for (const t of await workspacesOf(org.id)) {
+    if (t.id === tenantId) continue;
+    others += capacity(await entitlementsFor(t.id), "ai.monthly_budget_usd");
+  }
+  const total = others + proposed;
+  if (total <= monthlyBudgetUsd) return null;
+  const left = Math.max(0, monthlyBudgetUsd - others);
+  return `${org.name} was sold $${monthlyBudgetUsd} of AI a month and its other workspaces already account for $${others}. This one can have at most $${left}.`;
+}
+
 export async function setCapacity(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
   const op = await requireOperator();
   const tenantId = String(formData.get("tenantId") ?? "");
@@ -236,6 +268,13 @@ export async function setCapacity(_prev: WorkspaceResult, formData: FormData): P
   } else {
     const value = Number(raw);
     if (!Number.isFinite(value) || value < 0) return { ok: false, error: "Use a number of zero or more." };
+    // An agency's AI budget is what it was sold; the sum of what its workspaces may spend has
+    // to fit inside it. Checked here because this is the only place a per-workspace budget is
+    // set, and a ceiling checked anywhere else is a ceiling with a way round it.
+    if (key === "ai.monthly_budget_usd") {
+      const over = await wouldExceedAgencyBudget(tenantId, value);
+      if (over) return { ok: false, error: over };
+    }
     // The column is numeric: the value goes in as a number, not as JSON.
     await sql`
       insert into platform.entitlements (tenant_id, kind, key, enabled, value, updated_by)

@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { entitlementsFor, ownerSql } from "@bodh/db";
+import { accessLevel, entitlementsFor, listOrgAdmins, orgById, ownerSql } from "@bodh/db";
 import { FEATURE_KEYS, MODULES } from "@bodh/shared";
 import { platformAudit, requireOperator } from "@/lib/platform-auth";
 import { allWorkspaceStats } from "@/lib/platform-stats";
 import { ConsoleCard, Empty, Money, StatTile, WhenText } from "../../ui";
+import { ClientAccessForm } from "../../forms";
 import { loadWorkspace } from "./workspace";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,10 @@ export default async function WorkspaceOverview({ params }: { params: Promise<{ 
   await platformAudit({ actor: op.email, action: "view_tenant", target: tenant.slug, tenantId: tenant.id });
 
   const stats = (await allWorkspaceStats()).find((s) => s.tenant.id === id);
+  // Who holds this workspace, and how far into it they reach.
+  const org = tenant.orgId ? await orgById(tenant.orgId) : null;
+  const agencyLevel = org ? await accessLevel(org.id, tenant.id) : null;
+  const agencyPeople = org ? await listOrgAdmins(org.id) : [];
   const ent = await entitlementsFor(id);
 
   const audit = (await ownerSql()<{ id: string; actor: string; action: string; target: string | null; created_at: Date }[]>`
@@ -81,6 +86,30 @@ export default async function WorkspaceOverview({ params }: { params: Promise<{ 
             </div>
           </dl>
         </ConsoleCard>
+
+        {org && (
+          <ConsoleCard title={`${org.name} — the agency that holds this workspace`} sub="How far it reaches in">
+            <div className="space-y-3 px-5 py-4 text-sm">
+              <p className="text-muted">
+                {agencyLevel === "full"
+                  ? `${org.name}'s people have accounts in this workspace and work here as its admins. They appear on the Users tab, like anybody else who works here.`
+                  : agencyLevel === "manage"
+                    ? `${org.name} sees this workspace's counts and totals in its own panel, and has no accounts inside it.`
+                    : `This workspace is hidden from ${org.name}'s panel, and the agency has no accounts inside it.`}
+              </p>
+              {op.role === "owner" ? (
+                <ClientAccessForm tenantId={tenant.id} level={agencyLevel ?? "full"} />
+              ) : (
+                <p className="text-xs text-muted">Only an owner can change this.</p>
+              )}
+              <p className="text-xs text-muted">
+                {agencyPeople.length === 0
+                  ? "Nobody runs this agency yet."
+                  : `Runs ${org.name}: ${agencyPeople.map((a) => a.email).join(", ")}`}
+              </p>
+            </div>
+          </ConsoleCard>
+        )}
 
         <ConsoleCard title="Where it lives" sub="The parts that make this workspace its own">
           <dl className="divide-y divide-rule text-sm">

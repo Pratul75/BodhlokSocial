@@ -11,8 +11,12 @@ import {
   forgetTenants,
   moduleAllowed,
   ownerSql,
+  accessLevel,
   addOrgAdmin,
   createOrg,
+  isAccessLevel,
+  setOrgLimits,
+  workspacesOf,
   orgById,
   removeOrgAdmin,
   renameOrg,
@@ -37,6 +41,7 @@ import {
 } from "@bodh/shared";
 import { issueResetToken, platformAudit, requireOperator, requireOwner } from "@/lib/platform-auth";
 import { buildWorkspace } from "@/lib/provision";
+import { applyAccessLevel } from "@/lib/org-access";
 import { passwordProblem } from "@/lib/passwords";
 import { EVENTS_SECRET_KEY, FEED_TOKEN_KEY, rotateTenantSecret } from "@/lib/tenant-secrets";
 import { cookieOptions, createImpersonationToken, IMPERSONATION_COOKIE, verifyImpersonationToken } from "@/lib/session";
@@ -597,4 +602,81 @@ export async function removeOrganizationAdmin(_prev: SecretResult, formData: For
   // stop being whoever they are inside the workspaces they belong to. Those are separate
   // decisions and taking both at once would make one of them invisible.
   return { ok: true, message: `${email} no longer runs ${org.name}. Their workspace accounts are unchanged.` };
+}
+
+/**
+ * How far an agency reaches into one of its clients.
+ *
+ * Changing it does the thing, not just records it: `full` gives the agency's people accounts
+ * inside that client, the other two take them away. Both are visible on the client's own People
+ * page, which is the point — if an agency can reach a client, the client can see who.
+ */
+export async function setClientAccess(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const tenantId = String(formData.get("tenantId") ?? "");
+  const level = String(formData.get("level") ?? "");
+  if (!isAccessLevel(level)) return { ok: false, error: "Unknown access level." };
+
+  const tenant = await tenantById(tenantId);
+  if (!tenant) return { ok: false, error: "That workspace no longer exists." };
+  if (!tenant.orgId) return { ok: false, error: "That workspace has no organization yet." };
+  const org = await orgById(tenant.orgId);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+  if ((await accessLevel(org.id, tenant.id)) === level) return { ok: true, message: "No change." };
+
+  const change = await applyAccessLevel(org, tenant, level, op.email);
+  await platformAudit({
+    actor: op.email,
+    action: "set_org_access",
+    target: tenant.slug,
+    tenantId: tenant.id,
+    detail: { org: org.slug, level, accounts: change.changed },
+  });
+  revalidatePath("/super-admin/orgs");
+  revalidatePath(`/super-admin/workspaces/${tenant.id}`);
+  return { ok: true, message: change.message };
+}
+
+/**
+ * What an agency was sold: how many workspaces, and how much AI spend a month.
+ *
+ * Set by the platform and nowhere else. A ceiling somebody can raise themselves is not a
+ * ceiling. Leaving a field empty means no ceiling, which is what every agency has until one is
+ * set — so nothing that works today stops working when this arrives.
+ */
+export async function setOrganizationLimits(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const org = await orgById(id);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+
+  const number = (key: string): number | null | undefined => {
+    const raw = String(formData.get(key) ?? "").trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
+  const maxWorkspaces = number("maxWorkspaces");
+  const monthlyBudgetUsd = number("monthlyBudgetUsd");
+  if (maxWorkspaces === undefined) return { ok: false, error: "Workspaces must be a number, or empty for no ceiling." };
+  if (monthlyBudgetUsd === undefined) return { ok: false, error: "The budget must be a number, or empty for no ceiling." };
+
+  const held = (await workspacesOf(org.id)).length;
+  if (maxWorkspaces !== null && maxWorkspaces < held) {
+    // Refused rather than applied: a ceiling below what is already there would not take a
+    // workspace away, it would only make every later number a lie.
+    return { ok: false, error: `${org.name} already holds ${held} workspaces. Set the ceiling to ${held} or more.` };
+  }
+
+  await setOrgLimits(org.id, { maxWorkspaces, monthlyBudgetUsd });
+  await platformAudit({
+    actor: op.email,
+    action: "set_org_limits",
+    target: org.slug,
+    detail: { maxWorkspaces: maxWorkspaces ?? "none", monthlyBudgetUsd: monthlyBudgetUsd ?? "none" },
+  });
+  revalidatePath("/super-admin/orgs");
+  const ws = maxWorkspaces === null ? "no workspace ceiling" : `up to ${maxWorkspaces} workspaces`;
+  const ai = monthlyBudgetUsd === null ? "no AI budget ceiling" : `$${monthlyBudgetUsd} AI a month`;
+  return { ok: true, message: `${org.name}: ${ws}, ${ai}.` };
 }
