@@ -15,6 +15,22 @@ variable "allowed_email_domains" {
   default     = "rechargestudio.com"
 }
 
+variable "platform_owner_email" {
+  description = <<-EOT
+    The first Super Admin. The migrate job creates this operator when no owner exists; they then
+    set their own password from a one-time link, since nothing is emailed from here. Leave it
+    empty and nobody can sign in to /super-admin at all.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "workspace_retention_days" {
+  description = "How long an archived workspace is kept before an owner may purge it."
+  type        = number
+  default     = 30
+}
+
 variable "bootstrap_admin_email" {
   description = "First admin, created by the migrate job when no admin exists yet."
   type        = string

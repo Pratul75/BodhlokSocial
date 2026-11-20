@@ -93,7 +93,7 @@ async function main() {
     console.log(`Platform owner present: ${ownerEmail}.`);
   } else {
     console.warn(
-      "PLATFORM_OWNER_EMAIL is not set: no platform operator was created, so nobody can sign in to /platform. " +
+      "PLATFORM_OWNER_EMAIL is not set: no platform operator was created, so nobody can sign in to /super-admin. " +
         "Set it and run this again to create the first Super Admin.",
     );
   }
