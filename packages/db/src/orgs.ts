@@ -9,7 +9,7 @@
  * moment the two are one thing, every rule has to start asking which kind of thing it is
  * holding, and the first rule that forgets to ask is a bug nobody can see.
  */
-import { ownerSql } from "./client";
+import { ownerSql, type TenantRef } from "./client";
 import { slugCandidate } from "./platform";
 
 export interface OrgRef {
@@ -153,4 +153,66 @@ export async function backfillOrgs(fallbackName: string): Promise<{ org: OrgRef;
     where org_id is null
     returning id`) as unknown as { id: string }[];
   return { org, placed: rows.length };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Who runs an agency                                                         */
+/* -------------------------------------------------------------------------- */
+
+export interface OrgAdmin {
+  email: string;
+  addedBy: string;
+  createdAt: Date;
+}
+
+/** The people who run this agency. */
+export async function listOrgAdmins(orgId: string): Promise<OrgAdmin[]> {
+  const rows = (await ownerSql()<{ email: string; added_by: string; created_at: Date }[]>`
+    select email, added_by, created_at from platform.org_admins
+    where org_id = ${orgId} order by created_at`) as unknown as {
+    email: string;
+    added_by: string;
+    created_at: Date;
+  }[];
+  return rows.map((r) => ({ email: r.email, addedBy: r.added_by, createdAt: new Date(r.created_at) }));
+}
+
+/**
+ * The agencies this address runs.
+ *
+ * Asked on every `/org` page load, so it is one indexed read and nothing is cached: an agency
+ * admin who is removed should stop being one on their next click, not when something expires.
+ */
+export async function orgsRunBy(email: string): Promise<OrgRef[]> {
+  const rows = (await ownerSql()<OrgRow[]>`
+    select o.id, o.slug, o.name, o.status, o.plan
+    from platform.org_admins a
+    join platform.orgs o on o.id = a.org_id
+    where a.email = ${email.trim().toLowerCase()} and o.status = 'active'
+    order by o.created_at`) as unknown as OrgRow[];
+  return rows.map(toOrg);
+}
+
+/** Whether this address runs this agency. */
+export async function runsOrg(email: string, orgId: string | null | undefined): Promise<boolean> {
+  if (!orgId) return false;
+  return (await orgsRunBy(email)).some((o) => o.id === orgId);
+}
+
+export async function addOrgAdmin(orgId: string, email: string, addedBy: string): Promise<void> {
+  await ownerSql()`
+    insert into platform.org_admins (org_id, email, added_by)
+    values (${orgId}, ${email.trim().toLowerCase()}, ${addedBy})
+    on conflict (org_id, email) do nothing`;
+}
+
+export async function removeOrgAdmin(orgId: string, email: string): Promise<void> {
+  await ownerSql()`
+    delete from platform.org_admins where org_id = ${orgId} and email = ${email.trim().toLowerCase()}`;
+}
+
+/** The workspaces in one agency, oldest first — its own and its clients'. */
+export async function workspacesOf(orgId: string): Promise<TenantRef[]> {
+  const { listTenants } = await import("./tenancy");
+  return (await listTenants()).filter((t) => t.orgId === orgId);
 }

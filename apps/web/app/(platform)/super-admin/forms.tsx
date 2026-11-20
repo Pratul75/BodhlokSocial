@@ -18,7 +18,9 @@ import {
   archiveWorkspace,
   purgeWorkspace,
   restoreWorkspace,
+  addOrganizationAdmin,
   createOrganization,
+  removeOrganizationAdmin,
   renameOrganization,
   setOrganizationStatus,
 } from "./actions";
@@ -630,6 +632,54 @@ export function OrgRowActions({ id, name, status }: { id: string; name: string; 
           {status === "active" ? "Suspend" : "Reopen"}
         </button>
       </form>
+    </div>
+  );
+}
+
+/** Who runs one agency: the list, and the way to add and remove. */
+export function OrgAdminsForm({ id, admins }: { id: string; admins: string[] }) {
+  const [addState, add, adding] = useActionState<SecretResult, FormData>(addOrganizationAdmin, null);
+  const [removeState, remove, removing] = useActionState<SecretResult, FormData>(removeOrganizationAdmin, null);
+  const state = addState ?? removeState;
+  return (
+    <div className="space-y-2">
+      {admins.length === 0 ? (
+        <p className="text-xs text-muted">Nobody runs this agency yet, so /org is open to no one.</p>
+      ) : (
+        <ul className="flex flex-wrap gap-1.5">
+          {admins.map((email) => (
+            <li key={email}>
+              <form action={remove} className="flex items-center gap-1 rounded-full bg-paper px-2 py-0.5 text-xs ring-1 ring-rule ring-inset">
+                <input type="hidden" name="id" value={id} />
+                <input type="hidden" name="email" value={email} />
+                <span className="font-mono">{email}</span>
+                <button disabled={removing} aria-label={`Remove ${email}`} className="text-muted hover:text-sindoor">
+                  ×
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form action={add} className="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="id" value={id} />
+        <input
+          name="email"
+          type="email"
+          required
+          placeholder="person@agency.com"
+          className="w-56 rounded-lg border border-rule bg-card px-2 py-1 text-sm"
+          aria-label="Email of someone who runs this agency"
+        />
+        <button disabled={adding} className="rounded-lg border border-rule px-2.5 py-1 text-xs font-medium hover:bg-paper">
+          {adding ? "Adding…" : "Add"}
+        </button>
+      </form>
+      {state && (
+        <p role={state.ok ? "status" : "alert"} className={`text-xs ${state.ok ? "text-leaf" : "text-sindoor"}`}>
+          {state.ok ? state.message : state.error}
+        </p>
+      )}
     </div>
   );
 }

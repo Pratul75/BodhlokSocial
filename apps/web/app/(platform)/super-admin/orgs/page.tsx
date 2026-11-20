@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { listOrgs, listTenants, workspaceCounts } from "@bodh/db";
+import { listOrgAdmins, listOrgs, listTenants, workspaceCounts } from "@bodh/db";
 import { platformAudit, requireOperator } from "@/lib/platform-auth";
 import { ConsoleShell } from "../shell";
 import { ConsoleCard, ConsolePill, Empty, StatTile } from "../ui";
-import { CreateOrgForm, OrgRowActions } from "../forms";
+import { CreateOrgForm, OrgAdminsForm, OrgRowActions } from "../forms";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Organizations" };
@@ -19,6 +19,7 @@ export default async function OrgsPage() {
   const op = await requireOperator();
   const isOwner = op.role === "owner";
   const [orgs, counts, tenants] = await Promise.all([listOrgs(), workspaceCounts(), listTenants()]);
+  const admins = new Map(await Promise.all(orgs.map(async (o) => [o.id, await listOrgAdmins(o.id)] as const)));
   // A workspace with no organization only exists between a deploy and its migrate step. Shown
   // rather than hidden: a number that should always be zero is worth seeing when it is not.
   const orphans = tenants.filter((t) => !t.orgId).length;
@@ -51,12 +52,13 @@ export default async function OrgsPage() {
             <Empty>No organizations yet. Create the first one below.</Empty>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[860px] text-sm">
                 <thead className="border-b border-rule text-left text-xs tracking-wide text-muted uppercase">
                   <tr>
                     <th className="px-5 py-2.5 font-medium">Organization</th>
                     <th className="px-3 py-2.5 font-medium">Status</th>
                     <th className="px-3 py-2.5 font-medium">Workspaces</th>
+                    <th className="px-3 py-2.5 font-medium">Who runs it</th>
                     <th className="px-5 py-2.5 text-right font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -75,7 +77,16 @@ export default async function OrgsPage() {
                           {counts.get(o.id) ?? 0}
                         </Link>
                       </td>
-                      <td className="px-5 py-3 text-right">
+                      <td className="px-3 py-3">
+                        {isOwner ? (
+                          <OrgAdminsForm id={o.id} admins={(admins.get(o.id) ?? []).map((a) => a.email)} />
+                        ) : (
+                          <span className="font-mono text-xs text-muted">
+                            {(admins.get(o.id) ?? []).map((a) => a.email).join(", ") || "—"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right align-top">
                         {isOwner ? (
                           <OrgRowActions id={o.id} name={o.name} status={o.status} />
                         ) : (
@@ -95,7 +106,7 @@ export default async function OrgsPage() {
         <div className="mt-6">
           <ConsoleCard
             title="New organization"
-            sub="Creates the agency and its own workspace in one step \u2014 its own schema, database role and tables, with every module switched on. Its clients\u2019 workspaces come afterwards."
+            sub="Creates the agency and its own workspace in one step — its own schema, database role and tables, with every module switched on. Its clients’ workspaces come afterwards."
           >
             <div className="px-5 pb-5">
               <CreateOrgForm />

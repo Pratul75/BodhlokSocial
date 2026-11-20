@@ -148,6 +148,49 @@ describe.skipIf(!reachable)("organizations", () => {
     await mod.setOrgStatus(agency.id, "active");
   });
 
+  it("says which agencies somebody runs, and only those", async () => {
+    const mine = (await mod.listOrgs()).find((o) => o.name === "Recharge Studio")!;
+    const theirs = (await mod.listOrgs()).find((o) => o.name === "Full Service Co")!;
+    await mod.addOrgAdmin(mine.id, "Boss@Agency.Test", "super-admin@test");
+
+    // Stored and matched lower-case: the same address typed two ways is one person.
+    expect((await mod.orgsRunBy("boss@agency.test")).map((o) => o.id)).toEqual([mine.id]);
+    expect(await mod.runsOrg("boss@agency.test", mine.id)).toBe(true);
+    expect(await mod.runsOrg("boss@agency.test", theirs.id)).toBe(false);
+    expect(await mod.runsOrg("someone@else.test", mine.id)).toBe(false);
+    expect(await mod.runsOrg("boss@agency.test", null)).toBe(false);
+  });
+
+  it("appointing the same person twice changes nothing", async () => {
+    const mine = (await mod.listOrgs()).find((o) => o.name === "Recharge Studio")!;
+    await mod.addOrgAdmin(mine.id, "boss@agency.test", "someone-else@test");
+    const admins = await mod.listOrgAdmins(mine.id);
+    expect(admins.filter((a) => a.email === "boss@agency.test")).toHaveLength(1);
+    // The first appointment stands, so the audit trail keeps who actually made it.
+    expect(admins.find((a) => a.email === "boss@agency.test")?.addedBy).toBe("super-admin@test");
+  });
+
+  it("a suspended agency is run by nobody", async () => {
+    // /org asks this on every request, so suspending an agency closes its panel at once.
+    const mine = (await mod.listOrgs()).find((o) => o.name === "Recharge Studio")!;
+    await mod.setOrgStatus(mine.id, "suspended");
+    try {
+      expect(await mod.orgsRunBy("boss@agency.test")).toEqual([]);
+      expect(await mod.runsOrg("boss@agency.test", mine.id)).toBe(false);
+    } finally {
+      await mod.setOrgStatus(mine.id, "active");
+    }
+  });
+
+  it("removing somebody takes the agency away, and nothing else", async () => {
+    const mine = (await mod.listOrgs()).find((o) => o.name === "Recharge Studio")!;
+    const before = await mod.workspacesOf(mine.id);
+    await mod.removeOrgAdmin(mine.id, "boss@agency.test");
+    expect(await mod.runsOrg("boss@agency.test", mine.id)).toBe(false);
+    // Their accounts inside workspaces are a separate decision and are left alone.
+    expect((await mod.workspacesOf(mine.id)).map((t) => t.id)).toEqual(before.map((t) => t.id));
+  });
+
   it("the first organization can be named by the deployment", async () => {
     process.env.FIRST_ORG_NAME = "Named By Deploy";
     process.env.FIRST_ORG_SLUG = "named-by-deploy";

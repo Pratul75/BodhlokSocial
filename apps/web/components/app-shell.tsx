@@ -5,6 +5,7 @@ import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { PRODUCT_NAME } from "@/lib/legal";
 import { setDevRole } from "@/app/(app)/actions";
 import { LogOut } from "lucide-react";
+import { runsThisAgency } from "@/lib/org-auth";
 import { openableWorkspaces } from "@/lib/workspaces";
 import { KundliMark } from "./kundli-mark";
 import { WorkspaceGuard } from "./workspace-guard";
@@ -35,6 +36,10 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   // else the corner stays exactly what it was. An operator looking inside a workspace is not
   // one of its people and has nowhere to switch to.
   const openable = user.impersonatedBy ? [] : await openableWorkspaces(user.email, user.tenant);
+  // The agency's own panel, shown only to whoever runs this agency. Showing the way in is not
+  // what grants it: /org asks the control plane again on every request.
+  const agency = await runsThisAgency(user);
+  if (agency) nav.push({ href: "/org", label: "My clients", group: "Settings", badge: undefined });
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">

@@ -43,6 +43,28 @@ export const orgs = platform.table(
   (t) => [uniqueIndex("orgs_slug_uq").on(t.slug)],
 );
 
+/**
+ * Who runs an agency.
+ *
+ * Not a third principal: an organization admin signs in the way everybody else does and acts as
+ * themselves inside workspaces they belong to. This only says which agency they run. Keyed by
+ * address, because the same person is a different row in every workspace's own `users` table
+ * and the address is the one thing that is the same everywhere.
+ */
+export const orgAdmins = platform.table(
+  "org_admins",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    addedBy: text("added_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("org_admins_uq").on(t.orgId, t.email)],
+);
+
 /** One row per client. `dataSchema` is where its 39 tables live; tenant #1 is `public`. */
 export const tenants = platform.table(
   "tenants",

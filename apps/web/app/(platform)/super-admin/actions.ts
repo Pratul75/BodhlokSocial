@@ -11,16 +11,16 @@ import {
   forgetTenants,
   moduleAllowed,
   ownerSql,
+  addOrgAdmin,
   createOrg,
   orgById,
-  provisionTenant,
+  removeOrgAdmin,
   renameOrg,
   setOrgStatus,
   purgeTenant,
   restoreTenant,
   RETENTION_DAYS,
   tenantById,
-  uniqueSlug,
   users,
   withTenant,
 } from "@bodh/db";
@@ -36,7 +36,7 @@ import {
   type ModuleKey,
 } from "@bodh/shared";
 import { issueResetToken, platformAudit, requireOperator, requireOwner } from "@/lib/platform-auth";
-import { issueUserInvite, setTemporaryPassword } from "@/lib/user-passwords";
+import { buildWorkspace } from "@/lib/provision";
 import { passwordProblem } from "@/lib/passwords";
 import { EVENTS_SECRET_KEY, FEED_TOKEN_KEY, rotateTenantSecret } from "@/lib/tenant-secrets";
 import { cookieOptions, createImpersonationToken, IMPERSONATION_COOKIE, verifyImpersonationToken } from "@/lib/session";
@@ -44,7 +44,6 @@ import { cookieOptions, createImpersonationToken, IMPERSONATION_COOKIE, verifyIm
 export type PlatformResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
 /** How long a password somebody else chose stays usable, used or not. */
-const TEMP_PASSWORD_HOURS = 72;
 
 /**
  * A mobile number as it will be stored: digits, with a leading `+` if there was one. Spaces,
@@ -71,83 +70,6 @@ function normalisePhone(raw: string): string | "" | null {
  * somebody navigate to another tab to finish the job they just started is how the last step
  * gets forgotten.
  */
-/**
- * Builds a workspace and lets its first admin in — the part `createTenant` and
- * `createOrganization` both need.
- *
- * Pulled out rather than written twice: an agency's own workspace and a client's are the same
- * kind of thing, made the same way, and the day they stop being made the same way is the day
- * one of them quietly misses a step.
- */
-async function buildWorkspace(opts: {
-  org: { id: string; name: string };
-  name: string;
-  adminEmail: string;
-  adminPhone: string | null;
-  adminPassword: string;
-  actor: string;
-  // `SecretResult` allows null for a form that has not been submitted yet; this always answers.
-}): Promise<Exclude<SecretResult, null>> {
-  // Worked out, never typed: the short name is the schema name, and a schema cannot be renamed.
-  const slug = await uniqueSlug(opts.name);
-  try {
-    const result = await provisionTenant({
-      slug,
-      name: opts.name,
-      adminEmail: opts.adminEmail,
-      orgId: opts.org.id,
-      actor: opts.actor,
-    });
-    const made = `Created ${result.tenant.name} (${result.tenant.slug}) in ${opts.org.name}: ${result.tables} tables, everything switched on.`;
-    revalidatePath("/super-admin");
-    revalidatePath("/super-admin/orgs");
-    revalidatePath("/super-admin/workspaces");
-
-    // The first admin, from inside the workspace that was just built for them.
-    const [admin] = await withTenant(result.tenant, () =>
-      db.select({ id: users.id }).from(users).where(eq(users.email, opts.adminEmail)).limit(1),
-    );
-    if (admin && opts.adminPhone) {
-      await withTenant(result.tenant, () =>
-        db.update(users).set({ phone: opts.adminPhone }).where(eq(users.id, admin.id)),
-      );
-    }
-    if (!admin) return { ok: true, message: `${made} Set their password from the Users tab.` };
-
-    // A password the operator chose: handed over with the address, and good for one thing —
-    // the page where they replace it.
-    if (opts.adminPassword) {
-      await setTemporaryPassword(result.tenant, admin.id, opts.adminPassword, TEMP_PASSWORD_HOURS);
-      await platformAudit({
-        actor: opts.actor,
-        action: "set_temporary_password",
-        target: opts.adminEmail,
-        tenantId: result.tenant.id,
-      });
-      return {
-        ok: true,
-        message: `${made} Give ${opts.adminEmail} the password you chose — they sign in with it and set their own. It stops working after ${TEMP_PASSWORD_HOURS} hours.`,
-      };
-    }
-
-    const invite = await issueUserInvite(result.tenant, admin.id, 72);
-    if (!invite) return { ok: true, message: `${made} Set their password from the Users tab.` };
-    await platformAudit({
-      actor: opts.actor,
-      action: "issue_password_link",
-      target: opts.adminEmail,
-      tenantId: result.tenant.id,
-    });
-    return {
-      ok: true,
-      message: `${made} A one-time link for ${opts.adminEmail} to set their password, good for 72 hours — copy it now; it isn't shown again.`,
-      value: `/set-password?token=${invite.token}`,
-    };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not create that workspace." };
-  }
-}
-
 /** What a form says about the person who will be let in first. */
 function readFirstAdmin(formData: FormData): { email: string; phone: string | null; password: string } | string {
   const email = String(formData.get("adminEmail") ?? "").trim().toLowerCase();
@@ -638,4 +560,41 @@ export async function setOrganizationStatus(_prev: SecretResult, formData: FormD
     ok: true,
     message: status === "suspended" ? `${org.name} is suspended. Its workspaces are untouched.` : `${org.name} is active again.`,
   };
+}
+
+/**
+ * Appoints somebody to run an agency.
+ *
+ * It grants nothing by itself: they still sign in the ordinary way, and inside a workspace they
+ * are whatever their row there says they are. What it opens is `/org` — the agency's own panel,
+ * where they can see their clients and make new ones.
+ */
+export async function addOrganizationAdmin(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "That isn't an email address." };
+  const org = await orgById(id);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+
+  await addOrgAdmin(org.id, email, op.email);
+  await platformAudit({ actor: op.email, action: "add_org_admin", target: org.slug, detail: { email } });
+  revalidatePath("/super-admin/orgs");
+  return { ok: true, message: `${email} runs ${org.name}. They sign in as they always have; /org is now open to them.` };
+}
+
+export async function removeOrganizationAdmin(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const org = await orgById(id);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+
+  await removeOrgAdmin(org.id, email);
+  await platformAudit({ actor: op.email, action: "remove_org_admin", target: org.slug, detail: { email } });
+  revalidatePath("/super-admin/orgs");
+  // Their workspace accounts are untouched on purpose: they stop running the agency, they do not
+  // stop being whoever they are inside the workspaces they belong to. Those are separate
+  // decisions and taking both at once would make one of them invisible.
+  return { ok: true, message: `${email} no longer runs ${org.name}. Their workspace accounts are unchanged.` };
 }
