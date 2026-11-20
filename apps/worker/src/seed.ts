@@ -9,7 +9,7 @@
  */
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db, sql } from "@bodh/db";
+import { db, firstTenant, sql, withTenant } from "@bodh/db";
 import * as s from "@bodh/db/schema";
 import type { NormalizedEvent } from "@bodh/integrations/bodh-events";
 import { forwardToGoogle, forwardToMeta, ingestEvents, loadGa4Sessions, loadMetaSpend, rebuild, runJob } from "@bodh/integrations/pipeline";
@@ -501,7 +501,35 @@ async function seedTracking() {
   console.log(r.detail);
 }
 
-main().catch(async (err) => {
+/**
+ * Sample data belongs to a workspace, so the seeder has to say which one before it writes a
+ * single row. It is tenant #1 — the workspace this installation started as. Without this every
+ * query here refuses, because an unscoped query no longer falls back to anything.
+ */
+async function seedInTenantOne() {
+  // Refuse before touching anything: a seed that should not run must not open a workspace.
+  const refusal = seedRefusal(process.env);
+  if (refusal) {
+    console.error(refusal);
+    process.exitCode = 1;
+    await sql.end();
+    return;
+  }
+  const tenant = await firstTenant();
+  if (!tenant) {
+    console.error("No workspace to seed. Run pnpm db:migrate first.");
+    process.exitCode = 1;
+    await sql.end();
+    return;
+  }
+  // Through the owner connection, not the workspace's own role: this script TRUNCATEs, and a
+  // workspace role is granted select/insert/update/delete and deliberately nothing more.
+  // `dbRole: null` is how tenant #1 was reached before roles existed — the owner, scoped to
+  // that workspace's schema — which is exactly what an administrative script wants.
+  await withTenant({ ...tenant, dbRole: null }, main);
+}
+
+seedInTenantOne().catch(async (err) => {
   console.error(err);
   await sql.end();
   process.exit(1);
