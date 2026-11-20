@@ -8,10 +8,30 @@ import { btn, inputClass } from "@/components/ui";
 
 const CAPTION_LIMITS: Record<string, number> = { instagram: 2200, facebook: 63206, linkedin: 3000, youtube: 5000 };
 
+/**
+ * How long the three lead lines may be.
+ *
+ * Not platform limits — nothing refuses a long heading — but the length at which each stops
+ * doing its job: a heading nobody reads in one glance, a subhead that has become a paragraph, a
+ * call to action with a comma in it. The same numbers are enforced when the post is saved.
+ */
+export const LIMITS = { heading: 120, subhead: 200, cta: 80 } as const;
+
+function Counter({ n, limit }: { n: number; limit: number }) {
+  return (
+    <span className={`font-mono tabular ${n > limit * 0.9 ? "text-turmeric-ink" : ""}`}>
+      {n} / {limit}
+    </span>
+  );
+}
+
 export interface EditorItem {
   id: string;
   idea: string;
   title: string | null;
+  heading: string | null;
+  subhead: string | null;
+  cta: string | null;
   script: string | null;
   caption: string | null;
   channel: string;
@@ -37,6 +57,9 @@ export function ItemEditor({
   const [state, action, pending] = useActionState<ItemResult, FormData>(saveItem, null);
   const [channel, setChannel] = useState(item.channel);
   const [caption, setCaption] = useState(item.caption ?? "");
+  const [heading, setHeading] = useState(item.heading ?? "");
+  const [subhead, setSubhead] = useState(item.subhead ?? "");
+  const [cta, setCta] = useState(item.cta ?? "");
   const [selected, setSelected] = useState<string[]>(item.assetIds);
   const byId = useMemo(() => new Map(library.map((a) => [a.id, a])), [library]);
   const limit = CAPTION_LIMITS[channel];
@@ -91,6 +114,56 @@ export function ItemEditor({
           <span className={label}>Title {channel === "youtube" ? "(required on YouTube, 2–100 characters)" : "(YouTube and blogs; also used on thumbnails)"}</span>
           <input name="title" defaultValue={item.title ?? ""} className={inputClass} maxLength={150} />
         </label>
+
+        {/*
+          The three lines every post leads with, whatever the channel. They are not the caption:
+          the heading is read first, the subhead earns the rest, and the call to action is the one
+          thing to do. A creative can print them on the image; the caption can repeat them or not.
+        */}
+        <div className="grid gap-4 lg:grid-cols-3">
+          <label className="block text-sm">
+            <span className="mb-1 flex justify-between text-xs text-muted">
+              <span>Heading</span>
+              <Counter n={heading.length} limit={LIMITS.heading} />
+            </span>
+            <input
+              name="heading"
+              value={heading}
+              onChange={(e) => setHeading(e.target.value)}
+              maxLength={LIMITS.heading}
+              placeholder="Shani in the 7th house?"
+              className={inputClass}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 flex justify-between text-xs text-muted">
+              <span>Subheading</span>
+              <Counter n={subhead.length} limit={LIMITS.subhead} />
+            </span>
+            <input
+              name="subhead"
+              value={subhead}
+              onChange={(e) => setSubhead(e.target.value)}
+              maxLength={LIMITS.subhead}
+              placeholder="Read it in D1 and D9 before you say a word"
+              className={inputClass}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 flex justify-between text-xs text-muted">
+              <span>Call to action</span>
+              <Counter n={cta.length} limit={LIMITS.cta} />
+            </span>
+            <input
+              name="cta"
+              value={cta}
+              onChange={(e) => setCta(e.target.value)}
+              maxLength={LIMITS.cta}
+              placeholder="Open your free desk"
+              className={inputClass}
+            />
+          </label>
+        </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <label className="block text-sm">
@@ -171,7 +244,16 @@ export function ItemEditor({
         )}
 
         <div>
-          <div className="mb-2 text-xs text-muted">Media, in posting order ({selected.length} chosen)</div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-muted">Media, in posting order ({selected.length} chosen)</span>
+            {!item.locked && (
+              // Opens the studio with this post's own heading, subheading, call to action, brief
+              // and shape already filled in; what it makes comes back onto this post.
+              <a href={`/creative?item=${item.id}`} className="text-xs text-dusk hover:underline">
+                Make the creative for this post →
+              </a>
+            )}
+          </div>
           {selected.length > 0 && (
             <ol className="mb-4 flex flex-wrap gap-3">
               {selected.map((id, i) => {

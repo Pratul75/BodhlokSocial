@@ -8,6 +8,7 @@ import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { saveUpload, imageSize } from "@/lib/storage";
 import { runImageJob } from "@/lib/creative";
+import { attachCreativeToPost } from "@/lib/attach-creative";
 import { pollVideoJobs, startVideoJob } from "@bodh/integrations/creative";
 import { IMAGE_ASPECTS, type ImageAspect } from "@bodh/integrations/vertex";
 
@@ -70,15 +71,26 @@ export async function generateCreative(_prev: GenerateResult, formData: FormData
     const aspect = String(formData.get("aspect")) as ImageAspect;
     const count = kind === "carousel" ? Math.min(6, Math.max(2, Number(formData.get("slides")) || 3)) : Math.min(4, Math.max(1, Number(formData.get("count")) || 1));
     const title = String(formData.get("title") ?? "").trim() || null;
+    const subhead = String(formData.get("subhead") ?? "").trim().slice(0, 200) || null;
+    const cta = String(formData.get("cta") ?? "").trim().slice(0, 80) || null;
     if (kind === "thumbnail" && !title) return { ok: false, error: "Add the title to put on the thumbnail." };
     if (kind === "thumbnail" && title && title.length > 60) return { ok: false, error: "Keep thumbnail titles under 60 characters." };
+    const itemId = String(formData.get("itemId") ?? "").trim();
     const r = await runImageJob(
-      { kind: kind as "image" | "carousel" | "thumbnail", prompt, aspectRatio: (IMAGE_ASPECTS as readonly string[]).includes(aspect) ? aspect : "1:1", count, title },
+      { kind: kind as "image" | "carousel" | "thumbnail", prompt, aspectRatio: (IMAGE_ASPECTS as readonly string[]).includes(aspect) ? aspect : "1:1", count, title, subhead, cta },
       user.email,
     );
     await audit({ actor: user.email, actorType: "user", action: `generate_${kind}`, target: prompt.slice(0, 80), result: `${r.assetIds.length} asset(s)` });
     revalidatePath("/creative");
-    return { ok: true, message: `Made ${r.assetIds.length} ${kind === "carousel" ? "slides" : r.assetIds.length === 1 ? "image" : "images"}. They're at the top of the library.` };
+    const made = `Made ${r.assetIds.length} ${kind === "carousel" ? "slides" : r.assetIds.length === 1 ? "image" : "images"}.`;
+    const attached = await attachCreativeToPost(itemId, r.assetIds, user.email);
+    if (attached.attached > 0) {
+      await audit({ actor: user.email, actorType: "user", action: "attach_creative", target: itemId, result: `${attached.attached} attached` });
+      revalidatePath(`/calendar/${itemId}`);
+      revalidatePath("/calendar");
+    }
+    if (attached.message) return { ok: true, message: `${made} ${attached.message}` };
+    return { ok: true, message: `${made} They're at the top of the library.` };
   } catch (e) {
     revalidatePath("/creative");
     return { ok: false, error: e instanceof Error ? e.message : "Generation failed." };

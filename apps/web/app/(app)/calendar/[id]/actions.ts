@@ -41,6 +41,11 @@ function readForm(formData: FormData) {
   return {
     idea: String(formData.get("idea") ?? "").trim(),
     title: String(formData.get("title") ?? "").trim() || null,
+    // The three lines every post leads with. Trimmed to the limits the check also enforces, so
+    // a paste from somewhere else cannot quietly store more than the post can carry.
+    heading: String(formData.get("heading") ?? "").trim().slice(0, 120) || null,
+    subhead: String(formData.get("subhead") ?? "").trim().slice(0, 200) || null,
+    cta: String(formData.get("cta") ?? "").trim().slice(0, 80) || null,
     script: String(formData.get("script") ?? "").trim() || null,
     caption: String(formData.get("caption") ?? "").trim() || null,
     channel: String(formData.get("channel") ?? ""),
@@ -74,6 +79,9 @@ export async function saveItem(_prev: ItemResult, formData: FormData): Promise<I
   const contentChanged =
     f.idea !== item.idea ||
     f.title !== item.title ||
+    f.heading !== item.heading ||
+    f.subhead !== item.subhead ||
+    f.cta !== item.cta ||
     f.script !== item.script ||
     f.caption !== item.caption ||
     f.channel !== item.channel ||

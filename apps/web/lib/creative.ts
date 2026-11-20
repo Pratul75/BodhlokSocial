@@ -12,6 +12,9 @@ export interface ImageJobInput {
   aspectRatio: ImageAspect;
   count: number; // images for "image", slides for "carousel", 1 for "thumbnail"
   title?: string | null;
+  /** The post's own subheading and call to action, printed under the title. */
+  subhead?: string | null;
+  cta?: string | null;
 }
 
 async function inBatches<T>(n: number, size: number, fn: (i: number) => Promise<T>): Promise<T[]> {
@@ -29,7 +32,13 @@ export async function runImageJob(input: ImageJobInput, requestedBy: string) {
   const aspect: ImageAspect = input.kind === "thumbnail" ? "16:9" : input.aspectRatio;
   const [job] = await db
     .insert(creativeJobs)
-    .values({ kind: input.kind, prompt: input.prompt, params: { aspectRatio: aspect, count: n, title: input.title ?? null }, status: "running", requestedBy })
+    .values({
+      kind: input.kind,
+      prompt: input.prompt,
+      params: { aspectRatio: aspect, count: n, title: input.title ?? null, subhead: input.subhead ?? null, cta: input.cta ?? null },
+      status: "running",
+      requestedBy,
+    })
     .returning();
 
   try {
@@ -42,12 +51,17 @@ export async function runImageJob(input: ImageJobInput, requestedBy: string) {
       const prompt = brandPrompt(input.prompt, brand, input.kind, input.kind === "carousel" ? { slide: i + 1, slides: n } : {});
       const img = await generateImage(auth, prompt, aspect);
       const dims = imageSize(img.bytes) ?? { width: 1024, height: 1024 };
-      const needsCompose = input.kind === "thumbnail" || Boolean(logoData);
+      // Text is stamped whenever there is a title to stamp, not only on thumbnails: a feed image
+      // with a heading, a subheading and a call to action is the ordinary case, not the exception.
+      const stampText = Boolean(input.title?.trim());
+      const needsCompose = input.kind === "thumbnail" || stampText || Boolean(logoData);
       const out = needsCompose
         ? await compose({
             image: { ...img, ...dims },
             size: input.kind === "thumbnail" ? { width: 1280, height: 720 } : dims,
-            title: input.kind === "thumbnail" ? input.title : null,
+            title: stampText ? input.title : null,
+            subhead: stampText ? input.subhead : null,
+            cta: stampText ? input.cta : null,
             logo: logoData,
             accent,
           })

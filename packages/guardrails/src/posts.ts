@@ -14,6 +14,10 @@ export interface PostDraft {
   format: string; // reel | short | long_video | image | carousel | post | blog
   caption: string | null;
   title: string | null;
+  /** The three lines the post leads with. Copy like any other, so they are checked like it. */
+  heading?: string | null;
+  subhead?: string | null;
+  cta?: string | null;
   assets: { type: "image" | "video" }[];
   settings?: Record<string, unknown>;
   bannedPhrases?: string[];
@@ -23,6 +27,15 @@ export interface PostCheck {
   errors: string[];
   warnings: string[];
 }
+
+/**
+ * How long the three lead lines may be before they stop doing their job.
+ *
+ * No platform refuses a long heading; these are the lengths past which a heading is no longer
+ * read in one glance, a subheading has become a paragraph, or a call to action no longer fits
+ * on a button. They are warnings, never blocks — the team may know better for one post.
+ */
+export const LEAD_LIMITS = { heading: 120, subhead: 200, cta: 80 } as const;
 
 const LIMITS: Record<PublishChannel, { caption: number; name: string }> = {
   instagram: { caption: 2200, name: "Instagram" },
@@ -85,15 +98,30 @@ export function checkPost(p: PostDraft): PostCheck {
     }
   }
 
-  for (const issue of lintAdCopy(`${p.title ?? ""}\n${caption}`)) {
+  // The heading, subhead and call to action are shown to the same people as the caption, and a
+  // creative can print them on the image, so every rule the caption answers to applies to them
+  // too. Checking only the caption would leave the most prominent line on the post unchecked.
+  const heading = (p.heading ?? "").trim();
+  const subhead = (p.subhead ?? "").trim();
+  const cta = (p.cta ?? "").trim();
+  const allCopy = [p.title ?? "", heading, subhead, cta, caption].join("\n");
+
+  if (heading.length > LEAD_LIMITS.heading) warnings.push(`The heading is ${heading.length} characters. Under ${LEAD_LIMITS.heading} is read in one glance.`);
+  if (subhead.length > LEAD_LIMITS.subhead) warnings.push(`The subheading is ${subhead.length} characters. Under ${LEAD_LIMITS.subhead} still reads as one line.`);
+  if (cta.length > LEAD_LIMITS.cta) warnings.push(`The call to action is ${cta.length} characters. Under ${LEAD_LIMITS.cta} fits on a button.`);
+  if (heading && subhead && heading.toLowerCase() === subhead.toLowerCase()) {
+    warnings.push("The heading and the subheading say the same thing; the subheading should earn the rest of the post.");
+  }
+
+  for (const issue of lintAdCopy(allCopy)) {
     errors.push(`"${issue.match}": ${issue.why.toLowerCase()} aren't allowed.`);
   }
-  for (const issue of lintPositioning(`${p.title ?? ""}\n${caption}`)) {
+  for (const issue of lintPositioning(allCopy)) {
     (issue.level === "error" ? errors : warnings).push(`"${issue.match}": ${issue.why.toLowerCase()}.`);
   }
   for (const phrase of p.bannedPhrases ?? []) {
     const f = phrase.trim();
-    if (f && caption.toLowerCase().includes(f.toLowerCase())) errors.push(`"${f}" is on the brand kit's banned list.`);
+    if (f && allCopy.toLowerCase().includes(f.toLowerCase())) errors.push(`"${f}" is on the brand kit's banned list.`);
   }
   if (/\bhttps?:\/\//.test(caption) && p.channel === "instagram") warnings.push("Links in Instagram captions aren't clickable. Use the bio link.");
   return { errors, warnings };
