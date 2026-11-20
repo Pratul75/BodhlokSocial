@@ -4,6 +4,7 @@ export * from "./schema";
 export * from "./funnel";
 export * from "./platform";
 export * from "./tenancy";
+export * from "./orgs";
 export * from "./seed-tenant";
 export * from "./entitlements-store";
 export * from "./migrate-tenants";

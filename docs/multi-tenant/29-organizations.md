@@ -1,0 +1,299 @@
+# Organizations: an agency, its own workspace, and its clients
+
+**Status: plan only. No code and no database change has been made.**
+
+This is what was agreed in conversation, written down so it can be argued with
+before anything is built.
+
+---
+
+## 1. What is being asked for
+
+Today the application has two levels: the platform, and workspaces. A third goes
+in the middle.
+
+```
+Super Admin
+└── Organization: Recharge Studio          (an agency / a customer)
+      ├── Recharge Studio's own workspace  (the agency's own marketing)
+      ├── Client ABC's workspace
+      ├── Client XYZ's workspace
+      └── Client PQR's workspace
+```
+
+- **Super Admin** creates an Organization for a customer.
+- That customer signs in and gets **a complete workspace of its own** — exactly
+  what exists today: every module, integrations, WhatsApp, automations, the
+  chatbot, settings and users.
+- The agency has its own clients, so it can create **more workspaces** inside
+  its Organization.
+- **Every workspace is independent**: its own schema, its own database role, its
+  own users, integrations, credentials, automations and data.
+- The Organization holds no data. It is a management layer that groups the
+  agency's own workspace with its clients'.
+- What the agency may see inside a client is decided by a **permission model**,
+  not by assumption.
+
+In this product's words: a **workspace is a client**, an **organization is the
+agency**.
+
+## 2. The one thing that must not be lost
+
+Every workspace — the agency's own and each client's — keeps its own Postgres
+schema and its own database role. That is not decoration: it is the reason one
+workspace cannot read another's rows. The refusal comes from Postgres, not from
+a `where` clause the application has to remember.
+
+Nothing in this plan weakens that. The Organization layer sits **above** it, in
+the control plane, and never becomes a thing data lives in.
+
+## 3. What does not change
+
+Worth stating plainly, because it is most of the system:
+
+- Every existing workspace keeps its data, its people, its roles, its
+  integrations and its settings. Nothing is migrated.
+- Roles inside a workspace work exactly as they do now.
+- The sign-in doors (Google, and email + password) stay as they are.
+- `/super-admin` stays what it is. The boundary between a platform operator and
+  a workspace user is not touched.
+- The URL keeps no workspace name in it.
+
+## 4. The structure, in the control plane
+
+Two additions, both additive:
+
+| What | Why |
+| --- | --- |
+| `platform.orgs` | One row per agency: name, slug, status, plan, created |
+| `tenants.org_id` | Which agency a workspace belongs to |
+
+Existing workspaces are given a default organization at migration time, and the
+BODH workspace that is live today becomes **that organization's own workspace**.
+No data moves; one column is filled in.
+
+## 5. Who may see what
+
+An agency's admin does **not** automatically get inside a client. Each client
+carries an access level for that agency:
+
+| Level | What the agency can do |
+| --- | --- |
+| **Full** | Work inside the client exactly as that client's own admin would |
+| **Manage** | Only from outside: people, roles, modules, limits, spend. No content |
+| **None** | The client exists as a name and a number, nothing more |
+
+**How it is enforced.** Not with a flag the application has to check in every
+place — that kind of rule opens quietly the first time somebody forgets it.
+Instead:
+
+- **Full** means the person genuinely has an active `users` row in that client's
+  schema, with a role. Every existing mechanism then applies unchanged: the
+  sidebar, the module checks, the audit log, the approval rules.
+- **Manage** and **None** mean no such row exists. The database refuses, as it
+  already does for everybody else.
+
+So the permission model rides on the boundary that is already there, rather than
+building a second one beside it.
+
+Defaults and rules:
+
+- When an agency creates a client itself, the default is **Full** — it made it.
+- Super Admin can cap what an organization may grant itself.
+- A change of level is written to the audit log and is visible on the client's
+  own Admin page. The client should always be able to see who from the agency
+  can reach them.
+- A client's own admin cannot remove the agency's people, or the agency would be
+  locked out of a workspace it is responsible for.
+
+## 6. The sign-in page
+
+Decided: **the organization is chosen on the sign-in page itself, from a list of
+every organization, shown to everybody who opens the page.**
+
+The page asks in this order:
+
+1. Organization — a searchable dropdown, filled on load
+2. Email
+3. Password
+
+The alternative was to fill the list from the address once it was typed, so that
+a visitor only ever saw their own organization. That was put forward and not
+taken: the list is to be visible from the start. The cost is recorded here so
+nobody is surprised by it later — the names of every customer are on a public
+page, and the list needs searching once it is long.
+
+Four things keep that decision from costing more than it has to:
+
+- **Only active organizations are listed.** Archived and suspended ones drop off
+  by themselves.
+- **The dropdown shows names and submits ids.** No slug, schema name or other
+  internal identifier leaves with it.
+- **Choosing the wrong organization gives the ordinary refusal.** "That email and
+  password do not match an account here" — exactly what a wrong password gives.
+  This matters more than it looks: a public list of organizations plus a reply
+  that varied by organization would together answer "which agency is this person
+  with?" for anybody who cared to ask. The reply does not vary.
+- **The list is cached and served the same to everyone**, so it cannot be used to
+  put load on the control plane.
+
+### The organization must be enforced, not decorated
+
+A field that is shown but not checked is worse than no field: it tells the
+person something was verified when nothing was. So:
+
+1. **An organization must be chosen.** The form does not submit without one.
+2. **Both have to be true.** The password must match *and* the workspace it
+   opens must belong to the chosen organization. Either one failing is a
+   failure.
+3. **A wrong organization gives the ordinary refusal** — never "you are not in
+   that organization". With a public list of organizations, a reply that varied
+   would answer "which agency is this person with?" for anybody who asked.
+4. **The organization can only narrow, never widen.** The id posted by the form
+   is not trusted: the server checks it names a real, active organization and
+   then uses it to *shorten* the list of workspaces the password is checked
+   against. A tampered id cannot open anything extra; at worst it opens nothing.
+5. **The picker inherits the same limit.** Somebody with workspaces in two
+   organizations who signs in to one sees only that one's workspaces.
+6. **The session stores the workspace, and the organization is derived from it.**
+   Nothing carries the posted organization forward, so there is no second copy
+   of the truth to drift.
+
+A consequence worth stating: **one session, one organization.** Somebody who
+works for two agencies signs out and signs in again to move between them. That
+is the straight reading of "nothing should mix up", and it is cheaper to keep
+than to explain.
+
+Google sign-in cannot ask first, because that flow leaves the page before any
+identity is known. Those people come back to the workspace picker instead, with
+the workspaces grouped by organization.
+
+## 7. Switching between workspaces
+
+A person who works in several workspaces gets a switcher in the **top corner of
+the sidebar**, on the workspace name that is already there. No new furniture: the
+name becomes the control. The list comes from the control plane's directory —
+the workspaces that address can actually open.
+
+It appears **only when there is more than one**. Somebody who belongs to a single
+workspace sees exactly what they see today, with nothing to click.
+
+What is inside follows the role in the workspace that is chosen, which is read
+from that workspace's own `users` row. The same person can be a social media
+manager in the agency's workspace — Creative studio and Publishing, no SEO — and
+an SEO manager in a client, where SEO & GEO appears and those two go. The name
+and role shown at the foot of the sidebar change with it.
+
+**How a switch works:**
+
+1. The switcher sends a **server action**, not a link. A link is a `GET`: a
+   prefetch, a stray reload or an old tab could fire it. Changing workspace
+   changes who you are for every later request, so it is a deliberate `POST`.
+2. The server checks that this person has an **active `users` row** in the
+   target workspace. No row, no switch.
+3. A **new session cookie** is issued, carrying that workspace and that row.
+4. Every later request is that workspace's, because the session says so. No part
+   of the application has to remember that a switch happened — and anything that
+   has to be remembered is the thing that eventually forgets.
+
+The role is read fresh from the new workspace's own `users` row, so the same
+person can be an admin in one client and a viewer in another, and the sidebar
+changes accordingly. If their access is removed while they are inside, the next
+request refuses.
+
+### One workspace at a time — and the tab that goes stale
+
+Decided: one session cookie, so **one workspace at a time**. Two clients cannot
+be open in two tabs. Seeing two at once means a second browser profile.
+
+This creates a real hazard that has to be closed in the same phase as the
+switcher:
+
+> Tab A is showing Client ABC's calendar. In Tab B you switch to Client XYZ.
+> Tab A still *shows* ABC — but the cookie is now XYZ's. Pressing "add post" in
+> Tab A would write to **XYZ**.
+
+That is a data mix — not in the database, but between the screen and the
+session, which is just as wrong for the person using it.
+
+**The guard:** every page carries the workspace it was rendered for, and every
+action compares that with the session before doing anything. If they disagree,
+the action does not run and the page says it belongs to another workspace and
+should be reloaded.
+
+A guard of exactly this shape already exists: when the workspace used to be in
+the address, the address and the cookie were compared and a mismatch was
+refused. Taking the name out of the address left that guard with nothing to
+compare. This replaces it.
+
+## 8. The plan, in five phases
+
+Each phase is shippable on its own and leaves the application working.
+
+### Phase 1 — The organization relationship
+
+`platform.orgs`, `tenants.org_id`, a default organization for everything that
+exists today. The Super Admin console lists workspaces grouped by organization,
+and asks which one a new workspace belongs to.
+
+*Nobody's sign-in changes. Nothing breaks. Smallest phase.*
+
+### Phase 2 — An organization gets its own workspace
+
+Creating an organization creates its first workspace in the same step: a full
+one, exactly like today's. The agency signs in and starts working in it.
+
+*Reuses the provisioning that already creates workspaces.*
+
+### Phase 3 — The switcher, with its guard
+
+The switcher in the sidebar, the server action behind it, and the stale-tab
+guard described above. The guard is not a separate piece of work: a switcher
+without it is unfinished.
+
+### Phase 4 — The `/org` console
+
+The agency's own panel: my clients, create a client, its people and their roles,
+its spend. A smaller `/super-admin`, scoped to one organization, built on the
+same shape.
+
+*Largest phase.*
+
+### Phase 5 — Permissions and ceilings
+
+The three access levels become settable, and Super Admin gives each organization
+its ceiling: how many clients, which modules, how much budget. The token-use page
+gains an organization total.
+
+*Until this phase lands the default is **Full**, so phases 2–4 give an agency
+full access to the clients it creates. If the levels are needed from day one,
+this phase moves ahead of Phase 3 and the console arrives later.*
+
+## 9. Still open
+
+These can wait until Phase 4, but they are decisions, not details:
+
+1. **Deleting an organization** — presumably archiving every workspace under it,
+   with the retention rules that already exist. Who may do it, and what the
+   client is told.
+2. **One person in two organizations** — a freelancer working for two agencies.
+   Possible, but the sign-in picker and the switcher must group by organization,
+   or two companies' clients appear in one flat list.
+3. **The ceilings themselves** — how many clients, which modules, how much
+   budget, per plan.
+
+## 10. What could go wrong
+
+| Risk | Where it bites | What this plan does about it |
+| --- | --- | --- |
+| The live BODH workspace ends up with no organization | Deploy day | Phase 1 creates the default organization and fills `org_id` in the same migration |
+| An agency quietly gains access to a client | Trust | Full access means a visible `users` row on the client's own Admin page, never a hidden flag |
+| A stale tab writes to the wrong client | Every day, once switching exists | The page-to-session guard, shipped with the switcher |
+| An organization outgrows what it was sold | Billing | Ceilings in Phase 5, enforced where the budget is already enforced |
+| Two agencies' clients mixed in one list | A freelancer's sign-in | The chosen organization narrows the picker; one session, one organization |
+| The organization field is shown but not checked | Sign-in | Enforced on the server: password *and* membership, with the ordinary refusal when either fails |
+
+---
+
+*Written before any code. The structure above was agreed in conversation on
+20 November 2026; the phases are a proposal.*

@@ -18,6 +18,9 @@ import {
   archiveWorkspace,
   purgeWorkspace,
   restoreWorkspace,
+  createOrganization,
+  renameOrganization,
+  setOrganizationStatus,
 } from "./actions";
 
 import { CopyLink } from "@/components/copy-link";
@@ -39,14 +42,25 @@ function generatePassword(): string {
   return `${chars.slice(0, 5).join("")}-${chars.slice(5, 10).join("")}-${chars.slice(10).join("")}`;
 }
 
-export function CreateTenantForm() {
+export function CreateTenantForm({ orgs, defaultOrgId }: { orgs: { id: string; name: string }[]; defaultOrgId?: string }) {
   const [state, action, pending] = useActionState<SecretResult, FormData>(createTenant, null);
   const [password, setPassword] = useState("");
   return (
     <form action={action} className="mt-4 grid gap-3 sm:grid-cols-2">
-      <label className="block text-sm sm:col-span-2">
+      <label className="block text-sm">
         <span className="mb-1 block font-medium">Workspace name</span>
         <input name="name" required maxLength={80} className={input} placeholder="Acme Ltd" />
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">Organization</span>
+        <select name="orgId" required defaultValue={defaultOrgId ?? orgs[0]?.id ?? ""} className={input}>
+          {orgs.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1 block text-xs text-muted">The agency this client belongs to.</span>
       </label>
       <label className="block text-sm">
         <span className="mb-1 block font-medium">First admin&rsquo;s email</span>
@@ -512,6 +526,110 @@ export function PurgeWorkspaceForm({
       {state && (
         <p className={`mt-2 text-sm ${state.ok ? "text-muted" : "text-critical"}`}>{state.ok ? state.message : state.error}</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Creates an agency, and its own workspace with it.
+ *
+ * The same fields a workspace asks for, because that is what is being made: the organization is
+ * a row, and the workspace underneath it is the thing the agency actually signs in to.
+ */
+export function CreateOrgForm() {
+  const [state, action, pending] = useActionState<SecretResult, FormData>(createOrganization, null);
+  const [password, setPassword] = useState("");
+  return (
+    <form action={action} className="mt-4 grid gap-3 sm:grid-cols-2">
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">Organization name</span>
+        <input name="name" required maxLength={80} className={input} placeholder="Recharge Studio" />
+        <span className="mt-1 block text-xs text-muted">Its own workspace gets this name too.</span>
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">First admin&rsquo;s email</span>
+        <input name="adminEmail" type="email" required className={input} placeholder="admin@rechargestudio.com" />
+        <span className="mt-1 block text-xs text-muted">The agency&rsquo;s own admin, in its own workspace.</span>
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">
+          Their mobile <span className="font-normal text-muted">— optional</span>
+        </span>
+        <input name="adminPhone" type="tel" autoComplete="off" className={input} placeholder="+91 98765 43210" />
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">
+          Their password <span className="font-normal text-muted">— optional</span>
+        </span>
+        <div className="flex items-center gap-2">
+          <input
+            name="adminPassword"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            className={`${input} font-mono`}
+            placeholder="Leave empty for a one-time link instead"
+          />
+          <button
+            type="button"
+            onClick={() => setPassword(generatePassword())}
+            className="shrink-0 rounded-lg border border-rule px-3 py-2 text-sm font-medium hover:bg-paper"
+          >
+            Generate
+          </button>
+        </div>
+      </label>
+      <div className="sm:col-span-2">
+        <button disabled={pending} className="rounded-lg bg-night px-3 py-2 text-sm font-medium text-white hover:bg-night-2 disabled:opacity-60">
+          {pending ? "Creating…" : "Create organization"}
+        </button>
+      </div>
+      {state && (
+        <p
+          role={state.ok ? "status" : "alert"}
+          className={`sm:col-span-2 text-sm ${state.ok ? "text-leaf" : "text-sindoor"}`}
+        >
+          {state.ok ? state.message : state.error}
+        </p>
+      )}
+      {state?.ok && state.value && (
+        <div className="sm:col-span-2">
+          <CopyLink href={state.value} note={state.message} label="One-time password link for the agency's first admin" />
+        </div>
+      )}
+    </form>
+  );
+}
+
+/** Rename, and open or close, one agency. */
+export function OrgRowActions({ id, name, status }: { id: string; name: string; status: string }) {
+  const [renameState, rename, renaming] = useActionState<SecretResult, FormData>(renameOrganization, null);
+  const [statusState, setStatus, saving] = useActionState<SecretResult, FormData>(setOrganizationStatus, null);
+  const state = renameState ?? statusState;
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {state && !state.ok && <span className="text-xs text-sindoor">{state.error}</span>}
+      <form action={rename} className="flex items-center gap-1.5">
+        <input type="hidden" name="id" value={id} />
+        <input
+          name="name"
+          defaultValue={name}
+          maxLength={80}
+          className="w-44 rounded-lg border border-rule bg-card px-2 py-1 text-sm"
+          aria-label={`Name for ${name}`}
+        />
+        <button disabled={renaming} className="rounded-lg border border-rule px-2.5 py-1 text-xs font-medium hover:bg-paper">
+          {renaming ? "Saving…" : "Rename"}
+        </button>
+      </form>
+      <form action={setStatus}>
+        <input type="hidden" name="id" value={id} />
+        <input type="hidden" name="status" value={status === "active" ? "suspended" : "active"} />
+        <button disabled={saving} className="rounded-lg border border-rule px-2.5 py-1 text-xs font-medium hover:bg-paper">
+          {status === "active" ? "Suspend" : "Reopen"}
+        </button>
+      </form>
     </div>
   );
 }

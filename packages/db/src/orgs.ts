@@ -1,0 +1,156 @@
+/**
+ * Organizations: the agency a workspace belongs to.
+ *
+ * An organization holds no data. It has no schema and no database role, and nothing is ever
+ * bound to it — that is the whole point. A workspace is where data lives and where the
+ * database draws its line; an organization only says which workspaces belong together.
+ *
+ * Kept apart from `tenancy.ts` for the same reason it is kept apart in the database: the
+ * moment the two are one thing, every rule has to start asking which kind of thing it is
+ * holding, and the first rule that forgets to ask is a bug nobody can see.
+ */
+import { ownerSql } from "./client";
+import { slugCandidate } from "./platform";
+
+export interface OrgRef {
+  id: string;
+  slug: string;
+  name: string;
+  /** active | suspended | archived. Only an active organization is offered at sign-in. */
+  status: string;
+  plan: string;
+}
+
+interface OrgRow {
+  id: string;
+  slug: string;
+  name: string;
+  status: string;
+  plan: string;
+}
+
+const toOrg = (r: OrgRow): OrgRef => ({ id: r.id, slug: r.slug, name: r.name, status: r.status, plan: r.plan });
+
+const COLUMNS = "id, slug, name, status, plan";
+
+/** Every organization, oldest first, so the list does not reshuffle as names are edited. */
+export async function listOrgs(): Promise<OrgRef[]> {
+  const rows = (await ownerSql().unsafe(`select ${COLUMNS} from platform.orgs order by created_at`)) as unknown as OrgRow[];
+  return rows.map(toOrg);
+}
+
+/**
+ * The organizations a sign-in page may offer.
+ *
+ * Only active ones: a suspended or archived agency is closed, and offering it would mean
+ * refusing the person after they had typed a password.
+ */
+export async function activeOrgs(): Promise<OrgRef[]> {
+  return (await listOrgs()).filter((o) => o.status === "active");
+}
+
+export async function orgById(id: string): Promise<OrgRef | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const rows = (await ownerSql()<OrgRow[]>`
+    select id, slug, name, status, plan from platform.orgs where id = ${id}`) as unknown as OrgRow[];
+  return rows[0] ? toOrg(rows[0]) : null;
+}
+
+export async function orgBySlug(slug: string): Promise<OrgRef | null> {
+  const rows = (await ownerSql()<OrgRow[]>`
+    select id, slug, name, status, plan from platform.orgs where slug = ${slug.trim().toLowerCase()}`) as unknown as OrgRow[];
+  return rows[0] ? toOrg(rows[0]) : null;
+}
+
+/**
+ * A short name for an organization that nothing else is using.
+ *
+ * Unlike a workspace slug this never becomes a schema or a role name, so it is only ever a
+ * label — but two agencies sharing one short name is still a support call waiting to happen.
+ */
+export async function uniqueOrgSlug(name: string): Promise<string> {
+  const base = slugCandidate(name);
+  for (let n = 0; n < 200; n++) {
+    const slug = n === 0 ? base : `${base}-${n + 1}`.slice(0, 40);
+    if (!(await orgBySlug(slug))) return slug;
+  }
+  throw new Error(`Could not find a free short name for "${name}".`);
+}
+
+export interface NewOrg {
+  name: string;
+  /** Worked out from the name when it is left out. */
+  slug?: string;
+  plan?: string;
+}
+
+/** Creates an organization. Nothing is provisioned: there is nothing to provision. */
+export async function createOrg(input: NewOrg): Promise<OrgRef> {
+  const name = input.name.trim();
+  if (!name) throw new Error("An organization needs a name.");
+  const slug = (input.slug ?? (await uniqueOrgSlug(name))).trim().toLowerCase();
+  const rows = (await ownerSql()<OrgRow[]>`
+    insert into platform.orgs (slug, name, plan)
+    values (${slug}, ${name}, ${input.plan ?? "full"})
+    returning id, slug, name, status, plan`) as unknown as OrgRow[];
+  return toOrg(rows[0]!);
+}
+
+export async function renameOrg(id: string, name: string): Promise<void> {
+  await ownerSql()`update platform.orgs set name = ${name.trim()}, updated_at = now() where id = ${id}`;
+}
+
+export async function setOrgStatus(id: string, status: string): Promise<void> {
+  await ownerSql()`update platform.orgs set status = ${status}, updated_at = now() where id = ${id}`;
+}
+
+/** Puts a workspace in an organization. */
+export async function setTenantOrg(tenantId: string, orgId: string): Promise<void> {
+  await ownerSql()`update platform.tenants set org_id = ${orgId}, updated_at = now() where id = ${tenantId}`;
+}
+
+/** How many workspaces each organization holds, for the console's lists. */
+export async function workspaceCounts(): Promise<Map<string, number>> {
+  const rows = (await ownerSql()<{ org_id: string; n: string }[]>`
+    select org_id, count(*)::text as n from platform.tenants where org_id is not null group by org_id`) as unknown as {
+    org_id: string;
+    n: string;
+  }[];
+  return new Map(rows.map((r) => [r.org_id, Number(r.n)]));
+}
+
+/**
+ * The organization every existing workspace belongs to, created if it is not there yet.
+ *
+ * An installation that predates organizations has workspaces and no agency to hold them. This
+ * is the one that holds them: named from `FIRST_ORG_NAME` when the deployment says so, and
+ * otherwise after the installation itself, so nobody's company name is written into the code.
+ */
+export async function ensureFirstOrg(fallbackName: string): Promise<OrgRef> {
+  const name = process.env.FIRST_ORG_NAME?.trim() || fallbackName.trim() || "Organization";
+  const slug = process.env.FIRST_ORG_SLUG?.trim().toLowerCase() || slugCandidate(name);
+  const existing = await orgBySlug(slug);
+  if (existing) return existing;
+  // Another deploy may be doing exactly this at the same moment; the unique index decides.
+  const rows = (await ownerSql()<OrgRow[]>`
+    insert into platform.orgs (slug, name)
+    values (${slug}, ${name})
+    on conflict (slug) do update set name = platform.orgs.name
+    returning id, slug, name, status, plan`) as unknown as OrgRow[];
+  return toOrg(rows[0]!);
+}
+
+/**
+ * Gives every workspace without an organization to the first one.
+ *
+ * Run on each deploy. It fills a column and moves nothing: no schema, no row of customer data
+ * and no role is touched, so a workspace that was working before is working after.
+ */
+export async function backfillOrgs(fallbackName: string): Promise<{ org: OrgRef; placed: number }> {
+  const org = await ensureFirstOrg(fallbackName);
+  const rows = (await ownerSql()<{ id: string }[]>`
+    update platform.tenants set org_id = ${org.id}, updated_at = now()
+    where org_id is null
+    returning id`) as unknown as { id: string }[];
+  return { org, placed: rows.length };
+}

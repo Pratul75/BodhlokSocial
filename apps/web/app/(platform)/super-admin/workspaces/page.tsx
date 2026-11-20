@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { listOrgs } from "@bodh/db";
 import { platformAudit, requireOperator } from "@/lib/platform-auth";
 import { allWorkspaceStats } from "@/lib/platform-stats";
 import { ConsoleShell } from "../shell";
@@ -19,7 +20,7 @@ export default async function WorkspacesPage({
   // Suspending and deleting belong to an owner; everyone else gets View.
   const isOwner = op.role === "owner";
   const { q = "", status = "all", sort = "name" } = await searchParams;
-  const all = await allWorkspaceStats();
+  const [all, orgs] = await Promise.all([allWorkspaceStats(), listOrgs()]);
   await platformAudit({ actor: op.email, action: "view_workspaces", target: "console" });
 
   const needle = q.trim().toLowerCase();
@@ -38,6 +39,15 @@ export default async function WorkspacesPage({
     if (sort === "activity") return (b.lastActivity?.getTime() ?? 0) - (a.lastActivity?.getTime() ?? 0);
     return a.tenant.name.localeCompare(b.tenant.name);
   });
+
+  // Grouped by agency, with the groups in the order the organizations were created, so the
+  // list does not reorder itself as workspaces are renamed. A workspace with no organization
+  // only exists between a deploy and its migrate step, but it is shown rather than hidden.
+  const groups = [
+    ...orgs.map((o) => ({ id: o.id, name: o.name, rows: rows.filter((r) => r.tenant.orgId === o.id) })),
+    { id: "none", name: "No organization", rows: rows.filter((r) => !r.tenant.orgId) },
+  ].filter((g) => g.rows.length > 0);
+  const COLUMNS = 8;
 
   return (
     <ConsoleShell
@@ -70,7 +80,16 @@ export default async function WorkspacesPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((s) => (
+                  {groups.flatMap((group) => [
+                    <tr key={`g-${group.id}`} className="border-b border-rule bg-paper/70">
+                      <td colSpan={COLUMNS} className="px-5 py-2 text-xs font-medium tracking-wide text-muted uppercase">
+                        {group.name}
+                        <span className="ml-2 font-normal normal-case">
+                          {group.rows.length} workspace{group.rows.length === 1 ? "" : "s"}
+                        </span>
+                      </td>
+                    </tr>,
+                    ...group.rows.map((s) => (
                     <tr key={s.tenant.id} className="border-b border-rule/60 last:border-0 hover:bg-paper/60">
                       <td className="px-5 py-3">
                         <Link href={`/super-admin/workspaces/${s.tenant.id}`} className="font-medium hover:underline">
@@ -111,7 +130,8 @@ export default async function WorkspacesPage({
                         )}
                       </td>
                     </tr>
-                  ))}
+                    )),
+                  ])}
                 </tbody>
               </table>
             </div>
@@ -126,7 +146,7 @@ export default async function WorkspacesPage({
             sub="Creates its own schema, database role, read-only role and tables, with every module switched on and ad spend capped at ₹0 until someone raises it."
           >
             <div className="px-5 pb-5">
-              <CreateTenantForm />
+              <CreateTenantForm orgs={orgs.filter((o) => o.status === "active")} />
             </div>
           </ConsoleCard>
         </div>

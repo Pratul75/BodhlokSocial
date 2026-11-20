@@ -12,6 +12,9 @@ export const platform = pgSchema("platform");
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
+export const ORG_STATUSES = ["active", "suspended", "archived"] as const;
+export type OrgStatus = (typeof ORG_STATUSES)[number];
+
 export const TENANT_STATUSES = ["provisioning", "active", "suspended", "archived"] as const;
 export type TenantStatus = (typeof TENANT_STATUSES)[number];
 
@@ -20,6 +23,25 @@ export type OperatorRole = (typeof OPERATOR_ROLES)[number];
 
 export const ENTITLEMENT_KINDS = ["module", "feature", "capacity"] as const;
 export type EntitlementKind = (typeof ENTITLEMENT_KINDS)[number];
+
+/**
+ * One row per agency. An organization holds no data of its own — no schema, no database role —
+ * it groups the workspaces underneath it: the agency's own, and each of its clients'.
+ */
+export const orgs = platform.table(
+  "orgs",
+  {
+    id: id(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    status: text("status").notNull().default("active"),
+    /** The label the plan was sold under. Entitlements are the truth; this is a label. */
+    plan: text("plan").notNull().default("full"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("orgs_slug_uq").on(t.slug)],
+);
 
 /** One row per client. `dataSchema` is where its 39 tables live; tenant #1 is `public`. */
 export const tenants = platform.table(
@@ -37,6 +59,8 @@ export const tenants = platform.table(
     status: text("status").notNull().default("provisioning"),
     /** Preset applied at creation, e.g. "full". Entitlements are the truth; this is a label. */
     plan: text("plan").notNull().default("full"),
+    /** The agency this workspace belongs to. Filled in for every workspace by the migrate step. */
+    orgId: uuid("org_id").references(() => orgs.id),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

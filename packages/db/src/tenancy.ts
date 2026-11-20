@@ -56,11 +56,12 @@ interface TenantRow {
   db_role: string | null;
   db_role_secret: string | null;
   status: string;
+  org_id?: string | null;
 }
 
 const toRef = (r: TenantRow): TenantRef => {
   if (r.db_role && r.db_role_secret) rememberTenantRoleSecret(r.db_role, r.db_role_secret);
-  return { id: r.id, slug: r.slug, name: r.name, dataSchema: r.data_schema, dbRole: r.db_role, status: r.status };
+  return { id: r.id, slug: r.slug, name: r.name, dataSchema: r.data_schema, dbRole: r.db_role, status: r.status, orgId: r.org_id ?? null };
 };
 
 let cache: { at: number; byId: Map<string, TenantRef>; bySlug: Map<string, TenantRef> } | null = null;
@@ -74,7 +75,7 @@ export function forgetTenants() {
 async function registry() {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache;
   const rows = (await ownerSql()<TenantRow[]>`
-    select id, slug, name, data_schema, db_role, db_role_secret, status
+    select id, slug, name, data_schema, db_role, db_role_secret, status, org_id
     from platform.tenants`) as unknown as TenantRow[];
   const byId = new Map<string, TenantRef>();
   const bySlug = new Map<string, TenantRef>();
@@ -125,7 +126,7 @@ export async function archiveTenant(tenantId: string, by: string, reason: string
         purge_after = now() + ${`${RETENTION_DAYS} days`}::interval,
         updated_at = now()
     where id = ${tenantId} and status <> 'archived'
-    returning id, slug, name, data_schema, db_role, db_role_secret, status`) as unknown as TenantRow[];
+    returning id, slug, name, data_schema, db_role, db_role_secret, status, org_id`) as unknown as TenantRow[];
   forgetTenants();
   return rows[0] ? toRef(rows[0]) : null;
 }
@@ -138,7 +139,7 @@ export async function restoreTenant(tenantId: string): Promise<TenantRef | null>
     set status = 'active', archived_at = null, archived_by = null, archived_reason = null,
         purge_after = null, updated_at = now()
     where id = ${tenantId} and status = 'archived'
-    returning id, slug, name, data_schema, db_role, db_role_secret, status`) as unknown as TenantRow[];
+    returning id, slug, name, data_schema, db_role, db_role_secret, status, org_id`) as unknown as TenantRow[];
   forgetTenants();
   return rows[0] ? toRef(rows[0]) : null;
 }
@@ -315,6 +316,8 @@ export interface ProvisionInput {
   adminEmail: string;
   adminName?: string;
   plan?: string;
+  /** The agency this workspace belongs to. Left out only by tests and the first migration. */
+  orgId?: string | null;
   actor: string;
 }
 
@@ -415,9 +418,9 @@ export async function provisionTenant(input: ProvisionInput): Promise<ProvisionR
   let row = already;
   if (!row) {
     const inserted = (await sql<TenantRow[]>`
-      insert into platform.tenants (slug, name, data_schema, status, plan)
-      values (${slug}, ${input.name}, ${dataSchema}, 'provisioning', ${input.plan ?? "full"})
-      returning id, slug, name, data_schema, db_role, db_role_secret, status`) as unknown as TenantRow[];
+      insert into platform.tenants (slug, name, data_schema, status, plan, org_id)
+      values (${slug}, ${input.name}, ${dataSchema}, 'provisioning', ${input.plan ?? "full"}, ${input.orgId ?? null})
+      returning id, slug, name, data_schema, db_role, db_role_secret, status, org_id`) as unknown as TenantRow[];
     row = inserted[0]!;
   }
 
@@ -477,6 +480,7 @@ export async function provisionTenant(input: ProvisionInput): Promise<ProvisionR
     dataSchema,
     dbRole: role,
     status: "provisioning",
+    orgId: row.org_id ?? input.orgId ?? null,
   };
 
   // 6. the same seed rows the single-tenant bootstrap writes, inside the tenant
@@ -505,7 +509,7 @@ export async function provisionTenant(input: ProvisionInput): Promise<ProvisionR
 
 async function rowBySlug(slug: string): Promise<TenantRow | null> {
   const rows = (await ownerSql()<TenantRow[]>`
-    select id, slug, name, data_schema, db_role, db_role_secret, status
+    select id, slug, name, data_schema, db_role, db_role_secret, status, org_id
     from platform.tenants where slug = ${slug}`) as unknown as TenantRow[];
   return rows[0] ?? null;
 }
@@ -518,7 +522,7 @@ async function rowBySlug(slug: string): Promise<TenantRow | null> {
 export async function ensureTenantRoles(tenantId: string): Promise<{ role: string } | null> {
   const sql = ownerSql();
   const rows = (await sql<TenantRow[]>`
-    select id, slug, name, data_schema, db_role, db_role_secret, status
+    select id, slug, name, data_schema, db_role, db_role_secret, status, org_id
     from platform.tenants where id = ${tenantId}`) as unknown as TenantRow[];
   const row = rows[0];
   if (!row) return null;
@@ -704,7 +708,7 @@ export async function registerFirstTenant(opts: { slug: string; name: string }):
     const updated = (await sql<TenantRow[]>`
       update platform.tenants set db_role = ${role}, db_role_secret = ${secret}, updated_at = now()
       where id = ${existing.id}
-      returning id, slug, name, data_schema, db_role, db_role_secret, status`) as unknown as TenantRow[];
+      returning id, slug, name, data_schema, db_role, db_role_secret, status, org_id`) as unknown as TenantRow[];
     const ref = toRef(updated[0]!);
     await forgetTenantPool(ref.id);
     forgetTenants();
@@ -714,7 +718,7 @@ export async function registerFirstTenant(opts: { slug: string; name: string }):
     insert into platform.tenants (slug, name, data_schema, status, plan)
     values (${opts.slug}, ${opts.name}, 'public', 'active', 'full')
     on conflict (slug) do update set name = excluded.name
-    returning id, slug, name, data_schema, db_role, db_role_secret, status`) as unknown as TenantRow[];
+    returning id, slug, name, data_schema, db_role, db_role_secret, status, org_id`) as unknown as TenantRow[];
   // Tenant #1 gets its own role too. Without one it connects as the database owner, and the
   // role boundary holds in only one direction: every other tenant is sealed off from it, while
   // it can read all of them.
@@ -723,7 +727,7 @@ export async function registerFirstTenant(opts: { slug: string; name: string }):
   const withRole = (await sql<TenantRow[]>`
     update platform.tenants set db_role = ${role}, db_role_secret = ${secret}, updated_at = now()
     where id = ${rows[0]!.id}
-    returning id, slug, name, data_schema, db_role, db_role_secret, status`) as unknown as TenantRow[];
+    returning id, slug, name, data_schema, db_role, db_role_secret, status, org_id`) as unknown as TenantRow[];
   const ref = toRef(withRole[0]!);
   await forgetTenantPool(ref.id);
   await writeFullEntitlements(ref.id, "bootstrap");

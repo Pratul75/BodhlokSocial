@@ -2,7 +2,8 @@
  * Database setup, run on every deploy:
  * 1. the control plane (`platform` schema) — additive and idempotent
  * 2. tenant #1's own schema (`public`) brought up to date, so the registry below can be read
- * 3. register the existing installation as tenant #1, without moving a row
+ * 3. register the existing installation as tenant #1, without moving a row, and put every
+ *    workspace in an organization
  * 4. EVERY tenant brought up to date, suspended ones included
  * 5. seed tenant #1's baseline rows (connections, ₹0 spend caps, brand kit, first admin)
  * 6. seed the first platform operator from PLATFORM_OWNER_EMAIL, if it is set
@@ -15,6 +16,7 @@
 import { ownerSql, withTenant, type TenantRef } from "./client";
 import { migrateAllTenants, migrateTenant, type TenantMigrationResult } from "./migrate-tenants";
 import { backfillEntitlements, ensureTenantRoles, listTenants, registerFirstTenant, setupPlatform } from "./tenancy";
+import { backfillOrgs } from "./orgs";
 import { seedTenantBaseline } from "./seed-tenant";
 
 const FIRST_TENANT_SLUG = process.env.FIRST_TENANT_SLUG?.trim() || "bodhlok";
@@ -55,6 +57,16 @@ async function main() {
   // 3. Tenant #1, registered against the schema its data already lives in.
   const first = await registerFirstTenant({ slug: FIRST_TENANT_SLUG, name: FIRST_TENANT_NAME });
   console.log(`Tenant #1 registered: ${first.slug} -> schema ${first.dataSchema}.`);
+
+  // 3a. The agency every workspace belongs to. An installation made before organizations
+  //     existed has workspaces and nobody holding them; this is who holds them. One column
+  //     gains a value — no schema, no role and no row of customer data is touched.
+  const { org, placed } = await backfillOrgs(FIRST_TENANT_NAME);
+  console.log(
+    placed > 0
+      ? `Organization ${org.name} (${org.slug}): ${placed} workspace(s) placed in it.`
+      : `Organization ${org.name} (${org.slug}) present; every workspace already has one.`,
+  );
 
   // 4. Every tenant. Tenant #1 is already done and reports as up to date. Each one's roles and
   //    grants are checked too, so a workspace made before a feature existed gains it here.
