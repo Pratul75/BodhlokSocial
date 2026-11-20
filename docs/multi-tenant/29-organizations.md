@@ -156,8 +156,9 @@ person something was verified when nothing was. So:
    is not trusted: the server checks it names a real, active organization and
    then uses it to *shorten* the list of workspaces the password is checked
    against. A tampered id cannot open anything extra; at worst it opens nothing.
-5. **The picker inherits the same limit.** Somebody with workspaces in two
-   organizations who signs in to one sees only that one's workspaces.
+5. **What comes after inherits the same limit.** Somebody with workspaces in two
+   organizations who signs in to one reaches only that one's workspaces, from
+   the switcher.
 6. **The session stores the workspace, and the organization is derived from it.**
    Nothing carries the posted organization forward, so there is no second copy
    of the truth to drift.
@@ -332,6 +333,17 @@ out not to deliver the events at all, which is exactly the failure a guard must 
 people, approvals waiting, tokens and spend, and a form that makes a client. An organization
 admin is **not** a third principal — they sign in as everybody does, and this only says which
 agency they run. Read on every request, so losing it takes effect on the next click.
+
+**The sign-in page.** Built as section 6 describes: Organization, then email, then password,
+with every active organization listed. It is enforced rather than decorated — the chosen
+organization shortens the list of workspaces the password is checked against, and a wrong one
+is refused with the same words a wrong password gets, so the page cannot be used to find out
+who works where.
+
+Building it removed a step. The "which workspace?" question after the password is gone: the
+organization has been chosen already and the switcher moves between its workspaces in one
+click, so asking twice was asking for nothing. The picker remains on the Google door, which
+never sees the organization field.
 
 **Phase 5.** Access levels and ceilings.
 
