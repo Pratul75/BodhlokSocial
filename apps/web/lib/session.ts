@@ -4,6 +4,16 @@
 import { jwtVerify, SignJWT } from "jose";
 
 export const SESSION_COOKIE = "bodh_session";
+/**
+ * Which workspace the session currently belongs to, readable by the page.
+ *
+ * Not a credential and not trusted for anything: the session cookie already carries the
+ * workspace, signed and httpOnly, and that is what every request is decided by. This is the
+ * same id written where the browser can read it, so a tab can notice that it is showing a
+ * workspace the session has since moved away from. Tampering with it changes nothing except
+ * whether that tab warns about itself.
+ */
+export const WORKSPACE_COOKIE = "bodh_workspace";
 export const OAUTH_COOKIE = "bodh_oauth";
 export const SESSION_DAYS = 7;
 /** Platform operators sign in separately: their own cookie and their own token audience. */
@@ -140,6 +150,11 @@ export function cookieOptions(maxAgeSeconds: number) {
     path: "/",
     maxAge: maxAgeSeconds,
   };
+}
+
+/** The workspace marker's options: the same, except the page is meant to read it. */
+export function workspaceCookieOptions(maxAgeSeconds: number) {
+  return { ...cookieOptions(maxAgeSeconds), httpOnly: false };
 }
 
 /**

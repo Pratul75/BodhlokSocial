@@ -1,9 +1,9 @@
 import { db, ownerSql, users, withTenant } from "@bodh/db";
 import { ROLE_LABELS, ROLES } from "@bodh/shared";
-import { platformAudit, requireOperator } from "@/lib/platform-auth";
+import { platformAudit } from "@/lib/platform-auth";
+import { requireWorkspaceAdmin } from "@/lib/workspace-admin";
 import { ConsoleCard, ConsolePill, Empty, WhenText } from "../../../ui";
 import { InviteUserForm, UserAccessForm, UserRoleForm, WorkspacePasswordForm } from "../../../workspace-forms";
-import { loadWorkspace } from "../workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +15,9 @@ export const dynamic = "force-dynamic";
  * password, where there is one, lives in the workspace's own schema and never leaves it.
  */
 export default async function WorkspaceUsers({ params }: { params: Promise<{ id: string }> }) {
-  const op = await requireOperator();
   const { id } = await params;
-  const { tenant } = await loadWorkspace(id);
-  await platformAudit({ actor: op.email, action: "view_tenant_users", target: tenant.slug, tenantId: id });
+  const { viewer, tenant } = await requireWorkspaceAdmin(id);
+  await platformAudit({ actor: viewer.email, action: "view_tenant_users", target: tenant.slug, tenantId: id });
 
   const roles = ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }));
 
@@ -102,7 +101,7 @@ export default async function WorkspaceUsers({ params }: { params: Promise<{ id:
                           userId={p.id}
                           email={p.email}
                           hasPassword={Boolean(p.passwordHash)}
-                          isOwner={op.role === "owner"}
+                          isOwner={viewer.canManage}
                         />
                       ) : (
                         <span className="text-xs text-muted">—</span>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { KundliMark } from "@/components/kundli-mark";
 import { authEnabled, devAuthAllowed, safeReturnTo } from "@/lib/session";
 import { allowedDomains } from "@/lib/google";
+import { activeOrgs } from "@bodh/db";
 import { tenantFromRequest } from "@/lib/tenant";
 import { choicesFromToken } from "@/lib/workspace-choice";
 import { PasswordSignInForm, WorkspacePicker } from "./forms";
@@ -33,6 +34,9 @@ export default async function SignInPage({
   // token is the proof; an expired or tampered one leaves an empty list and the page simply
   // shows the ordinary doors again.
   const choices = sp.choose ? await choicesFromToken(sp.choose) : [];
+  // Every active organization, as the page was asked to show them. Suspended and archived ones
+  // are left out: offering one would mean refusing the person after they had typed a password.
+  const orgs = (await activeOrgs().catch(() => [])).map((o) => ({ id: o.id, name: o.name }));
   // The workspace this address belongs to decides whose domains these are; with no workspace in
   // the address it falls back to the server's own, which is the single-tenant case.
   const domains = await allowedDomains().catch(() => ["example.com"]);
@@ -82,7 +86,7 @@ export default async function SignInPage({
           <>
         {/* The password door. Always here: it belongs to the workspace, not to Google. */}
         <div className="mt-6">
-          <PasswordSignInForm next={next} />
+          <PasswordSignInForm next={next} orgs={orgs} />
         </div>
 
         {enabled && (

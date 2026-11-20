@@ -1,9 +1,9 @@
 import { auditLog, db, ownerSql, withTenant } from "@bodh/db";
 import { desc } from "drizzle-orm";
-import { platformAudit, requireOperator } from "@/lib/platform-auth";
+import { platformAudit } from "@/lib/platform-auth";
+import { requireWorkspaceAdmin } from "@/lib/workspace-admin";
 import { ConsoleCard, ConsolePill, Empty, WhenText } from "../../../ui";
 import { ImpersonateForm } from "../../../forms";
-import { loadWorkspace } from "../workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +14,9 @@ export const dynamic = "force-dynamic";
  * read-only one is what an operator is bound through when they look inside.
  */
 export default async function WorkspaceSecurity({ params }: { params: Promise<{ id: string }> }) {
-  const op = await requireOperator();
   const { id } = await params;
-  const { tenant } = await loadWorkspace(id);
-  await platformAudit({ actor: op.email, action: "view_tenant_security", target: tenant.slug, tenantId: id });
+  const { viewer, tenant } = await requireWorkspaceAdmin(id);
+  await platformAudit({ actor: viewer.email, action: "view_tenant_security", target: tenant.slug, tenantId: id });
 
   const sql = ownerSql();
   const looks = (await sql<

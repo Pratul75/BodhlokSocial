@@ -24,8 +24,13 @@ function Problem({ children }: { children: React.ReactNode }) {
   );
 }
 
+export interface SignInOrg {
+  id: string;
+  name: string;
+}
+
 /** Email and password, for people whose workspace does not sign in with Google. */
-export function PasswordSignInForm({ next }: { next: string }) {
+export function PasswordSignInForm({ next, orgs }: { next: string; orgs: SignInOrg[] }) {
   const [state, action, pending] = useActionState<PasswordSignInState, FormData>(signInWithPassword, null);
 
   // The password opened more than one account. That is rare — it means the same address was
@@ -37,6 +42,26 @@ export function PasswordSignInForm({ next }: { next: string }) {
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="next" value={next} />
+      {/*
+        The organization first, as the page was asked to show it. Choosing one grants nothing —
+        it only shortens the list of workspaces the password is checked against, and a wrong
+        choice is refused with the same words a wrong password gets.
+      */}
+      <label className="block text-sm">
+        <span className="mb-1.5 block font-medium">Organization</span>
+        <select name="orgId" required defaultValue={orgs.length === 1 ? orgs[0]!.id : ""} className={field}>
+          {orgs.length === 1 ? null : (
+            <option value="" disabled>
+              Choose yours
+            </option>
+          )}
+          {orgs.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="block text-sm">
         <span className="mb-1.5 block font-medium">Email</span>
         <input name="email" type="email" required autoComplete="username" className={field} placeholder="you@example.com" />

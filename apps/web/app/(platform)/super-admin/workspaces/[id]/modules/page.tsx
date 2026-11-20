@@ -1,20 +1,18 @@
 import { entitlementsFor } from "@bodh/db";
 import { FEATURE_KEYS, MODULES } from "@bodh/shared";
-import { requireOperator } from "@/lib/platform-auth";
+import { requireWorkspaceAdmin } from "@/lib/workspace-admin";
 import { ConsoleCard } from "../../../ui";
 import { EntitlementToggle } from "../../../forms";
 import { AccessPresetForm } from "../../../workspace-forms";
 import { presetChange, presetOf } from "../../../access-presets";
-import { loadWorkspace } from "../workspace";
 
 export const dynamic = "force-dynamic";
 
 /** Which sections of the product this workspace has. Off means the page, its actions, its agents
  * and its scheduled jobs all refuse — not just the menu. */
 export default async function WorkspaceModules({ params }: { params: Promise<{ id: string }> }) {
-  const op = await requireOperator();
   const { id } = await params;
-  const { tenant } = await loadWorkspace(id);
+  const { viewer, tenant } = await requireWorkspaceAdmin(id);
   const ent = await entitlementsFor(id);
   const preset = presetOf(ent.modules, ent.features, ent.integrations);
   // Worked out here so the console can say what a preset would change before anyone applies it.
@@ -25,7 +23,7 @@ export default async function WorkspaceModules({ params }: { params: Promise<{ i
 
   return (
     <>
-      {op.role === "owner" && (
+      {viewer.canManage && (
         <div className="mb-4">
           <ConsoleCard title="Access level" sub="Full is everything. Essentials leaves out ad spend and the agents that act on their own.">
             <AccessPresetForm tenantId={id} current={preset} changes={changes} />

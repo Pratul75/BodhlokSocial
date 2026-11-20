@@ -5,7 +5,11 @@ import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { PRODUCT_NAME } from "@/lib/legal";
 import { setDevRole } from "@/app/(app)/actions";
 import { LogOut } from "lucide-react";
+import { runsThisAgency } from "@/lib/org-auth";
+import { openableWorkspaces } from "@/lib/workspaces";
 import { KundliMark } from "./kundli-mark";
+import { WorkspaceGuard } from "./workspace-guard";
+import { WorkspaceSwitcher } from "./workspace-switcher";
 import { SidebarNav } from "./sidebar-nav";
 import { RoleSelect } from "./role-select";
 import { StopImpersonationForm } from "@/app/(platform)/super-admin/forms";
@@ -28,18 +32,37 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       badge: m.key === "approvals" && pending && pending.n > 0 ? pending.n : undefined,
     }));
   const demo = (seeded?.n ?? 0) > 0;
+  // Only somebody with more than one workspace in this agency gets a switcher; for everyone
+  // else the corner stays exactly what it was. An operator looking inside a workspace is not
+  // one of its people and has nowhere to switch to.
+  const openable = user.impersonatedBy ? [] : await openableWorkspaces(user.email, user.tenant);
+  // The agency's own panel, shown only to whoever runs this agency. Showing the way in is not
+  // what grants it: /org asks the control plane again on every request.
+  const agency = await runsThisAgency(user);
+  if (agency) nav.push({ href: "/org/clients", label: "My clients", group: "Settings", badge: undefined });
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">
+      <WorkspaceGuard tenantId={user.tenant.id} tenantName={user.tenant.name} />
       <aside className="bg-night text-white lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto">
         <div className="flex items-center gap-2.5 px-5 py-5">
-          <span className="text-turmeric">
+          <span className="shrink-0 text-turmeric">
             <KundliMark />
           </span>
-          <div className="leading-tight">
-            <div className="font-display text-[17px] font-semibold tracking-tight">{user.tenant.name}</div>
-            <div className="text-[11px] text-night-3">{PRODUCT_NAME}</div>
-          </div>
+          {openable.length > 1 ? (
+            <div className="min-w-0 flex-1">
+              <WorkspaceSwitcher
+                current={{ id: user.tenant.id, name: user.tenant.name }}
+                options={openable.map((w) => ({ id: w.id, name: w.name }))}
+                product={PRODUCT_NAME}
+              />
+            </div>
+          ) : (
+            <div className="min-w-0 leading-tight">
+              <div className="truncate font-display text-[17px] font-semibold tracking-tight">{user.tenant.name}</div>
+              <div className="text-[11px] text-night-3">{PRODUCT_NAME}</div>
+            </div>
+          )}
         </div>
         <SidebarNav items={nav} />
         <div className="hidden items-center justify-between gap-2 border-t border-white/10 px-5 py-4 text-xs text-night-3 lg:flex">

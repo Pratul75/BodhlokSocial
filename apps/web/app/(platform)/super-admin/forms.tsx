@@ -18,6 +18,13 @@ import {
   archiveWorkspace,
   purgeWorkspace,
   restoreWorkspace,
+  addOrganizationAdmin,
+  createOrganization,
+  setClientAccess,
+  setOrganizationLimits,
+  removeOrganizationAdmin,
+  renameOrganization,
+  setOrganizationStatus,
 } from "./actions";
 
 import { CopyLink } from "@/components/copy-link";
@@ -39,14 +46,25 @@ function generatePassword(): string {
   return `${chars.slice(0, 5).join("")}-${chars.slice(5, 10).join("")}-${chars.slice(10).join("")}`;
 }
 
-export function CreateTenantForm() {
+export function CreateTenantForm({ orgs, defaultOrgId }: { orgs: { id: string; name: string }[]; defaultOrgId?: string }) {
   const [state, action, pending] = useActionState<SecretResult, FormData>(createTenant, null);
   const [password, setPassword] = useState("");
   return (
     <form action={action} className="mt-4 grid gap-3 sm:grid-cols-2">
-      <label className="block text-sm sm:col-span-2">
+      <label className="block text-sm">
         <span className="mb-1 block font-medium">Workspace name</span>
         <input name="name" required maxLength={80} className={input} placeholder="Acme Ltd" />
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">Organization</span>
+        <select name="orgId" required defaultValue={defaultOrgId ?? orgs[0]?.id ?? ""} className={input}>
+          {orgs.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1 block text-xs text-muted">The agency this client belongs to.</span>
       </label>
       <label className="block text-sm">
         <span className="mb-1 block font-medium">First admin&rsquo;s email</span>
@@ -513,5 +531,234 @@ export function PurgeWorkspaceForm({
         <p className={`mt-2 text-sm ${state.ok ? "text-muted" : "text-critical"}`}>{state.ok ? state.message : state.error}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * Creates an agency, and its own workspace with it.
+ *
+ * The same fields a workspace asks for, because that is what is being made: the organization is
+ * a row, and the workspace underneath it is the thing the agency actually signs in to.
+ */
+export function CreateOrgForm() {
+  const [state, action, pending] = useActionState<SecretResult, FormData>(createOrganization, null);
+  const [password, setPassword] = useState("");
+  return (
+    <form action={action} className="mt-4 grid gap-3 sm:grid-cols-2">
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">Organization name</span>
+        <input name="name" required maxLength={80} className={input} placeholder="Recharge Studio" />
+        <span className="mt-1 block text-xs text-muted">Its own workspace gets this name too.</span>
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">First admin&rsquo;s email</span>
+        <input name="adminEmail" type="email" required className={input} placeholder="admin@rechargestudio.com" />
+        <span className="mt-1 block text-xs text-muted">The agency&rsquo;s own admin, in its own workspace.</span>
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">
+          Their mobile <span className="font-normal text-muted">— optional</span>
+        </span>
+        <input name="adminPhone" type="tel" autoComplete="off" className={input} placeholder="+91 98765 43210" />
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium">
+          Their password <span className="font-normal text-muted">— optional</span>
+        </span>
+        <div className="flex items-center gap-2">
+          <input
+            name="adminPassword"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            className={`${input} font-mono`}
+            placeholder="Leave empty for a one-time link instead"
+          />
+          <button
+            type="button"
+            onClick={() => setPassword(generatePassword())}
+            className="shrink-0 rounded-lg border border-rule px-3 py-2 text-sm font-medium hover:bg-paper"
+          >
+            Generate
+          </button>
+        </div>
+      </label>
+      <div className="sm:col-span-2">
+        <button disabled={pending} className="rounded-lg bg-night px-3 py-2 text-sm font-medium text-white hover:bg-night-2 disabled:opacity-60">
+          {pending ? "Creating…" : "Create organization"}
+        </button>
+      </div>
+      {state && (
+        <p
+          role={state.ok ? "status" : "alert"}
+          className={`sm:col-span-2 text-sm ${state.ok ? "text-leaf" : "text-sindoor"}`}
+        >
+          {state.ok ? state.message : state.error}
+        </p>
+      )}
+      {state?.ok && state.value && (
+        <div className="sm:col-span-2">
+          <CopyLink href={state.value} note={state.message} label="One-time password link for the agency's first admin" />
+        </div>
+      )}
+    </form>
+  );
+}
+
+/** Rename, and open or close, one agency. */
+export function OrgRowActions({ id, name, status }: { id: string; name: string; status: string }) {
+  const [renameState, rename, renaming] = useActionState<SecretResult, FormData>(renameOrganization, null);
+  const [statusState, setStatus, saving] = useActionState<SecretResult, FormData>(setOrganizationStatus, null);
+  const state = renameState ?? statusState;
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {state && !state.ok && <span className="text-xs text-sindoor">{state.error}</span>}
+      <form action={rename} className="flex items-center gap-1.5">
+        <input type="hidden" name="id" value={id} />
+        <input
+          name="name"
+          defaultValue={name}
+          maxLength={80}
+          className="w-44 rounded-lg border border-rule bg-card px-2 py-1 text-sm"
+          aria-label={`Name for ${name}`}
+        />
+        <button disabled={renaming} className="rounded-lg border border-rule px-2.5 py-1 text-xs font-medium hover:bg-paper">
+          {renaming ? "Saving…" : "Rename"}
+        </button>
+      </form>
+      <form action={setStatus}>
+        <input type="hidden" name="id" value={id} />
+        <input type="hidden" name="status" value={status === "active" ? "suspended" : "active"} />
+        <button disabled={saving} className="rounded-lg border border-rule px-2.5 py-1 text-xs font-medium hover:bg-paper">
+          {status === "active" ? "Suspend" : "Reopen"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/** Who runs one agency: the list, and the way to add and remove. */
+export function OrgAdminsForm({ id, admins }: { id: string; admins: string[] }) {
+  const [addState, add, adding] = useActionState<SecretResult, FormData>(addOrganizationAdmin, null);
+  const [removeState, remove, removing] = useActionState<SecretResult, FormData>(removeOrganizationAdmin, null);
+  const state = addState ?? removeState;
+  return (
+    <div className="space-y-2">
+      {admins.length === 0 ? (
+        <p className="text-xs text-muted">Nobody runs this agency yet, so /org is open to no one.</p>
+      ) : (
+        <ul className="flex flex-wrap gap-1.5">
+          {admins.map((email) => (
+            <li key={email}>
+              <form action={remove} className="flex items-center gap-1 rounded-full bg-paper px-2 py-0.5 text-xs ring-1 ring-rule ring-inset">
+                <input type="hidden" name="id" value={id} />
+                <input type="hidden" name="email" value={email} />
+                <span className="font-mono">{email}</span>
+                <button disabled={removing} aria-label={`Remove ${email}`} className="text-muted hover:text-sindoor">
+                  ×
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form action={add} className="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="id" value={id} />
+        <input
+          name="email"
+          type="email"
+          required
+          placeholder="person@agency.com"
+          className="w-56 rounded-lg border border-rule bg-card px-2 py-1 text-sm"
+          aria-label="Email of someone who runs this agency"
+        />
+        <button disabled={adding} className="rounded-lg border border-rule px-2.5 py-1 text-xs font-medium hover:bg-paper">
+          {adding ? "Adding…" : "Add"}
+        </button>
+      </form>
+      {state && (
+        <p role={state.ok ? "status" : "alert"} className={`text-xs ${state.ok ? "text-leaf" : "text-sindoor"}`}>
+          {state.ok ? state.message : state.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** What an agency was sold. Empty means no ceiling, which is where every agency starts. */
+export function OrgLimitsForm({
+  id,
+  maxWorkspaces,
+  monthlyBudgetUsd,
+  held,
+}: {
+  id: string;
+  maxWorkspaces: number | null;
+  monthlyBudgetUsd: number | null;
+  held: number;
+}) {
+  const [state, action, pending] = useActionState<SecretResult, FormData>(setOrganizationLimits, null);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-3">
+      <input type="hidden" name="id" value={id} />
+      <label className="block text-sm">
+        <span className="mb-1 block text-xs text-muted">Workspaces</span>
+        <input
+          name="maxWorkspaces"
+          type="number"
+          min={held}
+          defaultValue={maxWorkspaces ?? ""}
+          placeholder="no ceiling"
+          className="w-32 rounded-lg border border-rule bg-card px-2 py-1 text-sm"
+        />
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block text-xs text-muted">AI a month (USD)</span>
+        <input
+          name="monthlyBudgetUsd"
+          type="number"
+          min={0}
+          step="1"
+          defaultValue={monthlyBudgetUsd ?? ""}
+          placeholder="no ceiling"
+          className="w-36 rounded-lg border border-rule bg-card px-2 py-1 text-sm"
+        />
+      </label>
+      <button disabled={pending} className="rounded-lg border border-rule px-2.5 py-1.5 text-xs font-medium hover:bg-paper">
+        {pending ? "Saving…" : "Save ceilings"}
+      </button>
+      <span className="text-xs text-muted">holds {held} now</span>
+      {state && (
+        <p role={state.ok ? "status" : "alert"} className={`w-full text-xs ${state.ok ? "text-leaf" : "text-sindoor"}`}>
+          {state.ok ? state.message : state.error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/** How far the agency reaches into one of its clients. */
+export function ClientAccessForm({ tenantId, level }: { tenantId: string; level: string }) {
+  const [state, action, pending] = useActionState<SecretResult, FormData>(setClientAccess, null);
+  return (
+    <form action={action} className="flex items-center gap-1.5">
+      <input type="hidden" name="tenantId" value={tenantId} />
+      <select
+        name="level"
+        defaultValue={level}
+        className="rounded-lg border border-rule bg-card px-2 py-1 text-xs"
+        aria-label="How far the agency reaches into this client"
+      >
+        <option value="full">Full — works inside</option>
+        <option value="manage">Manage — numbers only</option>
+        <option value="none">None — hidden</option>
+      </select>
+      <button disabled={pending} className="rounded-lg border border-rule px-2 py-1 text-xs font-medium hover:bg-paper">
+        {pending ? "…" : "Set"}
+      </button>
+      {state && !state.ok && <span className="text-xs text-sindoor">{state.error}</span>}
+      {state?.ok && <span className="text-xs text-leaf">{state.message}</span>}
+    </form>
   );
 }

@@ -25,6 +25,7 @@ export function ConsoleNav({ workspaces, operators }: { workspaces: number; oper
 
   const items: Item[] = [
     { href: "/super-admin", label: "Overview", group: "Platform", exact: true },
+    { href: "/super-admin/orgs", label: "Organizations", group: "Platform" },
     { href: "/super-admin/workspaces", label: "Workspaces", group: "Platform", badge: workspaces },
     { href: "/super-admin/usage", label: "Token use", group: "Platform" },
     { href: "/super-admin/operators", label: "Operators", group: "People", badge: operators },

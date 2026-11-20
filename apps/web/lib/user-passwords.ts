@@ -124,11 +124,18 @@ export async function checkPassword(
   emailRaw: string,
   password: string,
   tenantHint: TenantRef | null,
+  orgId?: string | null,
 ): Promise<SignInOutcome> {
   const email = emailRaw.trim().toLowerCase();
   if (!email || !password) return { ok: false, reason: "no_match" };
 
-  const where = (await candidates(email, tenantHint)).filter((t) => t.status === "active").slice(0, MAX_CANDIDATES);
+  const where = (await candidates(email, tenantHint))
+    .filter((t) => t.status === "active")
+    // The organization chosen on the sign-in page can only ever SHORTEN this list. It is not
+    // trusted for anything else: a wrong one opens nothing, and the refusal is the same one a
+    // wrong password gets, so the page cannot be used to find out who belongs where.
+    .filter((t) => !orgId || t.orgId === orgId)
+    .slice(0, MAX_CANDIDATES);
   if (where.length === 0) return { ok: false, reason: "no_match" };
 
   const matches: SignInTarget[] = [];

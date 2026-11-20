@@ -12,6 +12,9 @@ export const platform = pgSchema("platform");
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
+export const ORG_STATUSES = ["active", "suspended", "archived"] as const;
+export type OrgStatus = (typeof ORG_STATUSES)[number];
+
 export const TENANT_STATUSES = ["provisioning", "active", "suspended", "archived"] as const;
 export type TenantStatus = (typeof TENANT_STATUSES)[number];
 
@@ -20,6 +23,47 @@ export type OperatorRole = (typeof OPERATOR_ROLES)[number];
 
 export const ENTITLEMENT_KINDS = ["module", "feature", "capacity"] as const;
 export type EntitlementKind = (typeof ENTITLEMENT_KINDS)[number];
+
+/**
+ * One row per agency. An organization holds no data of its own — no schema, no database role —
+ * it groups the workspaces underneath it: the agency's own, and each of its clients'.
+ */
+export const orgs = platform.table(
+  "orgs",
+  {
+    id: id(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    status: text("status").notNull().default("active"),
+    /** The label the plan was sold under. Entitlements are the truth; this is a label. */
+    plan: text("plan").notNull().default("full"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("orgs_slug_uq").on(t.slug)],
+);
+
+/**
+ * Who runs an agency.
+ *
+ * Not a third principal: an organization admin signs in the way everybody else does and acts as
+ * themselves inside workspaces they belong to. This only says which agency they run. Keyed by
+ * address, because the same person is a different row in every workspace's own `users` table
+ * and the address is the one thing that is the same everywhere.
+ */
+export const orgAdmins = platform.table(
+  "org_admins",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    addedBy: text("added_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("org_admins_uq").on(t.orgId, t.email)],
+);
 
 /** One row per client. `dataSchema` is where its 39 tables live; tenant #1 is `public`. */
 export const tenants = platform.table(
@@ -37,6 +81,8 @@ export const tenants = platform.table(
     status: text("status").notNull().default("provisioning"),
     /** Preset applied at creation, e.g. "full". Entitlements are the truth; this is a label. */
     plan: text("plan").notNull().default("full"),
+    /** The agency this workspace belongs to. Filled in for every workspace by the migrate step. */
+    orgId: uuid("org_id").references(() => orgs.id),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

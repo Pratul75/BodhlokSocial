@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db, enterTenant, resolveTenant, tenantById, users } from "@bodh/db";
 import { appUrl } from "@/lib/google";
-import { requestOrigin, sameOrigin, SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import { requestOrigin, sameOrigin, SESSION_COOKIE, verifySessionToken, WORKSPACE_COOKIE } from "@/lib/session";
 import { audit } from "@/lib/audit";
 
 /**
@@ -26,5 +26,6 @@ export async function POST(req: Request) {
   // signing out of a workspace's own address should not move them to another one.
   const res = NextResponse.redirect(new URL("/signin?signed_out=1", requestOrigin(req) ?? appUrl(req)), 303);
   res.cookies.delete(SESSION_COOKIE);
+  res.cookies.delete(WORKSPACE_COOKIE);
   return res;
 }

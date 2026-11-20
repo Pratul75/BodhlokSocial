@@ -11,12 +11,20 @@ import {
   forgetTenants,
   moduleAllowed,
   ownerSql,
-  provisionTenant,
+  accessLevel,
+  addOrgAdmin,
+  createOrg,
+  isAccessLevel,
+  setOrgLimits,
+  workspacesOf,
+  orgById,
+  removeOrgAdmin,
+  renameOrg,
+  setOrgStatus,
   purgeTenant,
   restoreTenant,
   RETENTION_DAYS,
   tenantById,
-  uniqueSlug,
   users,
   withTenant,
 } from "@bodh/db";
@@ -32,7 +40,8 @@ import {
   type ModuleKey,
 } from "@bodh/shared";
 import { issueResetToken, platformAudit, requireOperator, requireOwner } from "@/lib/platform-auth";
-import { issueUserInvite, setTemporaryPassword } from "@/lib/user-passwords";
+import { buildWorkspace } from "@/lib/provision";
+import { applyAccessLevel, grantAgencyAdminAccounts } from "@/lib/org-access";
 import { passwordProblem } from "@/lib/passwords";
 import { EVENTS_SECRET_KEY, FEED_TOKEN_KEY, rotateTenantSecret } from "@/lib/tenant-secrets";
 import { cookieOptions, createImpersonationToken, IMPERSONATION_COOKIE, verifyImpersonationToken } from "@/lib/session";
@@ -40,7 +49,6 @@ import { cookieOptions, createImpersonationToken, IMPERSONATION_COOKIE, verifyIm
 export type PlatformResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
 /** How long a password somebody else chose stays usable, used or not. */
-const TEMP_PASSWORD_HOURS = 72;
 
 /**
  * A mobile number as it will be stored: digits, with a leading `+` if there was one. Spaces,
@@ -67,71 +75,45 @@ function normalisePhone(raw: string): string | "" | null {
  * somebody navigate to another tab to finish the job they just started is how the last step
  * gets forgotten.
  */
+/** What a form says about the person who will be let in first. */
+function readFirstAdmin(formData: FormData): { email: string; phone: string | null; password: string } | string {
+  const email = String(formData.get("adminEmail") ?? "").trim().toLowerCase();
+  const phone = normalisePhone(String(formData.get("adminPhone") ?? ""));
+  const password = String(formData.get("adminPassword") ?? "");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "That isn't an email address.";
+  if (phone === null) return "That mobile number doesn't look right. Digits, and a + if it has a country code.";
+  // Checked before anything is built, so a bad password does not leave a half-made workspace.
+  if (password) {
+    const problem = passwordProblem(password);
+    if (problem) return problem;
+  }
+  return { email, phone, password };
+}
+
 export async function createTenant(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
   const op = await requireOwner();
   const name = String(formData.get("name") ?? "").trim();
-  const adminEmail = String(formData.get("adminEmail") ?? "").trim().toLowerCase();
-  const adminPassword = String(formData.get("adminPassword") ?? "");
-  const adminPhone = normalisePhone(String(formData.get("adminPhone") ?? ""));
+  const orgId = String(formData.get("orgId") ?? "").trim();
 
   if (!name) return { ok: false, error: "Give the workspace a name." };
   if (name.length > 80) return { ok: false, error: "That name is too long." };
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) return { ok: false, error: "That isn't an email address." };
-  if (adminPhone === null) return { ok: false, error: "That mobile number doesn't look right. Digits, and a + if it has a country code." };
-  // Worked out, never typed: the short name is the schema name, and a schema cannot be renamed.
-  const slug = await uniqueSlug(name);
-  // Checked before anything is built, so a bad password does not leave a half-made workspace.
-  if (adminPassword) {
-    const problem = passwordProblem(adminPassword);
-    if (problem) return { ok: false, error: problem };
-  }
+  // Checked here rather than trusted from the form: a workspace that belongs to no agency, or
+  // to one that was archived while this page was open, is a workspace nobody is responsible for.
+  const org = await orgById(orgId);
+  if (!org) return { ok: false, error: "Choose the organization this workspace belongs to." };
+  if (org.status !== "active") return { ok: false, error: `${org.name} is ${org.status}. Pick an active organization.` };
 
-  try {
-    const result = await provisionTenant({ slug, name, adminEmail, actor: op.email });
-    const made = `Created ${result.tenant.name} (${result.tenant.slug}): ${result.tables} tables, everything switched on.`;
-    revalidatePath("/super-admin");
+  const admin = readFirstAdmin(formData);
+  if (typeof admin === "string") return { ok: false, error: admin };
 
-    // The first admin, from inside the workspace that was just built for them.
-    const [admin] = await withTenant(result.tenant, () =>
-      db.select({ id: users.id }).from(users).where(eq(users.email, adminEmail)).limit(1),
-    );
-    if (admin && adminPhone) {
-      await withTenant(result.tenant, () => db.update(users).set({ phone: adminPhone }).where(eq(users.id, admin.id)));
-    }
-    if (!admin) return { ok: true, message: `${made} Set their password from the Users tab.` };
-
-    // A password the operator chose: handed over with the address, and good for one thing —
-    // the page where they replace it.
-    if (adminPassword) {
-      await setTemporaryPassword(result.tenant, admin.id, adminPassword, TEMP_PASSWORD_HOURS);
-      await platformAudit({
-        actor: op.email,
-        action: "set_temporary_password",
-        target: adminEmail,
-        tenantId: result.tenant.id,
-      });
-      return {
-        ok: true,
-        message: `${made} Give ${adminEmail} the password you chose — they sign in with it at the workspace's address and set their own. It stops working after ${TEMP_PASSWORD_HOURS} hours.`,
-      };
-    }
-
-    const invite = await issueUserInvite(result.tenant, admin.id, 72);
-    if (!invite) return { ok: true, message: `${made} Set their password from the Users tab.` };
-    await platformAudit({
-      actor: op.email,
-      action: "issue_password_link",
-      target: adminEmail,
-      tenantId: result.tenant.id,
-    });
-    return {
-      ok: true,
-      message: `${made} A one-time link for ${adminEmail} to set their password, good for 72 hours — copy it now; it isn't shown again.`,
-      value: `/t/${result.tenant.slug}/set-password?token=${invite.token}`,
-    };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not create that workspace." };
-  }
+  return buildWorkspace({
+    org,
+    name,
+    adminEmail: admin.email,
+    adminPhone: admin.phone,
+    adminPassword: admin.password,
+    actor: op.email,
+  });
 }
 
 /**
@@ -490,4 +472,224 @@ export async function issueOperatorResetLink(_prev: SecretResult, formData: Form
     message: `A one-time link for ${rows[0].email}, good for an hour. Copy it now; it is not shown again.`,
     value: `/super-admin/reset?token=${token}`,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Organizations                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Creates an agency.
+ *
+ * Nothing is provisioned, because an organization holds no data: no schema, no database role,
+ * no tables. It is a row that says which workspaces belong together. The workspaces come after,
+ * each one still built the way every workspace has always been built.
+ */
+export async function createOrganization(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { ok: false, error: "Give the organization a name." };
+  if (name.length > 80) return { ok: false, error: "That name is too long." };
+
+  const admin = readFirstAdmin(formData);
+  if (typeof admin === "string") return { ok: false, error: admin };
+
+  let org: Awaited<ReturnType<typeof createOrg>>;
+  try {
+    org = await createOrg({ name });
+    await platformAudit({ actor: op.email, action: "create_org", target: org.slug, detail: { name: org.name } });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not create the organization." };
+  }
+
+  // An agency is also a customer: it does its own marketing. So it gets a workspace of its own
+  // in the same step — a complete one, built exactly the way a client's is. Waiting to be told
+  // "now make yourself a workspace" is a step somebody has to be taught, and the agency has
+  // nothing at all until they are.
+  const built = await buildWorkspace({
+    org,
+    name,
+    adminEmail: admin.email,
+    adminPhone: admin.phone,
+    adminPassword: admin.password,
+    actor: op.email,
+  });
+  revalidatePath("/super-admin/orgs");
+
+  // The organization exists either way. A workspace that failed to build is reported as what it
+  // is, rather than rolled back into "nothing happened" — the agency is there, and somebody has
+  // to be told the rest did not finish.
+  if (!built.ok) {
+    return {
+      ok: false,
+      error: `${org.name} was created, but its own workspace was not: ${built.error} Make it from Workspaces.`,
+    };
+  }
+  return { ...built, message: `${org.name} created, with its own workspace. ${built.message}` };
+}
+
+export async function renameOrganization(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { ok: false, error: "Give the organization a name." };
+  const org = await orgById(id);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+  await renameOrg(org.id, name);
+  await platformAudit({ actor: op.email, action: "rename_org", target: org.slug, detail: { name } });
+  revalidatePath("/super-admin/orgs");
+  revalidatePath("/super-admin/workspaces");
+  return { ok: true, message: `Renamed to ${name}.` };
+}
+
+/**
+ * Suspends or reopens an agency.
+ *
+ * Deliberately does **not** touch its workspaces. Each workspace has its own status, its own
+ * people and its own customers; closing the agency's account is not the same decision as
+ * closing theirs, and making one mean the other would take that decision away from a person.
+ * A suspended organization stops being offered at sign-in and can take no new workspaces.
+ */
+export async function setOrganizationStatus(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (status !== "active" && status !== "suspended") return { ok: false, error: "Unknown status." };
+  const org = await orgById(id);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+  await setOrgStatus(org.id, status);
+  await platformAudit({ actor: op.email, action: "set_org_status", target: org.slug, detail: { status } });
+  revalidatePath("/super-admin/orgs");
+  revalidatePath("/super-admin/workspaces");
+  return {
+    ok: true,
+    message: status === "suspended" ? `${org.name} is suspended. Its workspaces are untouched.` : `${org.name} is active again.`,
+  };
+}
+
+/**
+ * Appoints somebody to run an agency.
+ *
+ * It grants nothing by itself: they still sign in the ordinary way, and inside a workspace they
+ * are whatever their row there says they are. What it opens is `/org` — the agency's own panel,
+ * where they can see their clients and make new ones.
+ */
+export async function addOrganizationAdmin(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "That isn't an email address." };
+  const org = await orgById(id);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+
+  await addOrgAdmin(org.id, email, op.email);
+  // The same grant the agency's own panel does. Adding somebody to an agency and leaving them
+  // without an account in its clients is the gap, not the safeguard: the panel would open on
+  // workspaces they cannot enter, and nothing would say why.
+  const grant = await grantAgencyAdminAccounts(org, email);
+  await platformAudit({
+    actor: op.email,
+    action: "add_org_admin",
+    target: org.slug,
+    detail: { email, granted: grant.granted, failed: grant.failed.join(", ") || null },
+  });
+  revalidatePath("/super-admin/orgs");
+  const trouble = grant.failed.length ? ` ${grant.failed.join(", ")} could not be reached.` : "";
+  return {
+    ok: true,
+    message: `${email} runs ${org.name}, with an admin account in ${grant.granted} of its workspaces.${trouble} /org is now open to them.`,
+  };
+}
+
+export async function removeOrganizationAdmin(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const org = await orgById(id);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+
+  await removeOrgAdmin(org.id, email);
+  await platformAudit({ actor: op.email, action: "remove_org_admin", target: org.slug, detail: { email } });
+  revalidatePath("/super-admin/orgs");
+  // Their workspace accounts are untouched on purpose: they stop running the agency, they do not
+  // stop being whoever they are inside the workspaces they belong to. Those are separate
+  // decisions and taking both at once would make one of them invisible.
+  return { ok: true, message: `${email} no longer runs ${org.name}. Their workspace accounts are unchanged.` };
+}
+
+/**
+ * How far an agency reaches into one of its clients.
+ *
+ * Changing it does the thing, not just records it: `full` gives the agency's people accounts
+ * inside that client, the other two take them away. Both are visible on the client's own People
+ * page, which is the point — if an agency can reach a client, the client can see who.
+ */
+export async function setClientAccess(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const tenantId = String(formData.get("tenantId") ?? "");
+  const level = String(formData.get("level") ?? "");
+  if (!isAccessLevel(level)) return { ok: false, error: "Unknown access level." };
+
+  const tenant = await tenantById(tenantId);
+  if (!tenant) return { ok: false, error: "That workspace no longer exists." };
+  if (!tenant.orgId) return { ok: false, error: "That workspace has no organization yet." };
+  const org = await orgById(tenant.orgId);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+  if ((await accessLevel(org.id, tenant.id)) === level) return { ok: true, message: "No change." };
+
+  const change = await applyAccessLevel(org, tenant, level, op.email);
+  await platformAudit({
+    actor: op.email,
+    action: "set_org_access",
+    target: tenant.slug,
+    tenantId: tenant.id,
+    detail: { org: org.slug, level, accounts: change.changed },
+  });
+  revalidatePath("/super-admin/orgs");
+  revalidatePath(`/super-admin/workspaces/${tenant.id}`);
+  return { ok: true, message: change.message };
+}
+
+/**
+ * What an agency was sold: how many workspaces, and how much AI spend a month.
+ *
+ * Set by the platform and nowhere else. A ceiling somebody can raise themselves is not a
+ * ceiling. Leaving a field empty means no ceiling, which is what every agency has until one is
+ * set — so nothing that works today stops working when this arrives.
+ */
+export async function setOrganizationLimits(_prev: SecretResult, formData: FormData): Promise<SecretResult> {
+  const op = await requireOwner();
+  const id = String(formData.get("id") ?? "");
+  const org = await orgById(id);
+  if (!org) return { ok: false, error: "That organization no longer exists." };
+
+  const number = (key: string): number | null | undefined => {
+    const raw = String(formData.get(key) ?? "").trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
+  const maxWorkspaces = number("maxWorkspaces");
+  const monthlyBudgetUsd = number("monthlyBudgetUsd");
+  if (maxWorkspaces === undefined) return { ok: false, error: "Workspaces must be a number, or empty for no ceiling." };
+  if (monthlyBudgetUsd === undefined) return { ok: false, error: "The budget must be a number, or empty for no ceiling." };
+
+  const held = (await workspacesOf(org.id)).length;
+  if (maxWorkspaces !== null && maxWorkspaces < held) {
+    // Refused rather than applied: a ceiling below what is already there would not take a
+    // workspace away, it would only make every later number a lie.
+    return { ok: false, error: `${org.name} already holds ${held} workspaces. Set the ceiling to ${held} or more.` };
+  }
+
+  await setOrgLimits(org.id, { maxWorkspaces, monthlyBudgetUsd });
+  await platformAudit({
+    actor: op.email,
+    action: "set_org_limits",
+    target: org.slug,
+    detail: { maxWorkspaces: maxWorkspaces ?? "none", monthlyBudgetUsd: monthlyBudgetUsd ?? "none" },
+  });
+  revalidatePath("/super-admin/orgs");
+  const ws = maxWorkspaces === null ? "no workspace ceiling" : `up to ${maxWorkspaces} workspaces`;
+  const ai = monthlyBudgetUsd === null ? "no AI budget ceiling" : `$${monthlyBudgetUsd} AI a month`;
+  return { ok: true, message: `${org.name}: ${ws}, ${ai}.` };
 }

@@ -1,9 +1,8 @@
 import { entitlementsFor } from "@bodh/db";
 import { FEATURE_KEYS, FEATURE_LABELS, featuresOfModule, MODULES } from "@bodh/shared";
-import { requireOperator } from "@/lib/platform-auth";
+import { requireWorkspaceAdmin } from "@/lib/workspace-admin";
 import { ConsoleCard } from "../../../ui";
 import { EntitlementToggle } from "../../../forms";
-import { loadWorkspace } from "../workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +17,8 @@ export const dynamic = "force-dynamic";
  * sit under a module is the only way that stops being a surprise.
  */
 export default async function WorkspaceFeatures({ params }: { params: Promise<{ id: string }> }) {
-  await requireOperator();
   const { id } = await params;
-  const { tenant } = await loadWorkspace(id);
+  const { tenant } = await requireWorkspaceAdmin(id);
   const ent = await entitlementsFor(id);
 
   // Only the modules that own something, in the order the product lists them.

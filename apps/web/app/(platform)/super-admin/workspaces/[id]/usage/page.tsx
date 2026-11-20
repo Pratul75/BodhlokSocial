@@ -2,11 +2,11 @@ import Link from "next/link";
 import { agentRuns, calendarItems, db, entitlementsFor, withTenant } from "@bodh/db";
 import { CAPACITY_DEFAULTS, CAPACITY_ENV, CAPACITY_KEYS, capacity, type CapacityKey } from "@bodh/shared";
 import { count, sql as dsql } from "drizzle-orm";
-import { platformAudit, requireOperator } from "@/lib/platform-auth";
+import { platformAudit } from "@/lib/platform-auth";
+import { requireWorkspaceAdmin } from "@/lib/workspace-admin";
 import { allWorkspaceStats } from "@/lib/platform-stats";
 import { ConsoleCard, Empty, Money, StatTile, Tokens } from "../../../ui";
 import { CapacityForm } from "../../../workspace-forms";
-import { loadWorkspace } from "../workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +26,9 @@ const HINTS: Partial<Record<CapacityKey, string>> = {
 
 /** What this workspace has used, and the limits it may not exceed. */
 export default async function WorkspaceUsage({ params }: { params: Promise<{ id: string }> }) {
-  const op = await requireOperator();
   const { id } = await params;
-  const { tenant } = await loadWorkspace(id);
-  await platformAudit({ actor: op.email, action: "view_tenant_usage", target: tenant.slug, tenantId: id });
+  const { viewer, tenant } = await requireWorkspaceAdmin(id);
+  await platformAudit({ actor: viewer.email, action: "view_tenant_usage", target: tenant.slug, tenantId: id });
 
   const ent = await entitlementsFor(id);
   const stats = (await allWorkspaceStats()).find((s) => s.tenant.id === id);

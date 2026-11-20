@@ -2,17 +2,18 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { resolveTenant, tenantById, tenantBySlug, type TenantRef } from "@bodh/db";
+import { orgById, resolveTenant, tenantById, tenantBySlug, type TenantRef } from "@bodh/db";
 import { and, eq } from "drizzle-orm";
 import { auditLog, db, users, withTenant } from "@bodh/db";
 import {
   cookieOptions,
-  createChoiceToken,
   createSessionToken,
   safeReturnTo,
   SESSION_COOKIE,
   SESSION_DAYS,
   verifyChoiceToken,
+  WORKSPACE_COOKIE,
+  workspaceCookieOptions,
   type SignInDoor,
 } from "@/lib/session";
 import { passwordProblem } from "@/lib/passwords";
@@ -65,7 +66,19 @@ export async function signInWithPassword(_prev: PasswordSignInState, formData: F
   const password = String(formData.get("password") ?? "");
   const next = safeReturnTo(String(formData.get("next") ?? "/"));
 
-  const outcome = await checkPassword(email, password, await tenantFromAddress());
+  // The organization is chosen on the page, and it is checked here rather than trusted. A field
+  // that is shown but never checked is worse than no field: it tells somebody that something
+  // was verified when nothing was.
+  const orgId = String(formData.get("orgId") ?? "").trim();
+  if (!orgId) return { error: "Choose your organization." };
+  const org = await orgById(orgId);
+  if (!org || org.status !== "active") {
+    // Not "that organization is closed": the page must answer the same way whatever is wrong,
+    // or the list of organizations plus an address becomes a way to find out who works where.
+    return { error: "That email and password do not match an account here." };
+  }
+
+  const outcome = await checkPassword(email, password, await tenantFromAddress(), org.id);
 
   if (!outcome.ok) {
     if (outcome.reason === "locked") {
@@ -80,18 +93,15 @@ export async function signInWithPassword(_prev: PasswordSignInState, formData: F
   // The ordinary case: this address belongs to one workspace, and in they go.
   if ("target" in outcome) return finishSignIn(outcome.target, next);
 
-  // The password opened more than one account. These really are separate accounts that happen
-  // to share an address, so there is no right one to guess — they say which they meant. The
-  // list is built only after the password matched, so an unknown address learns nothing.
-  return {
-    choose: outcome.choose.map((t) => ({ tenantId: t.tenant.id, name: t.tenant.name })),
-    token: await createChoiceToken({
-      email,
-      opened: outcome.choose.map((t) => `${t.tenant.id}:${t.user.id}`),
-      door: "password",
-    }),
-    next,
-  };
+  // The password opened more than one workspace in the chosen organization. There is no longer
+  // a step here asking which: the organization has already been chosen on this page, and the
+  // switcher in the corner moves between that organization's workspaces in one click. Asking
+  // twice — once before the password and once after — is a question nobody needs answered
+  // before they can start.
+  //
+  // The oldest is where they land, which for an agency is its own workspace: the one made with
+  // the organization itself.
+  return finishSignIn(outcome.choose[0]!, next);
 }
 
 export type ChooseWorkspaceState = { error: string } | null;
@@ -173,6 +183,9 @@ async function finishSignIn(target: SignInTarget, next: string, door: SignInDoor
     await createSessionToken({ sub: user.id, email: user.email, sv: user.sessionVersion, tid: tenant.id }),
     cookieOptions(SESSION_DAYS * 86400),
   );
+  // The same workspace, written where the page can read it, so a tab left open on another one
+  // can notice. See WORKSPACE_COOKIE.
+  jar.set(WORKSPACE_COOKIE, tenant.id, workspaceCookieOptions(SESSION_DAYS * 86400));
   // Written inside the workspace, where the rest of its audit log lives.
   await withTenant(tenant, () =>
     db.insert(auditLog).values({
@@ -220,6 +233,7 @@ export async function setPasswordFromInvite(_prev: SetPasswordState, formData: F
   // Any session opened before now is dead: the session version went up.
   const jar = await cookies();
   jar.delete(SESSION_COOKIE);
+  jar.delete(WORKSPACE_COOKIE);
   const slug = await slugFromAddress();
   redirect(`${slug ? `/t/${slug}` : ""}/signin?set=1`);
 }

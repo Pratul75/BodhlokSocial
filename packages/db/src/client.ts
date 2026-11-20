@@ -43,6 +43,8 @@ export interface TenantRef {
   dataSchema: string;
   dbRole: string | null;
   status: string;
+  /** The agency this workspace belongs to. Null only before the migrate step has filled it in. */
+  orgId?: string | null;
   /**
    * Bind the workspace through its read-only role instead of its application role.
    *
