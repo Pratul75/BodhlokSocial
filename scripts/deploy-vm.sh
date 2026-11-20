@@ -18,6 +18,9 @@ VM="${VM:-rapido-demo}"
 HOST="${HOST:-growth.rechargestudio.com}"
 SEED="${SEED:-0}"
 BUCKET="${BUCKET-bodh-growth-releases}"
+# Upload folder on the VM, one per person deploying: a folder another person's ssh account left
+# behind can't be cleared by the next one, which stopped a deploy on 5 Nov 2026.
+STAGING="/tmp/bodh-release-$(id -un | tr -cd 'A-Za-z0-9_-')"
 # Every gcloud compute ssh/scp below takes these (the tunnel, when IAP=1).
 VIA=(--zone "$ZONE" --project "$PROJECT" --quiet)
 [ "${IAP:-0}" = 1 ] && VIA+=(--tunnel-through-iap)
@@ -49,7 +52,7 @@ du -h "$OUT/release.tgz" | cut -f1 | xargs echo "   release size:"
 
 echo "== uploading to $VM"
 (cd "$OUT" && shasum -a 256 release.tgz vm.tgz > release.sha256)
-retry gcloud compute ssh "$VM" "${VIA[@]}" --command "rm -rf /tmp/bodh-release && mkdir -p /tmp/bodh-release"
+retry gcloud compute ssh "$VM" "${VIA[@]}" --command "rm -rf $STAGING && mkdir -p $STAGING"
 if [ -n "$BUCKET" ]; then
   # Through the private releases bucket: HTTPS with resumable uploads gets through networks that
   # reset long uploads over SSH, and the VM reads it with its own service account. The bucket
@@ -57,15 +60,15 @@ if [ -n "$BUCKET" ]; then
   STAGE="gs://$BUCKET/$SHA-$(date +%Y%m%d%H%M%S)"
   retry gcloud storage cp "$OUT/release.tgz" "$OUT/vm.tgz" "$OUT/release.sha256" "$STAGE/" --project "$PROJECT"
   retry gcloud compute ssh "$VM" "${VIA[@]}" --command \
-    "cd /tmp/bodh-release && gcloud storage cp '$STAGE/*' . --quiet && sha256sum -c release.sha256"
+    "cd $STAGING && gcloud storage cp '$STAGE/*' . --quiet && sha256sum -c release.sha256"
   gcloud storage rm --recursive "$STAGE" --project "$PROJECT" >/dev/null 2>&1 || true
 else
   # -O: the classic scp protocol. The SFTP mode (macOS scp's default) gets its session closed the
   # moment it starts on some networks, while plain ssh and classic scp go through.
-  retry gcloud compute scp "$OUT/release.tgz" "$OUT/vm.tgz" "$OUT/release.sha256" "$VM:/tmp/bodh-release/" "${VIA[@]}" --scp-flag=-O
-  retry gcloud compute ssh "$VM" "${VIA[@]}" --command "cd /tmp/bodh-release && sha256sum -c release.sha256"
+  retry gcloud compute scp "$OUT/release.tgz" "$OUT/vm.tgz" "$OUT/release.sha256" "$VM:$STAGING/" "${VIA[@]}" --scp-flag=-O
+  retry gcloud compute ssh "$VM" "${VIA[@]}" --command "cd $STAGING && sha256sum -c release.sha256"
 fi
 
 echo "== installing"
 gcloud compute ssh "$VM" "${VIA[@]}" --command \
-  "cd /tmp/bodh-release && tar -xzf vm.tgz && sudo bash install.sh '$SHA' '$HOST' '$SEED'"
+  "cd $STAGING && tar -xzf vm.tgz && sudo bash install.sh '$SHA' '$HOST' '$SEED'"
