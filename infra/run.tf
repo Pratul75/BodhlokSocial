@@ -41,6 +41,14 @@ resource "google_cloud_run_v2_service" "web" {
       }
 
       env {
+        name  = "PLATFORM_OWNER_EMAIL"
+        value = var.platform_owner_email
+      }
+      env {
+        name  = "WORKSPACE_RETENTION_DAYS"
+        value = tostring(var.workspace_retention_days)
+      }
+      env {
         name  = "APP_URL"
         value = local.app_url
       }
@@ -395,6 +403,12 @@ resource "google_cloud_run_v2_job" "migrate" {
         env {
           name  = "BOOTSTRAP_ADMIN_NAME"
           value = var.bootstrap_admin_name
+        }
+        # The first Super Admin. Without it the console has no owner and nobody can sign in to
+        # it — the migrate job is the only thing that creates one.
+        env {
+          name  = "PLATFORM_OWNER_EMAIL"
+          value = var.platform_owner_email
         }
         env {
           name = "DATABASE_URL"

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listSites, pickSite, topQueries } from "./search-console";
+// The Search Console property belongs to the workspace, not the server.
+let setting: string | null = null;
+vi.mock("@bodh/db", () => ({ tenantSetting: async () => setting }));
+
+const { listSites, pickSite, topQueries } = await import("./search-console");
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -12,12 +16,13 @@ const sites = [
 ];
 
 describe("pickSite", () => {
-  it("prefers the Asttrolok property", () => {
-    expect(pickSite(sites)?.siteUrl).toBe("sc-domain:asttrolok.com");
+  it("falls back to a likely property when the workspace has not chosen one", async () => {
+    setting = null;
+    expect((await pickSite(sites))?.siteUrl).toBe("sc-domain:asttrolok.com");
   });
-  it("uses SEARCH_CONSOLE_SITE when set", () => {
-    process.env.SEARCH_CONSOLE_SITE = "https://example.com/";
-    expect(pickSite(sites)?.siteUrl).toBe("https://example.com/");
+  it("uses the site this workspace was given", async () => {
+    setting = "https://example.com/";
+    expect((await pickSite(sites))?.siteUrl).toBe("https://example.com/");
   });
 });
 

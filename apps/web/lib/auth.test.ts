@@ -98,13 +98,63 @@ describe("safeReturnTo", () => {
 });
 
 describe("sameOrigin", () => {
-  const req = (origin?: string) => new Request("https://growth.example.com/api/auth/signout", { method: "POST", headers: origin ? { origin } : {} });
+  // The Host header is what the browser asked for. Next rewrites `req.url` to localhost before
+  // a route handler sees it, so these build the request the way the server really receives it.
+  const req = (origin?: string, url = "https://growth.example.com/api/auth/signout", extra: Record<string, string> = {}) => {
+    const host = new URL(url).host;
+    const headers: Record<string, string> = { host, ...extra };
+    if (origin) headers.origin = origin;
+    return new Request(url, { method: "POST", headers });
+  };
+
   it("accepts this app, and a request without an Origin header", () => {
     expect(sameOrigin(req("https://growth.example.com"), "https://growth.example.com")).toBe(true);
     expect(sameOrigin(req(), "https://growth.example.com")).toBe(true);
   });
+
   it("refuses another site and garbage", () => {
     expect(sameOrigin(req("https://evil.example"), "https://growth.example.com")).toBe(false);
     expect(sameOrigin(req("null"), "https://growth.example.com")).toBe(false);
+  });
+
+  it("accepts the host the request actually came in on, whatever APP_URL says", () => {
+    // Development on a different port, and the workspace hostnames that are coming: one
+    // configured address cannot speak for every address the app answers on.
+    const local = "http://127.0.0.1:3200/api/auth/signout";
+    expect(sameOrigin(req("http://127.0.0.1:3200", local), "http://localhost:3000")).toBe(true);
+
+    const workspace = "https://zenith.growth.example.com/api/auth/signout";
+    expect(sameOrigin(req("https://zenith.growth.example.com", workspace), "https://growth.example.com")).toBe(true);
+  });
+
+  it("still refuses one workspace's page posting at another's address", () => {
+    const workspace = "https://zenith.growth.example.com/api/auth/signout";
+    expect(sameOrigin(req("https://acme.growth.example.com", workspace), "https://growth.example.com")).toBe(false);
+  });
+
+  it("accepts APP_URL as well, for a host behind a proxy that rewrites it", () => {
+    expect(sameOrigin(req("https://growth.example.com", "http://internal:8080/api/auth/signout"), "https://growth.example.com")).toBe(true);
+  });
+
+  it("follows the forwarded host and protocol when there is a proxy in front", () => {
+    const behindProxy = req("https://zenith.growth.example.com", "http://internal:8080/api/auth/signout", {
+      "x-forwarded-host": "zenith.growth.example.com",
+      "x-forwarded-proto": "https",
+    });
+    expect(sameOrigin(behindProxy, "https://growth.example.com")).toBe(true);
+  });
+
+  it("ignores the url Next rewrote, and goes by the host the browser asked for", () => {
+    // What actually happens on `next start`: req.url says localhost, the Host header does not.
+    const asServed = new Request("http://localhost:3200/api/auth/signout", {
+      method: "POST",
+      headers: { host: "127.0.0.1:3200", origin: "http://127.0.0.1:3200" },
+    });
+    expect(sameOrigin(asServed, "http://localhost:3000")).toBe(true);
+  });
+
+  it("works with no extra origins given at all", () => {
+    expect(sameOrigin(req("https://growth.example.com"))).toBe(true);
+    expect(sameOrigin(req("https://evil.example"))).toBe(false);
   });
 });

@@ -5,7 +5,7 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import { ArrowLeft, ExternalLink, Send, Trash2, Undo2 } from "lucide-react";
 import { approvals, assets, calendarItems, db } from "@bodh/db";
 import { CHANNEL_LABELS, CHANNELS, FORMAT_LABELS, FORMATS, type Channel } from "@bodh/shared";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago } from "@/lib/format";
 import { checkItem, itemAssets } from "@/lib/posts";
 import { Card, CardHeader, PageHeader, StatusPill, btn } from "@/components/ui";
@@ -18,7 +18,7 @@ export const metadata = { title: "Calendar item" };
 const pad = (n: number) => String(n).padStart(2, "0");
 
 export default async function CalendarItemPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ sent?: string; blocked?: string }> }) {
-  await requireModule("calendar");
+  enterTenantScope(await requireModule("calendar"));
   const { id } = await params;
   const sp = await searchParams;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();

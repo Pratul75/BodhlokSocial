@@ -1,7 +1,7 @@
 import { desc, sql } from "drizzle-orm";
 import { conversionEvents, db } from "@bodh/db";
 import { channelLabel } from "@bodh/shared";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago, num, pct } from "@/lib/format";
 import { Card, CardHeader, EmptyState, PageHeader, Pill, Stat, StatusPill, Table } from "@/components/ui";
 import { CopyField } from "./copy-field";
@@ -23,7 +23,7 @@ const TYPE_LABEL: Record<string, string> = { registration: "Desk created", activ
 const PLATFORM_LABEL: Record<string, string> = { web: "Web", android: "Android", ios: "iOS" };
 
 export default async function TrackingPage() {
-  const user = await requireModule("tracking");
+  const user = enterTenantScope(await requireModule("tracking"));
   const now = new Date();
 
   const [totals, coverage, queues, runs, recent, lastReceived] = await Promise.all([

@@ -5,7 +5,7 @@ import { adChanges, adEntities, db } from "@bodh/db";
 import { AUTO_BID_LIMIT, LOSING_RULES } from "@bodh/guardrails";
 import { adResults, adsConnected, judgeAd, JUDGE_DAYS, PLATFORM_LABELS, spendNow, testsWithResults } from "@bodh/integrations/ads";
 import type { Platform } from "@bodh/integrations/ads-platforms";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago, inr, num } from "@/lib/format";
 import { Meter } from "@/components/charts";
 import { AgentRunPanel } from "@/components/agent-run-panel";
@@ -19,7 +19,7 @@ export const metadata = { title: "Ads manager" };
 const PLATFORMS: Platform[] = ["meta_ads", "google_ads"];
 
 export default async function AdsPage() {
-  const user = await requireModule("ads");
+  const user = enterTenantScope(await requireModule("ads"));
   const [connected, caps, ents, results, judged, tests, log] = await Promise.all([
     adsConnected(),
     Promise.all(PLATFORMS.map((p) => spendNow(p))),

@@ -3,13 +3,16 @@
  * account at once; Quora has no API, so the item waits for a person to post it and record the link.
  */
 import { eq } from "drizzle-orm";
-import { auditLog, communityItems, db } from "@bodh/db";
+import { auditLog, communityItems, db, tenantHasFeature } from "@bodh/db";
 import { postRedditComment, redditAccess } from "./reddit";
 import { replyToComment, youtubeToken } from "./youtube";
 
 export type PostResult = { ok: true; url: string | null; manual: boolean } | { ok: false; error: string };
 
 export async function postCommunityReply(itemId: string, text: string, approvedBy: string): Promise<PostResult> {
+  if (!(await tenantHasFeature("community.auto_post"))) {
+    return { ok: false, error: "Posting community answers is not switched on for this workspace." };
+  }
   const [item] = await db.select().from(communityItems).where(eq(communityItems.id, itemId)).limit(1);
   if (!item) return { ok: false, error: "The community item no longer exists." };
   if (item.status === "posted") return { ok: false, error: "This answer was already posted." };

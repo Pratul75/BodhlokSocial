@@ -1,5 +1,8 @@
 import { bodhBatchSchema, normalizeEvent, SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "@bodh/integrations/bodh-events";
 import { ingestEvents } from "@bodh/integrations/pipeline";
+import { publicTenant } from "@/lib/tenant";
+import { enterTenant } from "@bodh/db";
+import { EVENTS_SECRET_KEY, tenantSecret } from "@/lib/tenant-secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -7,11 +10,17 @@ const MAX_BYTES = 1_000_000;
 
 /**
  * Registration, activation and paid events from the BODH backend.
- * Signed with BODH_EVENTS_SECRET; see docs/bodh-events.md for the contract.
+ * Signed with the workspace's own event secret, which `/t/<slug>/api/events/bodh` names and
+ * tenant #1 may still take from BODH_EVENTS_SECRET. See docs/bodh-events.md for the contract.
  */
 export async function POST(req: Request) {
-  const secret = process.env.BODH_EVENTS_SECRET;
-  if (!secret) return Response.json({ error: "Event intake is not configured." }, { status: 503 });
+  // Which workspace these events belong to. `/t/<slug>/api/events/bodh` says so; the bare path
+  // is tenant #1's, which is where the callers that already exist point.
+  const tenant = await publicTenant();
+  if (!tenant) return Response.json({ error: "Unknown workspace" }, { status: 404 });
+  enterTenant(tenant);
+  const secret = await tenantSecret(EVENTS_SECRET_KEY);
+  if (!secret) return Response.json({ error: "Event intake is not configured for this workspace." }, { status: 503 });
 
   const declared = Number(req.headers.get("content-length") ?? 0);
   if (declared > MAX_BYTES) return Response.json({ error: "Body over 1 MB. Send at most 100 events per request." }, { status: 413 });

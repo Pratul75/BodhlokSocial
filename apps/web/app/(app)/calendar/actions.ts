@@ -2,15 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { calendarItems, db } from "@bodh/db";
-import { CHANNELS, FORMATS, canAccess } from "@bodh/shared";
-import { getCurrentUser } from "@/lib/auth";
+import { CHANNELS, FORMATS } from "@bodh/shared";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 
 export type AddResult = { ok: true; id: string } | { ok: false; error: string } | null;
 
 export async function addIdea(_prev: AddResult, formData: FormData): Promise<AddResult> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "calendar")) return { ok: false, error: "Your role can't edit the calendar." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "calendar")) return { ok: false, error: "You can't edit the calendar." };
 
   const channel = String(formData.get("channel"));
   const format = String(formData.get("format"));

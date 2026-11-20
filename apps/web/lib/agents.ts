@@ -2,11 +2,25 @@ import "server-only";
 import { activeRun, anthropicClient, queueRun, replanTask, runAgent, type AgentName } from "@bodh/agents";
 import { log } from "@bodh/shared/log";
 import { workerHeaders } from "@bodh/integrations/worker-auth";
+import { currentTenant } from "@bodh/db";
 
 function worker(): { url: string; token: string } | null {
   const url = process.env.WORKER_URL;
   const token = process.env.WORKER_TOKEN;
   return url && token ? { url: url.replace(/\/$/, ""), token } : null;
+}
+
+/**
+ * Every call to the worker names the workspace it is for.
+ *
+ * The worker runs a job for all active tenants when nobody says which, because that is what
+ * the scheduler wants. A person pressing Run in one workspace wants the opposite, so the slug
+ * goes on the URL — without it, one click would start that agent in every workspace there is.
+ */
+function forTenant(path: string): string {
+  const url = new URL(path, "http://worker.invalid");
+  url.searchParams.set("tenant", currentTenant().slug);
+  return `${url.pathname}${url.search}`;
 }
 
 /**
@@ -22,7 +36,7 @@ export async function startAgentRun(agent: AgentName, requestedBy: string, task?
   const w = worker();
   if (w) {
     try {
-      const res = await fetch(`${w.url}/jobs/${agent}?trigger=manual`, {
+      const res = await fetch(`${w.url}${forTenant(`/jobs/${agent}?trigger=manual`)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await workerHeaders(w.url, w.token)) },
         body: JSON.stringify({ task, requestedBy }),
@@ -52,7 +66,7 @@ export async function startReplan(requestedBy: string): Promise<{ runId?: string
   const w = worker();
   if (w) {
     try {
-      const res = await fetch(`${w.url}/jobs/replan?trigger=manual`, {
+      const res = await fetch(`${w.url}${forTenant("/jobs/replan?trigger=manual")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await workerHeaders(w.url, w.token)) },
         body: JSON.stringify({ requestedBy }),
@@ -92,7 +106,7 @@ export async function runSeoJob(job: SeoJob): Promise<{ message?: string; error?
   if (w) {
     try {
       const path = job.startsWith("site-") ? `/jobs/site/${job.slice(5)}` : `/jobs/seo/${job}${job === "geo" ? "?trigger=manual" : ""}`;
-      const res = await fetch(`${w.url}${path}`, { method: "POST", headers: await workerHeaders(w.url, w.token), signal: AbortSignal.timeout(180_000) });
+      const res = await fetch(`${w.url}${forTenant(path)}`, { method: "POST", headers: await workerHeaders(w.url, w.token), signal: AbortSignal.timeout(180_000) });
       const body = (await res.json().catch(() => ({}))) as { message?: string; detail?: string; error?: string };
       const text = body.message ?? body.detail;
       return res.ok || res.status === 202 ? { message: text } : { error: body.error ?? text ?? `The worker answered ${res.status}.` };

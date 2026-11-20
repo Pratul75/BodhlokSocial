@@ -3,20 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { calendarItems, db, publishingChannels } from "@bodh/db";
-import { canAccess } from "@bodh/shared";
 import { runJob } from "@bodh/integrations/pipeline";
 import { listIntegrations, channelFor } from "@bodh/integrations/postiz";
 import { postizCredentials, runPublisher } from "@bodh/integrations/publisher";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-
 import type { JobState } from "@/app/(app)/seo/actions";
 
 export type PubResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
 export async function retryPublish(_prev: JobState, formData: FormData): Promise<JobState> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "publishing")) return { error: "Your role can't publish." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "publishing")) return { error: "You can't publish." };
   const id = String(formData.get("id"));
   const [item] = await db.select().from(calendarItems).where(eq(calendarItems.id, id)).limit(1);
   if (!item || item.status !== "failed") return { error: "Only a failed post can be retried." };
@@ -33,8 +31,8 @@ export async function retryPublish(_prev: JobState, formData: FormData): Promise
 }
 
 export async function mapChannel(_prev: PubResult, formData: FormData): Promise<PubResult> {
-  const user = await getCurrentUser();
-  if (user.role !== "admin") return { ok: false, error: "Only admins can choose publishing channels." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "publishing") || user.role !== "admin") return { ok: false, error: "Only admins can choose publishing channels." };
   const channel = String(formData.get("channel"));
   const integrationId = String(formData.get("integrationId") ?? "");
   if (!integrationId) {
@@ -65,8 +63,8 @@ export async function mapChannel(_prev: PubResult, formData: FormData): Promise<
 }
 
 export async function runPublisherNow(_prev: PubResult, _formData: FormData): Promise<PubResult> {
-  const user = await getCurrentUser();
-  if (user.role !== "admin") return { ok: false, error: "Only admins can run the publisher." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "publishing") || user.role !== "admin") return { ok: false, error: "Only admins can run the publisher." };
   try {
     const r = await runJob("publisher", () => runPublisher());
     revalidatePath("/publishing");

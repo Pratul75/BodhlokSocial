@@ -10,7 +10,7 @@
  * the app that issued it, since only that app can refresh it.
  */
 import { eq } from "drizzle-orm";
-import { connections, db } from "@bodh/db";
+import { connections, currentTenant, db } from "@bodh/db";
 import { readJsonSecret } from "./secrets";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -89,10 +89,16 @@ export async function refreshAccessToken(refreshToken: string, client: GoogleOAu
 
 const cache = new Map<string, { token: string; refreshToken: string; expiresAt: number }>();
 
+/**
+ * Cache keys carry the tenant. A process-wide cache keyed by integration alone would hand one
+ * workspace's Google access token to the next workspace that asked for "google_ads".
+ */
+const cacheKey = (integration: string) => `${currentTenant().id}:${integration}`;
+
 /** Clears cached access tokens; the next call refreshes. Used on disconnect and in tests. */
 export function forgetAccessToken(integration?: string) {
-  if (integration) cache.delete(integration);
-  else cache.clear();
+  if (!integration) return cache.clear();
+  cache.delete(cacheKey(integration));
 }
 
 /**
@@ -103,15 +109,15 @@ export function forgetAccessToken(integration?: string) {
 export async function googleAccessToken(integration: string): Promise<string | null> {
   const grant = await readJsonSecret<StoredGoogleGrant>(integration);
   if (!grant?.refresh_token) return null;
-  const hit = cache.get(integration);
+  const hit = cache.get(cacheKey(integration));
   if (hit && hit.refreshToken === grant.refresh_token && hit.expiresAt > Date.now() + 60_000) return hit.token;
   try {
     const t = await refreshAccessToken(grant.refresh_token, await googleClientForGrant(grant));
-    cache.set(integration, { token: t.access_token, refreshToken: grant.refresh_token, expiresAt: Date.now() + (t.expires_in ?? 3600) * 1000 });
+    cache.set(cacheKey(integration), { token: t.access_token, refreshToken: grant.refresh_token, expiresAt: Date.now() + (t.expires_in ?? 3600) * 1000 });
     return t.access_token;
   } catch (e) {
     if (e instanceof GoogleGrantRevokedError) {
-      cache.delete(integration);
+      cache.delete(cacheKey(integration));
       await db
         .update(connections)
         .set({ status: "error", error: e.message, updatedAt: new Date() })

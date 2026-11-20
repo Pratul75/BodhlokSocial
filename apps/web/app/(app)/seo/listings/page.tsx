@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { db, directoryListings } from "@bodh/db";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago } from "@/lib/format";
 import { AgentRunPanel } from "@/components/agent-run-panel";
 import { Card, EmptyState, PageHeader, Pill, StatusPill, Table } from "@/components/ui";
@@ -19,7 +19,7 @@ const CATEGORY: Record<string, string> = {
 };
 
 export default async function ListingsPage() {
-  await requireModule("seo");
+  enterTenantScope(await requireModule("seo"));
   const rows = await db.select().from(directoryListings).orderBy(desc(directoryListings.updatedAt)).limit(300);
   const now = new Date();
   const live = rows.filter((r) => r.status === "submitted").length;

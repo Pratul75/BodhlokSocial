@@ -2,7 +2,7 @@ import Link from "next/link";
 import { and, asc, eq, type SQL } from "drizzle-orm";
 import { db, seoPages } from "@bodh/db";
 import { TEMPLATE_LABELS, type Template } from "@bodh/integrations/seo-catalog";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { Card, PageHeader, StatusPill, Table } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ const STATUS_LABEL: Record<string, string> = { planned: "planned", drafted: "cha
 const SITE_LABEL: Record<string, string> = { queued: "Publishing…", remove_queued: "To be taken down", removed: "Taken down", failed: "Failed" };
 
 export default async function SeoPagesList({ searchParams }: { searchParams: Promise<{ template?: string; status?: string }> }) {
-  await requireModule("seo");
+  enterTenantScope(await requireModule("seo"));
   const { template, status } = await searchParams;
   const where: SQL[] = [];
   if (template && template in TEMPLATE_LABELS) where.push(eq(seoPages.template, template));

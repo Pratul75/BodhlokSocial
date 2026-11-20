@@ -42,7 +42,7 @@ export default tseslint.config(
   },
   {
     // Scripts and seeds print progress for a person watching a terminal.
-    files: ["scripts/**", "apps/worker/src/seed.ts", "packages/db/src/migrate.ts", "packages/agents/scripts/**"],
+    files: ["scripts/**", "apps/worker/src/seed.ts", "packages/db/src/migrate.ts", "packages/db/src/provision.ts", "packages/agents/scripts/**"],
     rules: { "no-console": "off" },
   },
   {

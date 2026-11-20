@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { connections, db, geoQuestions } from "@bodh/db";
 import { z } from "zod";
-import { canAccess } from "@bodh/shared";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { runSeoJob } from "@/lib/agents";
 import { syncIntegration } from "@/lib/integrations/google-connection";
@@ -18,8 +17,8 @@ export interface JobState {
 const JOBS = ["keywords", "audit-start", "audit-poll", "geo", "site-publish", "site-sync"] as const;
 
 export async function seoJobAction(_prev: JobState, formData: FormData): Promise<JobState> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "seo")) return { error: "Your role can't run SEO jobs." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "seo")) return { error: "You can't run SEO jobs." };
   const job = String(formData.get("job"));
   if (!(JOBS as readonly string[]).includes(job)) return { error: "Unknown job." };
   const res = await runSeoJob(job as (typeof JOBS)[number]);
@@ -45,8 +44,8 @@ const Question = z
   .pipe(z.string().min(10, "Write the question in full (10 characters at least).").max(200, "Keep it under 200 characters."));
 
 export async function addQuestion(_prev: JobState, formData: FormData): Promise<JobState> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "seo")) return { error: "Your role can't change the AI-visibility questions." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "seo")) return { error: "You can't change the AI-visibility questions." };
   const p = Question.safeParse(String(formData.get("question") ?? ""));
   if (!p.success) return { error: p.error.issues[0]?.message ?? "That question isn't valid." };
   await db.insert(geoQuestions).values({ question: p.data }).onConflictDoUpdate({ target: geoQuestions.question, set: { active: true } });
@@ -56,8 +55,8 @@ export async function addQuestion(_prev: JobState, formData: FormData): Promise<
 }
 
 export async function toggleQuestion(_prev: JobState, formData: FormData): Promise<JobState> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "seo")) return { error: "Your role can't change the AI-visibility questions." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "seo")) return { error: "You can't change the AI-visibility questions." };
   const id = z.uuid().safeParse(formData.get("id"));
   if (!id.success) return { error: "Unknown question." };
   const [q] = await db.select().from(geoQuestions).where(eq(geoQuestions.id, id.data));

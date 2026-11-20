@@ -1,5 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp, PLACEHOLDER_TOKEN, tokenProblem, type WorkerDeps } from "./app";
+
+/**
+ * One tenant, so these assert what a route does rather than how many workspaces exist. The
+ * fan-out over several tenants has its own test below.
+ */
+const TENANTS: { id: string; slug: string; name: string; dataSchema: string; dbRole: string | null; status: string }[] = [
+  { id: "t1", slug: "first", name: "First", dataSchema: "public", dbRole: "bodh_public_app", status: "active" },
+];
+vi.mock("@bodh/db", () => ({
+  agentRuns: { id: "id" },
+  db: { select: () => ({ from: () => ({ limit: async () => [] }) }) },
+  currentTenantOrNull: () => null,
+  activeTenants: async () => TENANTS.filter((t) => t.status === "active"),
+  tenantBySlug: async (slug: string) => TENANTS.find((t) => t.slug === slug) ?? null,
+  withTenant: <T,>(_t: unknown, fn: () => T) => fn(),
+}));
+
+const { createApp, PLACEHOLDER_TOKEN, tokenProblem } = await import("./app");
+type WorkerDeps = import("./app").WorkerDeps;
 
 const TOKEN = "t".repeat(40);
 const ok = (detail: string) => ({ status: "succeeded" as const, detail, rows: 0 });
@@ -18,6 +36,7 @@ function fakeDeps(over: Partial<WorkerDeps["agents"]> = {}) {
       hasKey: async () => true,
       activeRun: vi.fn(async () => null),
       queueRun: vi.fn(async () => ({ id: "run-1", created: true })),
+      enabled: vi.fn(async () => true),
       runAgent: vi.fn(async () => ({ runId: "run-1", status: "succeeded" as const, summary: "", costUsd: 0 })),
       replanTask: () => "Re-plan the month.",
       ...over,
@@ -223,3 +242,107 @@ describe("GA4 Data API backfill route", () => {
   });
 });
 
+
+describe("one scheduler call, every workspace", () => {
+  it("runs a job once per active tenant and reports each result", async () => {
+    TENANTS.push({ id: "t2", slug: "second", name: "Second", dataSchema: "t_second", dbRole: "t_second_app", status: "active" });
+    try {
+      const { deps, calls } = fakeDeps();
+      const res = await post(createApp(TOKEN, deps), "/jobs/publishing/run");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { tenants: Record<string, { status: number }> };
+      expect(Object.keys(body.tenants).sort()).toEqual(["first", "second"]);
+      expect(body.tenants.first!.status).toBe(200);
+      expect(body.tenants.second!.status).toBe(200);
+      // Once for each workspace, not once in total.
+      expect(calls.filter((c) => c === "runPublisher")).toHaveLength(2);
+    } finally {
+      TENANTS.length = 1;
+    }
+  });
+
+  it("runs only the named tenant when the caller names one", async () => {
+    TENANTS.push({ id: "t2", slug: "second", name: "Second", dataSchema: "t_second", dbRole: "t_second_app", status: "active" });
+    try {
+      const { deps, calls } = fakeDeps();
+      const res = await post(createApp(TOKEN, deps), "/jobs/publishing/run?tenant=second");
+      expect(res.status).toBe(200);
+      expect(calls.filter((c) => c === "runPublisher")).toHaveLength(1);
+    } finally {
+      TENANTS.length = 1;
+    }
+  });
+
+  it("refuses a tenant that does not exist, rather than running for someone else", async () => {
+    const { deps, calls } = fakeDeps();
+    const res = await post(createApp(TOKEN, deps), "/jobs/publishing/run?tenant=nobody");
+    expect(res.status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("skips a suspended workspace", async () => {
+    const { deps, calls } = fakeDeps();
+    TENANTS.push({ id: "t3", slug: "paused", name: "Paused", dataSchema: "t_paused", dbRole: null, status: "suspended" });
+    try {
+      // activeTenants() is the registry's own filter; naming a suspended tenant is refused here.
+      const res = await post(createApp(TOKEN, deps), "/jobs/publishing/run?tenant=paused");
+      expect(res.status).toBe(409);
+      expect(calls).toHaveLength(0);
+    } finally {
+      TENANTS.length = 1;
+    }
+  });
+});
+
+describe("a workspace that does not have an agent", () => {
+  it("is told so, instead of a 500 the scheduler would retry", async () => {
+    const { deps } = fakeDeps({ enabled: vi.fn(async () => false) });
+    const res = await post(createApp(TOKEN, deps), "/jobs/strategy");
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/not switched on/i);
+    expect(deps.agents.queueRun).not.toHaveBeenCalled();
+  });
+
+  it("refuses a manual run that names no workspace once there is more than one", async () => {
+    TENANTS.push({ id: "t2", slug: "second", name: "Second", dataSchema: "t_second", dbRole: "x", status: "active" });
+    try {
+      const { deps, calls } = fakeDeps();
+      const res = await post(createApp(TOKEN, deps), "/jobs/publishing/run?trigger=manual");
+      expect(res.status).toBe(400);
+      expect(calls).toHaveLength(0);
+    } finally {
+      TENANTS.length = 1;
+    }
+  });
+});
+
+describe("one workspace failing does not stop the others", () => {
+  it("runs every workspace and reports which one failed", async () => {
+    TENANTS.push({ id: "t2", slug: "second", name: "Second", dataSchema: "t_second", dbRole: "x", status: "active" });
+    TENANTS.push({ id: "t3", slug: "third", name: "Third", dataSchema: "t_third", dbRole: "y", status: "active" });
+    try {
+      const { deps, calls } = fakeDeps();
+      let seen = 0;
+      deps.jobs.runPublisher = (async () => {
+        seen += 1;
+        calls.push("runPublisher");
+        if (seen === 2) throw new Error("second workspace is broken");
+        return ok("published");
+      }) as unknown as WorkerDeps["jobs"]["runPublisher"];
+
+      const res = await post(createApp(TOKEN, deps), "/jobs/publishing/run");
+      // 500 overall, because something did fail and the scheduler should see that.
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { tenants: Record<string, { status: number; body: { error?: string } }> };
+      expect(Object.keys(body.tenants).sort()).toEqual(["first", "second", "third"]);
+      expect(body.tenants.first!.status).toBe(200);
+      expect(body.tenants.second!.status).toBe(500);
+      expect(body.tenants.second!.body.error).toMatch(/second workspace is broken/);
+      expect(body.tenants.third!.status).toBe(200);
+      // The third ran even though the second threw: that is the isolation.
+      expect(calls.filter((c) => c === "runPublisher")).toHaveLength(3);
+    } finally {
+      TENANTS.length = 1;
+    }
+  });
+});

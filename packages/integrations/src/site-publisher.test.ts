@@ -35,7 +35,7 @@ describe("trimTo", () => {
 });
 
 describe("postFields", () => {
-  const fields = postFields(page, "Choosing software");
+  const fields = postFields(page, "Choosing software", "https://bodhlok.com");
 
   it("builds the CMS document: article block, SEO within the CMS's limits, FAQ as headings and schema", () => {
     expect(fields.title).toBe("Bodhlok vs JHora: which desk for daily practice?");
@@ -59,7 +59,7 @@ describe("postFields", () => {
   });
 
   it("falls back to the answer for the description and leaves the FAQ out when empty", () => {
-    const f = postFields({ ...page, description: null, faq: [], keyword: null }, "Chart methods");
+    const f = postFields({ ...page, description: null, faq: [], keyword: null }, "Chart methods", "https://bodhlok.com");
     expect((f.seo as Record<string, unknown>).description).toBe(trimTo(page.answer!, 155));
     expect(f.seo).not.toHaveProperty("extra_jsonld");
     expect(f.seo).not.toHaveProperty("focus_keyword");

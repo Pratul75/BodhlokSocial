@@ -25,12 +25,35 @@ export const users = pgTable(
     email: text("email").notNull().unique(),
     name: text("name").notNull(),
     role: text("role").notNull().default("social_manager"),
+    /** Optional, and only ever for reaching them — nothing signs in with it. */
+    phone: text("phone"),
     active: boolean("active").notNull().default(true),
     /** Goes up on sign-out and when access is removed; session cookies carrying an older number stop working. */
     sessionVersion: integer("session_version").notNull().default(0),
+    /**
+     * Set only when this person signs in with a password. Null means they use Google, which is
+     * how this application began and still works: the two ways in sit side by side.
+     */
+    passwordHash: text("password_hash"),
+    passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
+    /** SHA-256 of the invitation or reset link; the token itself is never stored. */
+    inviteTokenHash: text("invite_token_hash"),
+    inviteExpiresAt: timestamp("invite_expires_at", { withTimezone: true }),
+    /** Wrong passwords in a row, and when the lockout they caused ends. */
+    failedSignIns: integer("failed_sign_ins").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    /** True while the password in the row is a temporary one somebody else chose. */
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
+    /** When a temporary password stops working, used or not. Null for a password they chose. */
+    passwordExpiresAt: timestamp("password_expires_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [oneOf("users_role_check", t.role, USER_ROLES), index("users_role_idx").on(t.role)],
+  (t) => [
+    oneOf("users_role_check", t.role, USER_ROLES),
+    index("users_role_idx").on(t.role),
+    // A password link is found by its hash, and only live ones matter.
+    index("users_invite_idx").on(t.inviteTokenHash).where(sql`${t.inviteTokenHash} IS NOT NULL`),
+  ],
 );
 
 /** One row per integration. `secretRef` names the secret; the value never lives here. */

@@ -1,6 +1,6 @@
 /** SEO jobs: page catalog, keyword sync and the weekly site audit, all through DataForSEO. */
 import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
-import { connections, db, keywords, seoAudits, seoPages } from "@bodh/db";
+import { connections, currentTenant, db, keywords, seoAudits, seoPages, tenantHasFeature, tenantSetting } from "@bodh/db";
 import {
   CHECK_LABELS,
   keywordOverview,
@@ -35,6 +35,10 @@ export async function checkDataForSeoConnection(): Promise<void> {
 
 /** Adds catalog pages that aren't in seo_pages yet, as planned. Never touches existing rows. */
 export async function ensurePageCatalog(): Promise<number> {
+  // The built-in catalog is one industry's: comparison pages, module guides, nakshatras. Filling
+  // every workspace's SEO plan with it would be wrong for a dental clinic or a law firm, so a
+  // workspace gets it only by asking for it. Tenant #1, whose catalog this is, keeps it.
+  if ((await tenantSetting("seo.page_catalog")) !== "on" && currentTenant().dataSchema !== "public") return 0;
   const pages = pageCatalog();
   const rows = await db
     .insert(seoPages)
@@ -62,6 +66,7 @@ export async function ensurePageCatalog(): Promise<number> {
 
 /** Keywords BODH's site ranks for in Google India: volume, difficulty, position and page. */
 export async function syncKeywords(): Promise<string> {
+  if (!(await tenantHasFeature("seo.keywords"))) return "Keyword syncing is not switched on for this workspace.";
   const creds = await dataForSeoCredentials();
   if (!creds) return "DataForSEO isn't connected.";
   try {
@@ -139,6 +144,7 @@ export const AUDIT_MAX_PAGES = Number(process.env.SEO_AUDIT_MAX_PAGES ?? 500);
 
 /** Starts a crawl unless one is already running. */
 export async function startSiteAudit(): Promise<string> {
+  if (!(await tenantHasFeature("seo.keywords"))) return "Site auditing is not switched on for this workspace.";
   const creds = await dataForSeoCredentials();
   if (!creds) return "DataForSEO isn't connected.";
   const [running] = await db.select().from(seoAudits).where(eq(seoAudits.status, "running")).limit(1);

@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { assets, connections, creativeJobs, db } from "@bodh/db";
-import { loadBrand, MONTHLY_LIMITS, monthlyUsage } from "@bodh/integrations/creative";
-import { requireModule } from "@/lib/auth";
+import { loadBrand, monthlyLimits, monthlyUsage } from "@bodh/integrations/creative";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { vertexConfiguredByRuntime } from "@/lib/creative";
 import { ago, num } from "@/lib/format";
 import { AssetThumb } from "@/components/asset-thumb";
@@ -20,13 +20,14 @@ const SOURCE: Record<string, string> = { upload: "Uploaded", imagen: "Imagen", g
 const KIND: Record<string, string> = { image: "Image", carousel: "Carousel", thumbnail: "Thumbnail", video: "Video" };
 
 export default async function CreativePage() {
-  const user = await requireModule("creative");
-  const [rows, [vertex], jobs, usage, brand] = await Promise.all([
+  const user = enterTenantScope(await requireModule("creative"));
+  const [rows, [vertex], jobs, usage, brand, limits] = await Promise.all([
     db.select().from(assets).orderBy(desc(assets.createdAt)).limit(120),
     db.select().from(connections).where(eq(connections.key, "vertex")),
     db.select().from(creativeJobs).orderBy(desc(creativeJobs.createdAt)).limit(8),
     monthlyUsage(),
     loadBrand(),
+    monthlyLimits(),
   ]);
   const vertexReady = vertex?.status === "connected" || vertexConfiguredByRuntime();
   const now = new Date();
@@ -51,12 +52,12 @@ export default async function CreativePage() {
             <div className="mb-3 text-xs font-medium text-muted">This month</div>
             <div className="space-y-3 text-sm">
               <div>
-                <div className="mb-1 flex justify-between"><span>Images</span><span className="font-mono tabular">{num(usage.images)} of {num(MONTHLY_LIMITS.images)}</span></div>
-                <Meter value={usage.images} max={MONTHLY_LIMITS.images} />
+                <div className="mb-1 flex justify-between"><span>Images</span><span className="font-mono tabular">{num(usage.images)} of {num(limits.images)}</span></div>
+                <Meter value={usage.images} max={limits.images} />
               </div>
               <div>
-                <div className="mb-1 flex justify-between"><span>Videos</span><span className="font-mono tabular">{num(usage.videos)} of {num(MONTHLY_LIMITS.videos)}</span></div>
-                <Meter value={usage.videos} max={MONTHLY_LIMITS.videos} />
+                <div className="mb-1 flex justify-between"><span>Videos</span><span className="font-mono tabular">{num(usage.videos)} of {num(limits.videos)}</span></div>
+                <Meter value={usage.videos} max={limits.videos} />
               </div>
             </div>
           </Card>

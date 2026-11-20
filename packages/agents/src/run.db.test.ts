@@ -9,6 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const base = process.env.DATABASE_URL ?? "postgres://bodh:bodh@localhost:5433/bodh";
 const dbName = `bodh_agenttest_${Date.now()}`;
+let testRole: string | null = null;
 const admin = postgres(base, { max: 1, onnotice: () => {} });
 const reachable = await admin`select 1`.then(() => true).catch(() => false);
 
@@ -67,6 +68,9 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
     await migrate(drizzle(mc), { migrationsFolder: fileURLToPath(new URL("../../db/migrations", import.meta.url)) });
     await mc.end();
     m = { db: await import("@bodh/db"), run: await import("./run"), drizzle: await import("drizzle-orm") };
+    // The database the test just made is a single-tenant installation: give it its workspace,
+    // the way a first deploy does, so the application code has one to run for.
+    testRole = (await m.db.bootstrapSingleTenant()).role;
     await m.db.db.insert(m.db.brandKit).values({ id: 1, bannedPhrases: ["best astrologer in india"], voice: "Warm and specific." }).onConflictDoNothing();
   });
 
@@ -74,6 +78,7 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
     if (!m) return;
     await m.db.sql.end();
     await admin.unsafe(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+    if (testRole) await admin.unsafe(`drop role if exists "${testRole}"`).catch(() => undefined);
     await admin.end();
   });
 

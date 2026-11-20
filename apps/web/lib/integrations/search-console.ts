@@ -1,4 +1,5 @@
 import "server-only";
+import { tenantSetting } from "@bodh/db";
 
 const API = "https://www.googleapis.com/webmasters/v3";
 
@@ -21,9 +22,9 @@ export async function listSites(accessToken: string): Promise<SiteEntry[]> {
   return (body.siteEntry ?? []).filter((s) => s.permissionLevel !== "siteUnverifiedUser");
 }
 
-/** Pick the site to sync: SEARCH_CONSOLE_SITE if set, else a Bodhlok or Asttrolok property, else the first one. */
-export function pickSite(sites: SiteEntry[]): SiteEntry | undefined {
-  const wanted = process.env.SEARCH_CONSOLE_SITE;
+/** Pick the site to sync: this workspace's configured site if it has one, else a likely property, else the first. */
+export async function pickSite(sites: SiteEntry[]): Promise<SiteEntry | undefined> {
+  const wanted = await tenantSetting("search_console.site");
   if (wanted) return sites.find((s) => s.siteUrl === wanted);
   return sites.find((s) => /asttrolok|bodh/i.test(s.siteUrl)) ?? sites[0];
 }

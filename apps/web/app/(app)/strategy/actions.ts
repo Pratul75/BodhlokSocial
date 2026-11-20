@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { brandKit, db, strategyPlans } from "@bodh/db";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { startAgentRun, startReplan } from "@/lib/agents";
 
@@ -18,8 +18,8 @@ export async function nextMonthIst(now = new Date()): Promise<{ key: string; lab
 export type PlanState = { ok: true; message: string } | { ok: false; error: string } | null;
 
 export async function approvePlan(_prev: PlanState, formData: FormData): Promise<PlanState> {
-  const user = await getCurrentUser();
-  if (user.role !== "admin") return { ok: false, error: "Only an admin can approve the plan." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "strategy") || user.role !== "admin") return { ok: false, error: "Only an admin can approve the plan." };
   const p = z.object({ id: z.uuid() }).safeParse({ id: formData.get("id") });
   if (!p.success) return { ok: false, error: "Unknown plan." };
   const [plan] = await db
@@ -40,8 +40,10 @@ export type PositioningResult = { ok: true; message: string } | { ok: false; err
  * "Save and re-plan" starts the Strategy agent on the month and the Content agent after it.
  */
 export async function savePositioning(_prev: PositioningResult, formData: FormData): Promise<PositioningResult> {
-  const user = await getCurrentUser();
-  if (user.role !== "admin" && user.role !== "social_manager") return { ok: false, error: "Only admins and social media managers can change the brief." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "strategy") || (user.role !== "admin" && user.role !== "social_manager")) {
+    return { ok: false, error: "Only admins and social media managers can change the brief." };
+  }
   const positioning = String(formData.get("positioning") ?? "").trim().slice(0, 12000);
   const sources: string[] = [];
   for (const line of String(formData.get("sources") ?? "").split("\n").map((l) => l.trim()).filter(Boolean)) {

@@ -2,7 +2,7 @@ import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { adEntities, connections, db, leads } from "@bodh/db";
 import { CRM_URL } from "@bodh/integrations/crm";
 import { channelLabel } from "@bodh/shared";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago, daysAgo, inr, num, pct } from "@/lib/format";
 import { Card, CardHeader, EmptyState, LinkButton, PageHeader, Pill, Stat, StatusPill, Table } from "@/components/ui";
 
@@ -12,7 +12,7 @@ export const metadata = { title: "Leads" };
 const STATUS_PILL: Record<string, string> = { open: "new", converted: "won", lost: "lost", deleted: "removed" };
 
 export default async function LeadsPage() {
-  await requireModule("leads");
+  enterTenantScope(await requireModule("leads"));
   const since = daysAgo(28);
   const [[conn], recent, byChannel] = await Promise.all([
     db.select().from(connections).where(eq(connections.key, "crm_leads")).limit(1),

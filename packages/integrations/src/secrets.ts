@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { currentTenant } from "@bodh/db";
 import { basename, join, resolve } from "node:path";
 
 /**
@@ -121,7 +122,20 @@ export async function secretStore(): Promise<SecretStore> {
   return cached;
 }
 
-export const secretName = (integrationKey: string) => `integration-${integrationKey}`;
+/**
+ * The name a tenant's credential is stored under.
+ *
+ * Every tenant connects its own accounts, so the name has to carry the tenant: without it, the
+ * second workspace to connect Google would overwrite the first one's refresh token and then
+ * post to its account. Tenant #1 keeps the unprefixed names the single-tenant installation
+ * already uses, so the secrets that exist today keep working untouched.
+ *
+ * It throws without a tenant rather than guessing, for the same reason every query does.
+ */
+export function secretName(integrationKey: string): string {
+  const tenant = currentTenant();
+  return tenant.dataSchema === "public" ? `integration-${integrationKey}` : `integration-${tenant.slug}-${integrationKey}`;
+}
 
 /** Read an integration's stored credential and parse it as JSON, or null if not connected. */
 export async function readJsonSecret<T>(integrationKey: string): Promise<T | null> {

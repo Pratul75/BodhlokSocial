@@ -1,6 +1,6 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { createHash, timingSafeEqual as nodeTimingSafeEqual } from "node:crypto";
-import { agentRuns, db } from "@bodh/db";
+import { activeTenants, currentTenantOrNull, ownerSql, tenantBySlug, withTenant } from "@bodh/db";
 import {
   forwardToGoogle,
   forwardToMeta,
@@ -14,7 +14,7 @@ import {
 } from "@bodh/integrations/pipeline";
 import { runPublisher } from "@bodh/integrations/publisher";
 import { pollVideoJobs } from "@bodh/integrations/creative";
-import { AGENT_NAMES, activeRun, anthropicClient, checkAnthropicKey, isAgentName, queueRun, replanTask, runAgent, startVisibilityChecks } from "@bodh/agents";
+import { AGENT_NAMES, activeRun, agentEnabled, anthropicClient, checkAnthropicKey, isAgentName, queueRun, replanTask, runAgent, startVisibilityChecks } from "@bodh/agents";
 import { verifyConnections } from "@bodh/integrations/verify-connections";
 import { buildDigest, sendDigest } from "@bodh/integrations/ops";
 import { syncAdStructure } from "@bodh/integrations/ads";
@@ -49,6 +49,7 @@ export interface WorkerDeps {
     hasKey: () => Promise<boolean>;
     activeRun: typeof activeRun;
     queueRun: typeof queueRun;
+    enabled: typeof agentEnabled;
     runAgent: typeof runAgent;
     replanTask: typeof replanTask;
   };
@@ -88,6 +89,7 @@ export const defaultDeps: WorkerDeps = {
     hasKey: async () => Boolean(await anthropicClient()),
     activeRun,
     queueRun,
+    enabled: agentEnabled,
     runAgent,
     replanTask,
   },
@@ -119,7 +121,8 @@ export const defaultDeps: WorkerDeps = {
   },
   dbUp: async () => {
     try {
-      await db.select({ one: agentRuns.id }).from(agentRuns).limit(1);
+      // The control plane, not a tenant: the probe belongs to no workspace.
+      await ownerSql()`select 1`;
       return true;
     } catch {
       return false;
@@ -148,6 +151,59 @@ export function createApp(token: string, deps: WorkerDeps = defaultDeps): Hono {
   };
   app.use("/jobs", requireToken);
   app.use("/jobs/*", requireToken);
+
+  /**
+   * Every job belongs to a tenant.
+   *
+   * The scheduler calls one URL, not one per workspace, so a call that names no tenant is run
+   * once for each active one and the results come back keyed by slug. A call that does name a
+   * tenant (`?tenant=<slug>`, or the header this middleware sets when it fans out) runs only
+   * for that one. Nothing runs without a tenant bound: these jobs write to tenant tables, and
+   * an unbound write is the bug this whole design exists to prevent.
+   */
+  const FANNED_OUT = "x-tenant-fanned-out";
+  const perTenant: MiddlewareHandler = async (c, next) => {
+    if (currentTenantOrNull()) return next();
+    const named = c.req.query("tenant") ?? c.req.header("x-tenant-slug");
+    if (named) {
+      const tenant = await tenantBySlug(named);
+      if (!tenant) return c.json({ error: `No tenant "${named}"` }, 404);
+      if (tenant.status !== "active") return c.json({ error: `Tenant "${named}" is ${tenant.status}` }, 409);
+      return withTenant(tenant, () => next());
+    }
+    const tenants = await activeTenants();
+    if (tenants.length === 0) return c.json({ error: "No active tenants" }, 503);
+    if (tenants.length === 1) return withTenant(tenants[0]!, () => next());
+    // A person pressed a button in one workspace. Fanning that out to all of them would be a
+    // different thing entirely, so an unaddressed manual call is refused rather than guessed at.
+    if (c.req.query("trigger") === "manual") {
+      return c.json({ error: "A manual run must name its workspace: add ?tenant=<slug>." }, 400);
+    }
+    // More than one: run the same request once per tenant and collect what each said.
+    if (c.req.header(FANNED_OUT)) return c.json({ error: "Tenant fan-out loop" }, 500);
+    const body = c.req.method === "GET" || c.req.method === "HEAD" ? undefined : await c.req.raw.clone().arrayBuffer();
+    const results: Record<string, { status: number; body: unknown }> = {};
+    let worst = 200;
+    for (const tenant of tenants) {
+      const url = new URL(c.req.url);
+      url.searchParams.set("tenant", tenant.slug);
+      const headers = new Headers(c.req.raw.headers);
+      headers.set(FANNED_OUT, "1");
+      const res = await app.fetch(new Request(url, { method: c.req.method, headers, body }));
+      const text = await res.text();
+      let parsed: unknown = text;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // a non-JSON body is kept as text
+      }
+      results[tenant.slug] = { status: res.status, body: parsed };
+      if (res.status > worst) worst = res.status;
+    }
+    return c.json({ tenants: results }, worst >= 500 ? 500 : 200);
+  };
+  app.use("/jobs", perTenant);
+  app.use("/jobs/*", perTenant);
 
   app.get("/jobs", (c) => c.json({ agents: agents.names }));
 
@@ -348,6 +404,9 @@ export function createApp(token: string, deps: WorkerDeps = defaultDeps): Hono {
     // A person updated the positioning brief: the Strategy agent re-plans the month (replacing the
     // approved plan and upcoming agent work), then the Content agent drafts the first week from it.
     if (agent === "replan") {
+      if (!(await agents.enabled("strategy")) || !(await agents.enabled("content"))) {
+        return c.json({ error: "Re-planning needs the Strategy and Content agents, which are not switched on for this workspace." }, 409);
+      }
       if (!(await agents.hasKey())) return c.json({ error: "No Anthropic API key. An admin can add one in Connections." }, 409);
       for (const a of ["strategy", "content"] as const) {
         const running = await agents.activeRun(a);
@@ -373,6 +432,7 @@ export function createApp(token: string, deps: WorkerDeps = defaultDeps): Hono {
     const trigger = c.req.query("trigger") === "manual" ? "manual" : "schedule";
     const task = typeof body.task === "string" ? body.task.slice(0, 6000) : undefined;
 
+    if (!(await agents.enabled(agent))) return c.json({ error: `The ${agent} agent is not switched on for this workspace.` }, 409);
     if (!(await agents.hasKey())) return c.json({ error: "No Anthropic API key. An admin can add one in Connections." }, 409);
     const running = await agents.activeRun(agent);
     if (running) return c.json({ error: `The ${agent} agent is already running.`, runId: running }, 409);

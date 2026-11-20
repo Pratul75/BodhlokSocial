@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { agentRuns, db } from "@bodh/db";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago } from "@/lib/format";
 import { Card, PageHeader, StatusPill, Table } from "@/components/ui";
 
@@ -12,7 +12,7 @@ const AGENT_LABEL: Record<string, string> = { strategy: "Strategy", content: "Co
 const TRIGGER: Record<string, string> = { schedule: "on schedule", manual: "on request", chat: "from chat" };
 
 export default async function RunsPage() {
-  await requireModule("runs");
+  enterTenantScope(await requireModule("runs"));
   const runs = await db.select().from(agentRuns).orderBy(desc(agentRuns.startedAt)).limit(60);
   const now = new Date();
   return (

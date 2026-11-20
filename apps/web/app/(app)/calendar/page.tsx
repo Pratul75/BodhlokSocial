@@ -3,7 +3,7 @@ import { and, asc, gte, lt } from "drizzle-orm";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { calendarItems, db } from "@bodh/db";
 import { CHANNEL_LABELS, CHANNELS, FORMAT_LABELS, FORMATS, type Channel, type Format } from "@bodh/shared";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { timeLabel, toIsoDate } from "@/lib/format";
 import { Card, CardHeader, PageHeader, StatusPill, statusLabel } from "@/components/ui";
 import { AgentRunPanel } from "@/components/agent-run-panel";
@@ -38,7 +38,7 @@ function startOfWeek(d: Date) {
 }
 
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ view?: string; d?: string }> }) {
-  await requireModule("calendar");
+  enterTenantScope(await requireModule("calendar"));
   const sp = await searchParams;
   const view = sp.view === "week" ? "week" : "month";
   const anchor = sp.d && !Number.isNaN(new Date(sp.d).getTime()) ? new Date(`${sp.d}T00:00`) : new Date();

@@ -3,11 +3,12 @@
  * Connections page means the provider accepted it. Each check is the cheapest read the provider
  * offers; none of them changes anything at the provider.
  */
+import { tenantSetting } from "@bodh/db";
 import { GRAPH_VERSION } from "./meta";
 import { listIntegrations, type PostizCredentials } from "./postiz";
 import { vertexAuth, type ServiceAccountKey } from "./vertex";
 import { findGa4Dataset } from "./ga4";
-import { ga4Client, ga4PropertyId } from "./ga4-data";
+import { ga4Client, tenantGa4PropertyId } from "./ga4-data";
 
 export type Validation = { ok: true; label?: string; warning?: string } | { ok: false; error: string };
 export type Validator = (value: string) => Promise<Validation>;
@@ -131,7 +132,7 @@ export const VALIDATORS: Record<string, Validator> = {
     // With a GA4 property configured, the Data API is the source: check this key can read it.
     let propertyId: string | null;
     try {
-      propertyId = ga4PropertyId();
+      propertyId = await tenantGa4PropertyId();
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
     }
@@ -143,11 +144,11 @@ export const VALIDATORS: Record<string, Validator> = {
         return fail(e instanceof Error ? e.message : String(e));
       }
     }
-    const projectId = process.env.GA4_BQ_PROJECT || key.project_id || process.env.GCP_PROJECT_ID;
-    if (!projectId) return fail("The service account JSON has no project_id; set GA4_BQ_PROJECT on the server.");
+    const projectId = (await tenantSetting("ga4.bq_project")) || key.project_id || process.env.GCP_PROJECT_ID;
+    if (!projectId) return fail("The service account JSON has no project_id; set this workspace's BigQuery project in its settings.");
     try {
-      const dataset = process.env.GA4_BQ_DATASET || (await findGa4Dataset(projectId, { client_email: key.client_email, private_key: key.private_key }));
-      if (!dataset) return { ok: true, label: projectId, warning: `No analytics_ dataset in ${projectId} yet. Link GA4 to BigQuery, or set GA4_BQ_DATASET.` };
+      const dataset = (await tenantSetting("ga4.bq_dataset")) || (await findGa4Dataset(projectId, { client_email: key.client_email, private_key: key.private_key }));
+      if (!dataset) return { ok: true, label: projectId, warning: `No analytics_ dataset in ${projectId} yet. Link GA4 to BigQuery, or set this workspace's BigQuery dataset in its settings.` };
       return { ok: true, label: `${projectId}.${dataset}` };
     } catch (e) {
       return fail(`BigQuery refused the service account: ${e instanceof Error ? e.message : String(e)}`);

@@ -1,4 +1,5 @@
 import type { AdSpendRow } from "./meta";
+import { tenantSetting } from "@bodh/db";
 
 /**
  * Google Ads API over REST: daily spend per ad, and click-conversion uploads.
@@ -26,6 +27,27 @@ export function googleAdsConfigFromEnv(): GoogleAdsConfig | null {
     conversionActions = JSON.parse(process.env.GOOGLE_ADS_CONVERSION_ACTIONS ?? "{}");
   } catch {}
   return { developerToken, customerId, loginCustomerId: process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID?.replace(/-/g, ""), conversionActions };
+}
+
+/**
+ * This workspace's Google Ads account.
+ *
+ * The developer token is the application's, so it stays a server setting; which ADVERTISER the
+ * app acts for is the workspace's, and reading that from the environment would point every
+ * workspace's ad spend, pausing and budget changes at tenant #1's account.
+ */
+export async function googleAdsConfig(): Promise<GoogleAdsConfig | null> {
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+  const customerId = (await tenantSetting("google_ads.customer_id"))?.replace(/-/g, "");
+  if (!developerToken || !customerId) return null;
+  let conversionActions: GoogleAdsConfig["conversionActions"] = {};
+  try {
+    conversionActions = JSON.parse((await tenantSetting("google_ads.conversion_actions")) ?? "{}");
+  } catch {
+    // A workspace with unreadable JSON here simply has no conversion actions mapped.
+  }
+  const loginCustomerId = (await tenantSetting("google_ads.login_customer_id"))?.replace(/-/g, "");
+  return { developerToken, customerId, loginCustomerId, conversionActions };
 }
 
 export function headers(cfg: GoogleAdsConfig, accessToken: string): Record<string, string> {

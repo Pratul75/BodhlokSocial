@@ -5,7 +5,32 @@ import { signBody, SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@bodh/integrations
 // Route handlers are called directly with a Request. The database and pipeline are mocked so
 // these run without Postgres; the DB-backed suites cover what happens after a request is accepted.
 const execute = vi.fn();
-vi.mock("@bodh/db", () => ({ db: { execute: (...a: unknown[]) => execute(...a) } }));
+// The health probe asks the control plane; everything else here goes through `db`.
+const ownerQuery = vi.fn();
+// What the workspace serving a public endpoint is entitled to. The feed needs the SEO module
+// and the page-feed feature, so these tests have to say which: a token on its own is no longer
+// enough, deliberately.
+let feedEntitlements = { modules: new Set(["seo"]), features: new Set(["feed.pages"]), capacities: new Map() };
+vi.mock("@bodh/db", () => ({
+  db: { execute: (...a: unknown[]) => execute(...a) },
+  ownerSql: () => (...a: unknown[]) => ownerQuery(...a),
+  // Each public route binds its own frame; here that binding is a no-op.
+  enterTenant: () => {},
+  currentTenant: () => ({ id: "t1", slug: "first", name: "First", dataSchema: "public", dbRole: null, status: "active" }),
+  entitlementsFor: async () => feedEntitlements,
+}));
+// Public endpoints resolve their own tenant; here it always resolves, except where a test says not.
+let publicTenant: unknown = { id: "t1", slug: "first", name: "First", dataSchema: "public", dbRole: null, status: "active" };
+vi.mock("@/lib/tenant", () => ({ publicTenant: async () => publicTenant }));
+// The event secret and the feed token belong to the workspace, not the server. What they are is
+// tested on the resolver itself; here they are simply set.
+let eventsSecret: string | null = null;
+let feedToken: string | null = null;
+vi.mock("@/lib/tenant-secrets", () => ({
+  EVENTS_SECRET_KEY: "events_webhook",
+  FEED_TOKEN_KEY: "page_feed",
+  tenantSecret: async (key: string) => (key === "events_webhook" ? eventsSecret : feedToken),
+}));
 const ingestEvents = vi.fn(async (events: unknown[]) => ({ accepted: events.length, duplicates: 0 }));
 vi.mock("@bodh/integrations/pipeline", () => ({ ingestEvents: (e: unknown[]) => ingestEvents(e) }));
 // Live's CRM receivers: credentials and handlers mocked, the real signature check kept.
@@ -29,9 +54,9 @@ afterEach(() => {
 describe("GET /api/health", () => {
   it("is 200 when the database answers and 503 when it does not", async () => {
     const { GET } = await import("./health/route");
-    execute.mockResolvedValueOnce([]);
+    ownerQuery.mockResolvedValueOnce([]);
     expect((await GET()).status).toBe(200);
-    execute.mockRejectedValueOnce(new Error("down"));
+    ownerQuery.mockRejectedValueOnce(new Error("down"));
     const res = await GET();
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ ok: false });
@@ -44,10 +69,12 @@ describe("POST /api/events/bodh", () => {
   const signed = (body: string, ts = Math.floor(Date.now() / 1000)) =>
     new Request("http://x/api/events/bodh", { method: "POST", body, headers: { [TIMESTAMP_HEADER]: String(ts), [SIGNATURE_HEADER]: signBody(SECRET, ts, body) } });
 
-  beforeEach(() => vi.stubEnv("BODH_EVENTS_SECRET", SECRET));
+  beforeEach(() => {
+    eventsSecret = SECRET;
+  });
 
   it("is off (503) without a secret", async () => {
-    vi.stubEnv("BODH_EVENTS_SECRET", "");
+    eventsSecret = null;
     const { POST } = await import("./events/bodh/route");
     expect((await POST(signed(JSON.stringify(event)))).status).toBe(503);
   });
@@ -80,13 +107,32 @@ describe("POST /api/events/bodh", () => {
 });
 
 describe("GET /api/feed/*", () => {
-  it("is off (503) without SEO_FEED_TOKEN", async () => {
+  it("is off (503) when the workspace has no feed token", async () => {
+    feedToken = null;
     const { GET } = await import("./feed/pages/route");
     expect((await GET(new Request("http://x/api/feed/pages"))).status).toBe(503);
   });
 
+  it("is off when the workspace no longer has the SEO module, whatever token is held", async () => {
+    feedToken = "feed-token-feed-token-1234";
+    feedEntitlements = { modules: new Set([]), features: new Set(["feed.pages"]), capacities: new Map() };
+    const { GET } = await import("./feed/pages/route");
+    const res = await GET(new Request("http://x/api/feed/pages", { headers: { authorization: "Bearer feed-token-feed-token-1234" } }));
+    expect(res.status).toBe(401);
+    feedEntitlements = { modules: new Set(["seo"]), features: new Set(["feed.pages"]), capacities: new Map() };
+  });
+
+  it("is off when the page-feed feature is off, even with the module on", async () => {
+    feedToken = "feed-token-feed-token-1234";
+    feedEntitlements = { modules: new Set(["seo"]), features: new Set([]), capacities: new Map() };
+    const { GET } = await import("./feed/pages/route");
+    const res = await GET(new Request("http://x/api/feed/pages", { headers: { authorization: "Bearer feed-token-feed-token-1234" } }));
+    expect(res.status).toBe(401);
+    feedEntitlements = { modules: new Set(["seo"]), features: new Set(["feed.pages"]), capacities: new Map() };
+  });
+
   it("needs the token as a Bearer header; the query string is not accepted", async () => {
-    vi.stubEnv("SEO_FEED_TOKEN", "feed-token-feed-token-1234");
+    feedToken = "feed-token-feed-token-1234";
     const { GET } = await import("./feed/pages/route");
     expect((await GET(new Request("http://x/api/feed/pages?token=feed-token-feed-token-1234"))).status).toBe(401);
     expect((await GET(new Request("http://x/api/feed/pages", { headers: { authorization: "Bearer nope" } }))).status).toBe(401);
@@ -119,3 +165,25 @@ describe("POST /api/events/crm-* (live 47ff99c CRM receivers, kept by the merge)
   }
 });
 
+
+describe("public endpoints name their workspace", () => {
+  it("refuses a webhook for a workspace that does not exist, instead of delivering it to tenant #1", async () => {
+    eventsSecret = "s".repeat(64);
+    const { POST } = await import("./events/bodh/route");
+    publicTenant = null;
+    try {
+      const body = JSON.stringify([]);
+      const ts = Math.floor(Date.now() / 1000);
+      const req = new Request("http://x/api/events/bodh", {
+        method: "POST",
+        body,
+        headers: { [TIMESTAMP_HEADER]: String(ts), [SIGNATURE_HEADER]: signBody("s".repeat(64), ts, body) },
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(404);
+      expect(ingestEvents).not.toHaveBeenCalled();
+    } finally {
+      publicTenant = { id: "t1", slug: "first", name: "First", dataSchema: "public", dbRole: null, status: "active" };
+    }
+  });
+});

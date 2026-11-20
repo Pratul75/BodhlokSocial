@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "push": "drizzle-kit push",
     "generate": "drizzle-kit generate",
-    "migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts"
+    "migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts",
+    "provision": "tsx --env-file-if-exists=../../.env src/provision.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@bodh/shared": "workspace:*",
@@ -22,6 +24,7 @@
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.11",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "vitest": "^5.0.5"
   }
 }

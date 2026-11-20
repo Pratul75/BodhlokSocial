@@ -1,14 +1,19 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { assets, brandKit, creativeJobs, db } from "@bodh/db";
+import { assets, brandKit, creativeJobs, db, tenantCapacity, tenantHasFeature } from "@bodh/db";
 import { readJsonSecret } from "./secrets";
 import { pathFromGcsUri, readFileBytes, saveFile, storagePathFor } from "./storage";
 import { brandPrompt, pollVideo, startVideo, vertexAuth, type ServiceAccountKey, type VideoOptions } from "./vertex";
 
-/** Monthly limits across the team; image counts each generated image, video each clip. */
-export const MONTHLY_LIMITS = {
-  images: Number(process.env.CREATIVE_MONTHLY_IMAGES ?? 300),
-  videos: Number(process.env.CREATIVE_MONTHLY_VIDEOS ?? 30),
-};
+/**
+ * This workspace's monthly limits; image counts each generated image, video each clip. Read per
+ * tenant, falling back to the server's own setting for an installation that has not set one.
+ */
+export async function monthlyLimits(): Promise<{ images: number; videos: number }> {
+  return {
+    images: await tenantCapacity("creative.monthly_images"),
+    videos: await tenantCapacity("creative.monthly_videos"),
+  };
+}
 
 /**
  * Optional limits per person per month, on top of the team's. Off unless set, e.g.
@@ -36,8 +41,14 @@ export async function monthlyUsage(requestedBy?: string): Promise<{ images: numb
 
 /** Why `requestedBy` can't generate `kind` (count of images, or one video) now, or null when they can. */
 export async function generationRefusal(requestedBy: string, kind: "images" | "videos", count = 1): Promise<string | null> {
+  // Both ways in — the Creative studio and an agent's tool — come through here.
+  if (!(await tenantHasFeature(kind === "videos" ? "creative.video" : "creative.image"))) {
+    return `Generating ${kind} is not switched on for this workspace.`;
+  }
+  // The monthly allowance is the workspace's own, so one tenant cannot spend another's.
+  const limit = await tenantCapacity(kind === "videos" ? "creative.monthly_videos" : "creative.monthly_images");
   const team = await monthlyUsage();
-  if (team[kind] + count > MONTHLY_LIMITS[kind]) return `This month's team limit of ${MONTHLY_LIMITS[kind]} ${kind} is reached (${team[kind]} used).`;
+  if (team[kind] + count > limit) return `This month's team limit of ${limit} ${kind} is reached (${team[kind]} used).`;
   const cap = PER_USER_LIMITS[kind];
   if (cap) {
     const mine = await monthlyUsage(requestedBy);

@@ -3,12 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { connections, db, publishingChannels } from "@bodh/db";
-import { getIntegration } from "@bodh/shared";
+import { getIntegration, INTEGRATIONS, integrationAllowed } from "@bodh/shared";
 import { checkAnthropicKey } from "@bodh/agents";
 import { validateCredential } from "@bodh/integrations/validate";
 import { revokeRedditGrant } from "@bodh/integrations/reddit";
 import { summarize, verifyConnections } from "@bodh/integrations/verify-connections";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { secretName, secretStore } from "@/lib/secrets";
 import { revokeGrant, syncIntegration } from "@/lib/integrations/google-connection";
@@ -17,14 +17,27 @@ export type ConnResult = { ok: true; message: string } | { ok: false; error: str
 
 async function requireAdmin() {
   const user = await getCurrentUser();
-  if (user.role !== "admin") throw new Error("Only admins can change connections.");
+  if (!allowed(user, "connections")) throw new Error("Only admins can change connections.");
   return user;
+}
+
+/**
+ * The account has to be one this workspace was given.
+ *
+ * Hiding it on the page is not enough: these actions are reachable on their own, and a
+ * credential written for an account the workspace never had is a credential nobody meant to
+ * exist — and one the agents would happily use.
+ */
+function requireIntegration(user: { ent: Parameters<typeof integrationAllowed>[0] }, key: string) {
+  if (!INTEGRATIONS.some((i) => i.key === key)) throw new Error("Unknown connection.");
+  if (!integrationAllowed(user.ent, key)) throw new Error("That connection is not switched on for this workspace.");
 }
 
 export async function saveKey(_prev: ConnResult, formData: FormData): Promise<ConnResult> {
   try {
-    const user = await requireAdmin();
+    const user = enterTenantScope(await requireAdmin());
     const key = String(formData.get("key"));
+    requireIntegration(user, key);
     const label = String(formData.get("label") ?? "").trim() || null;
     const def = getIntegration(key);
     if (!def || (def.method !== "api_key" && def.method !== "service_account")) {
@@ -73,8 +86,9 @@ export async function saveKey(_prev: ConnResult, formData: FormData): Promise<Co
 }
 
 export async function disconnect(formData: FormData) {
-  const user = await requireAdmin();
+  const user = enterTenantScope(await requireAdmin());
   const key = String(formData.get("key"));
+  requireIntegration(user, key);
   const def = getIntegration(key);
   if (!def) return;
   if (def.googleOAuth) await revokeGrant(key);
@@ -98,11 +112,21 @@ export async function disconnect(formData: FormData) {
 }
 
 export async function syncNow(_prev: ConnResult, formData: FormData): Promise<ConnResult> {
+  // Who they are and what they may touch, decided before the try — a refusal is not a sync
+  // failure, and recording it on the connection card as one tells the customer the wrong story.
+  let user;
+  const key = String(formData.get("key"));
   try {
-    const user = await requireAdmin();
-    const key = String(formData.get("key"));
-    const def = getIntegration(key);
-    if (!def) return { ok: false, error: "Unknown integration." };
+    user = enterTenantScope(await requireAdmin());
+    requireIntegration(user, key);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "You can't sync that." };
+  }
+
+  const def = getIntegration(key);
+  if (!def) return { ok: false, error: "Unknown integration." };
+
+  try {
     const { message } = await syncIntegration(key);
     await audit({ actor: user.email, actorType: "user", action: "sync", target: def.name, result: message });
     revalidatePath("/connections");
@@ -110,7 +134,6 @@ export async function syncNow(_prev: ConnResult, formData: FormData): Promise<Co
     return { ok: true, message };
   } catch (e) {
     const error = e instanceof Error ? e.message : "Sync failed.";
-    const key = String(formData.get("key"));
     await db.update(connections).set({ status: "error", error, updatedAt: new Date() }).where(eq(connections.key, key));
     revalidatePath("/connections");
     return { ok: false, error };
@@ -120,7 +143,7 @@ export async function syncNow(_prev: ConnResult, formData: FormData): Promise<Co
 /** Asks every provider whether the stored credential still works, and updates each card. */
 export async function checkAllConnections(_prev: ConnResult, _formData: FormData): Promise<ConnResult> {
   try {
-    const user = await requireAdmin();
+    const user = enterTenantScope(await requireAdmin());
     const checks = await verifyConnections({ anthropic: checkAnthropicKey });
     const message = summarize(checks);
     await audit({ actor: user.email, actorType: "user", action: "verify_connections", target: `${checks.length} connections`, result: message.slice(0, 500) });

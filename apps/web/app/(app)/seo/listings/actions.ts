@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, directoryListings } from "@bodh/db";
-import { canAccess } from "@bodh/shared";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import type { JobState } from "@/app/(app)/seo/actions";
 
@@ -16,8 +15,8 @@ const Submitted = z.object({
 
 /** A person submitted an approved listing by hand and records where it lives. */
 export async function markSubmitted(_prev: JobState, formData: FormData): Promise<JobState> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "seo")) return { error: "Your role can't manage directory listings." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "seo")) return { error: "You can't manage directory listings." };
   const p = Submitted.safeParse(Object.fromEntries(formData));
   if (!p.success) return { error: p.error.issues[0]?.message ?? "Paste the link to the listing." };
   const r = await db
@@ -32,8 +31,8 @@ export async function markSubmitted(_prev: JobState, formData: FormData): Promis
 }
 
 export async function skipListing(_prev: JobState, formData: FormData): Promise<JobState> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "seo")) return { error: "Your role can't manage directory listings." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "seo")) return { error: "You can't manage directory listings." };
   const p = z.object({ id: z.uuid() }).safeParse(Object.fromEntries(formData));
   if (!p.success) return { error: "Unknown listing." };
   const r = await db

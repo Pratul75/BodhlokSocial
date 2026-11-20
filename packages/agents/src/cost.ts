@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { db } from "@bodh/db";
+import { db, tenantCapacity } from "@bodh/db";
 
 /** USD per million tokens. Cache writes are the 5-minute TTL (1.25x input). */
 export interface Price {
@@ -91,8 +91,21 @@ export function costUsd(t: RunTotals): number {
   return t.usd;
 }
 
-/** Team-wide monthly AI budget for agents, chat and AI-visibility checks, in USD. */
-export const MONTHLY_BUDGET_USD = Number(process.env.AI_MONTHLY_BUDGET_USD ?? 150);
+/**
+ * This workspace's monthly AI budget for agents, chat and AI-visibility checks, in USD.
+ *
+ * It has to be per workspace. The spending itself already is — `agent_runs` lives inside the
+ * workspace — but one shared ceiling would let the busiest workspace use up the month for
+ * everybody, which is one workspace being able to stop another one working.
+ */
+export async function monthlyBudgetUsd(): Promise<number> {
+  return tenantCapacity("ai.monthly_budget_usd");
+}
+
+/** This workspace's ceiling for a single run. */
+export async function runCapUsd(): Promise<number> {
+  return tenantCapacity("ai.run_cap_usd");
+}
 
 const MONTH_START = sql`date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
 
@@ -115,16 +128,18 @@ export async function reserveBudget(
   runId: string,
   reserveUsd: number,
 ): Promise<{ ok: true; capUsd: number } | { ok: false; reason: string }> {
+  // Read before the transaction: this is a control-plane read, on another connection.
+  const budget = await monthlyBudgetUsd();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('bodh_ai_budget'))`);
     const rows = (await tx.execute(sql`
       SELECT coalesce(sum(cost_usd), 0)::float AS usd FROM agent_runs
       WHERE started_at >= ${MONTH_START} AND id <> ${runId}`)) as unknown as { usd: number }[];
     const spent = rows[0]?.usd ?? 0;
-    if (spent >= MONTHLY_BUDGET_USD) {
-      return { ok: false as const, reason: `This month's AI budget ($${MONTHLY_BUDGET_USD}) is used up ($${spent.toFixed(2)} spent or reserved). Raise AI_MONTHLY_BUDGET_USD to run more.` };
+    if (spent >= budget) {
+      return { ok: false as const, reason: `This month's AI budget ($${budget}) is used up ($${spent.toFixed(2)} spent or reserved). Raise this workspace's monthly AI budget to run more.` };
     }
-    const capUsd = Math.min(reserveUsd, MONTHLY_BUDGET_USD - spent);
+    const capUsd = Math.min(reserveUsd, budget - spent);
     await tx.execute(sql`UPDATE agent_runs SET cost_usd = ${capUsd.toFixed(4)}, started_at = now() WHERE id = ${runId}`);
     return { ok: true as const, capUsd };
   });

@@ -4,7 +4,7 @@ import { ArrowLeft, BookOpen, Globe, MessageSquare, PenLine, Search, Wrench } fr
 import { desc, eq, sql } from "drizzle-orm";
 import { agentRuns, calendarItems, db, seoPages } from "@bodh/db";
 import { CHANNEL_LABELS, type Channel } from "@bodh/shared";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { Markdown } from "@/components/markdown";
 import { Card, CardHeader, PageHeader, Stat, StatusPill } from "@/components/ui";
 
@@ -17,7 +17,7 @@ const fmt = (d: Date) => d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", d
 const time = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireModule("runs");
+  enterTenantScope(await requireModule("runs"));
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, id)).limit(1);

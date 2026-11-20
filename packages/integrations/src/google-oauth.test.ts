@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const updates: unknown[] = [];
 vi.mock("@bodh/db", () => ({
   connections: { key: "key" },
+  // Token caching is per tenant, so the module under test asks who it is working for.
+  currentTenant: () => ({ id: "tenant-1", slug: "first", name: "First", dataSchema: "public", dbRole: null, status: "active" }),
   db: {
     update: () => ({
       set: (v: unknown) => ({

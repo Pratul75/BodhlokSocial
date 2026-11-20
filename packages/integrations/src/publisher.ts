@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
-import { approvals, assets, brandKit, calendarItems, db, postizCalls, publishingChannels } from "@bodh/db";
+import { approvals, assets, brandKit, calendarItems, db, postizCalls, publishingChannels, tenantHasFeature } from "@bodh/db";
 import { checkPost } from "@bodh/guardrails/posts";
 import type { JobResult } from "./pipeline";
 import { buildPostPayload, createPost, deleteGroup, listPosts, PostizError, uploadFile, type MediaForPostiz, type PostizCredentials } from "./postiz";
@@ -55,6 +55,9 @@ async function mediaFor(creds: PostizCredentials, item: Item): Promise<MediaForP
 }
 
 export async function runPublisher(now = new Date()): Promise<JobResult> {
+  if (!(await tenantHasFeature("publishing.postiz"))) {
+    return { status: "skipped", detail: "Publishing through Postiz is not switched on for this workspace." };
+  }
   const creds = await postizCredentials();
   if (!creds?.api_url || !creds.api_key) return { status: "skipped", detail: "Postiz is not connected. Approved posts wait." };
 

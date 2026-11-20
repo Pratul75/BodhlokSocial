@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const base = process.env.DATABASE_URL ?? "postgres://bodh:bodh@localhost:5433/bodh";
 const dbName = `bodh_crmtest_${Date.now()}`;
+let testRole: string | null = null;
 const admin = postgres(base, { max: 1, onnotice: () => {} });
 const reachable = await admin`select 1`.then(() => true).catch(() => false);
 
@@ -41,6 +42,9 @@ describe.skipIf(!reachable)("CRM feeds with a database", () => {
     await mc.end();
 
     m = { db: await import("@bodh/db"), crm: await import("./crm"), pipeline: await import("./pipeline"), secrets: await import("./secrets") };
+    // The database the test just made is a single-tenant installation: give it its workspace,
+    // the way a first deploy does, so the application code has one to run for.
+    testRole = (await m.db.bootstrapSingleTenant()).role;
     const store = await m.secrets.secretStore();
     await store.put("integration-crm_billing", JSON.stringify({ webhook_secret: "whsec_test", api_key: "mp_key", base_url: "https://crm.test/" }));
     await store.put("integration-crm_leads", JSON.stringify({ webhook_secret: "lead_secret" }));
@@ -58,6 +62,7 @@ describe.skipIf(!reachable)("CRM feeds with a database", () => {
     vi.unstubAllGlobals();
     if (m) await m.db.sql.end();
     await admin.unsafe(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+    if (testRole) await admin.unsafe(`drop role if exists "${testRole}"`).catch(() => undefined);
     await admin.end();
     if (dir) await rm(dir, { recursive: true, force: true });
   });

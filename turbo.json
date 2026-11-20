@@ -20,7 +20,14 @@
         "^typecheck"
       ]
     },
-    "test": {},
+    "test": {
+      "env": [
+        "DATABASE_URL",
+        "MIGRATE_DATABASE_URL",
+        "DEFAULT_TENANT_SLUG",
+        "DEFAULT_TENANT_SCHEMA"
+      ]
+    },
     "start": {
       "dependsOn": [
         "build"
