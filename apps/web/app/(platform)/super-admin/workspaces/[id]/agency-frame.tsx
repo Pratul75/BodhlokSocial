@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { PageHeader, StatusPill } from "@/components/ui";
-import { SwitchIntoClient } from "@/app/(org)/org/forms";
+import { SwitchIntoClient } from "@/components/switch-into-client";
 import { TabBar } from "../../nav";
 
 /**
