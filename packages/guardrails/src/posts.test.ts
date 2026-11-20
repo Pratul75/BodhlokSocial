@@ -94,3 +94,45 @@ describe("post rules not covered above", () => {
     expect(checkPost({ ...yt, title: "Reading a dasha on a sample chart" }).errors).toEqual([]);
   });
 });
+
+describe("the heading, subheading and call to action", () => {
+  const post = (extra: Record<string, unknown>) =>
+    checkPost({ channel: "instagram", format: "image", caption: "A clean caption.", title: null, assets: [img], ...extra });
+
+  it("leaves a good set alone", () => {
+    expect(
+      post({ heading: "Shani in the 7th house?", subhead: "Read it in D1 and D9 before you say a word", cta: "Open your free desk" }),
+    ).toEqual({ errors: [], warnings: [] });
+  });
+
+  it("checks the banned list against them, not only the caption", () => {
+    // The whole point: the heading is the most prominent line on the post, and a creative prints
+    // it. A banned phrase that only has to avoid the caption has not been kept out of anything.
+    for (const field of ["heading", "subhead", "cta"] as const) {
+      expect(post({ [field]: "guaranteed results", bannedPhrases: ["guaranteed results"] }).errors).toContain(
+        '"guaranteed results" is on the brand kit\'s banned list.',
+      );
+    }
+  });
+
+  it("applies the ad-claim rules to them too", () => {
+    const errors = post({ heading: "100% accurate predictions, guaranteed" }).errors;
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("warns when a line is too long to do its job", () => {
+    expect(post({ heading: "a".repeat(121) }).warnings[0]).toMatch(/heading is 121 characters/);
+    expect(post({ subhead: "b".repeat(201) }).warnings[0]).toMatch(/subheading is 201 characters/);
+    expect(post({ cta: "c".repeat(81) }).warnings[0]).toMatch(/call to action is 81 characters/);
+  });
+
+  it("says so when the subheading only repeats the heading", () => {
+    expect(post({ heading: "Saturn in the 7th", subhead: "saturn in the 7th" }).warnings).toContain(
+      "The heading and the subheading say the same thing; the subheading should earn the rest of the post.",
+    );
+  });
+
+  it("does not invent problems when they are simply absent", () => {
+    expect(post({ heading: null, subhead: undefined, cta: "" })).toEqual({ errors: [], warnings: [] });
+  });
+});

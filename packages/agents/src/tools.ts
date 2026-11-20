@@ -451,13 +451,16 @@ export function contentTools(ctx: ToolContext) {
   const createDraft = betaZodTool({
     name: "create_draft_post",
     description:
-      "Add a drafted post to the calendar. A person attaches the image or video and sends it for approval, so describe the creative in creative_brief. Captions are checked against ad-claim rules and the brand kit's banned phrases; if the tool returns an error, fix the caption and try again.",
+      "Add a drafted post to the calendar. A person attaches the image or video and sends it for approval, so describe the creative in creative_brief. Every post needs a heading, a subheading and a call to action as well as the caption: they are what the creative prints and what the reader sees first. All of that copy is checked against ad-claim rules and the brand kit's banned phrases; if the tool returns an error, fix it and try again.",
     inputSchema: z.object({
       channel: z.enum(["instagram", "facebook", "linkedin", "youtube"]),
       format: z.enum(["reel", "short", "long_video", "image", "carousel", "post"]),
       scheduled_at: z.iso.datetime({ offset: true }).describe("When it should go out, ISO 8601 with +05:30, e.g. 2026-10-28T18:30:00+05:30"),
       idea: z.string().min(5).max(140).describe("One line the team will recognise on the calendar"),
       title: z.string().max(100).optional().describe("Required for YouTube: 2 to 100 characters"),
+      heading: z.string().max(120).describe("The first line someone reads, on the creative and at the top of the caption. One idea, no clickbait."),
+      subhead: z.string().max(200).describe("One line under the heading that earns the rest of the post: what the astrologer will be able to do."),
+      cta: z.string().max(80).describe("The single thing to do next, in a few words, e.g. 'Open your free desk at bodhlok.com'"),
       script: z.string().max(4000).describe("Shot-by-shot script or slide-by-slide outline, with the hook first"),
       caption: z.string().max(2200).describe("The caption or YouTube description, ready to post"),
       creative_brief: z.string().max(1500).describe("A shot list: the sample chart, the desk screens to record in order, on-screen text per beat, voiceover language, cover frame. Illustrations only for covers or quote cards."),
@@ -489,7 +492,17 @@ export function contentTools(ctx: ToolContext) {
       if (other) return `Error: "${other.idea}" is already on ${p.channel} within two hours of that time. Pick another slot.`;
 
       const [kit] = await db.select({ bannedPhrases: brandKit.bannedPhrases }).from(brandKit).limit(1);
-      const check = checkPost({ channel: p.channel, format: p.format, caption: p.caption, title: p.title ?? null, assets: [], bannedPhrases: kit?.bannedPhrases ?? [] });
+      const check = checkPost({
+        channel: p.channel,
+        format: p.format,
+        caption: p.caption,
+        title: p.title ?? null,
+        heading: p.heading,
+        subhead: p.subhead,
+        cta: p.cta,
+        assets: [],
+        bannedPhrases: kit?.bannedPhrases ?? [],
+      });
       const blocking = check.errors.filter((e) => !MEDIA_RULES.test(e));
       if (blocking.length) return `Error: the caption would be blocked at approval: ${blocking.join(" ")} Rewrite and try again.`;
 
@@ -498,6 +511,9 @@ export function contentTools(ctx: ToolContext) {
         format: p.format,
         idea: p.idea,
         title: p.title ?? null,
+        heading: p.heading,
+        subhead: p.subhead,
+        cta: p.cta,
         script: p.script,
         caption: p.caption,
         scheduledAt: at,

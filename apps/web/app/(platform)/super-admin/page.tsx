@@ -3,7 +3,7 @@ import { ownerSql } from "@bodh/db";
 import { platformAudit, requireOperator } from "@/lib/platform-auth";
 import { allWorkspaceStats, platformTotals } from "@/lib/platform-stats";
 import { ConsoleShell } from "./shell";
-import { ConsoleCard, Money, StatTile, WhenText, WorkspacePill } from "./ui";
+import { ConsoleCard, Money, StatTile, Tokens, WhenText, WorkspacePill } from "./ui";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platform overview" };
@@ -32,7 +32,9 @@ export default async function PlatformOverview() {
   await platformAudit({ actor: op.email, action: "view_overview", target: "console" });
 
   const needsAttention = stats.filter((s) => s.error || s.tenant.status !== "active" || s.pendingApprovals > 0);
-  const busiest = [...stats].sort((a, b) => b.aiSpend30d - a.aiSpend30d).slice(0, 5);
+  const busiest = [...stats]
+    .sort((a, b) => b.tokensIn30d + b.tokensOut30d - (a.tokensIn30d + a.tokensOut30d))
+    .slice(0, 5);
 
   return (
     <ConsoleShell
@@ -52,10 +54,19 @@ export default async function PlatformOverview() {
         <StatTile label="Workspaces" value={totals.workspaces} sub={`${totals.active} active · ${totals.suspended} suspended`} />
         <StatTile label="People" value={totals.people} sub="active across all workspaces" />
         <StatTile label="Agent runs" value={totals.runs30d} sub="last 30 days" />
-        <StatTile label="AI spend" value={<Money usd={totals.aiSpend30d} />} sub="last 30 days" />
+        <StatTile
+          label="Tokens"
+          value={<Tokens n={totals.tokens30d} />}
+          sub={
+            <Link href="/super-admin/usage" className="text-dusk hover:underline">
+              last 30 days · by workspace
+            </Link>
+          }
+        />
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+      <div className="mt-4 grid gap-4 sm:grid-cols-4">
+        <StatTile label="AI spend" value={<Money usd={totals.aiSpend30d} />} sub="last 30 days" />
         <StatTile label="Operators" value={totals.operators} sub="with console access" />
         <StatTile
           label="Open looks"
@@ -96,7 +107,15 @@ export default async function PlatformOverview() {
           )}
         </ConsoleCard>
 
-        <ConsoleCard title="Busiest workspaces" sub="By AI spend over the last 30 days">
+        <ConsoleCard
+          title="Busiest workspaces"
+          sub="By tokens over the last 30 days"
+          aside={
+            <Link href="/super-admin/usage" className="text-xs text-dusk hover:underline">
+              All token use
+            </Link>
+          }
+        >
           {busiest.length === 0 ? (
             <p className="px-5 py-6 text-sm text-muted">No workspaces yet.</p>
           ) : (
@@ -108,11 +127,11 @@ export default async function PlatformOverview() {
                       {s.tenant.name}
                     </Link>
                     <p className="mt-0.5 text-xs text-muted">
-                      {s.people} people · {s.runs30d} runs · {s.modulesOn}/{s.modulesTotal} modules
+                      {s.runs30d} runs · <Money usd={s.aiSpend30d} /> · {s.people} people
                     </p>
                   </div>
                   <span className="font-mono text-sm tabular">
-                    <Money usd={s.aiSpend30d} />
+                    <Tokens n={s.tokensIn30d + s.tokensOut30d} />
                   </span>
                 </li>
               ))}

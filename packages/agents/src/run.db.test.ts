@@ -104,6 +104,9 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
             format: "reel",
             scheduled_at: when,
             idea: "Your moon sign in 30 seconds",
+            heading: "Moon sign, read properly in 30 seconds",
+            subhead: "The one placement most charts are read without",
+            cta: "Open your free desk",
             script: "Hook: your moon sign is probably not what you think.",
             caption: "Guaranteed results from the best astrologer in India!",
             creative_brief: "Night sky, moon over a kundli grid",
@@ -119,6 +122,9 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
             format: "reel",
             scheduled_at: when,
             idea: "Your moon sign in 30 seconds",
+            heading: "Moon sign, read properly in 30 seconds",
+            subhead: "The one placement most charts are read without",
+            cta: "Open your free desk",
             script: "Hook: your moon sign is probably not what you think.",
             caption: "In Jyotish the Moon sign carries more weight than the Sun sign. See both on a sample chart in Bodhlok. Start free.",
             creative_brief: "Night sky, moon over a kundli grid",
@@ -171,7 +177,7 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
   it("refuses to double-book a slot", async () => {
     const when = inDays(3, "19:00");
     await m.db.db.insert(m.db.calendarItems).values({ channel: "instagram", format: "image", idea: "Existing post", scheduledAt: new Date(inDays(3, "20:00")), status: "drafted" });
-    const draft = { channel: "instagram", format: "image", scheduled_at: when, idea: "Another post", script: "-", caption: "Hello", creative_brief: "-", needs_jyotish_review: false };
+    const draft = { channel: "instagram", format: "image", scheduled_at: when, idea: "Another post", heading: "Another post", subhead: "One line under it", cta: "Start free", script: "-", caption: "Hello", creative_brief: "-", needs_jyotish_review: false };
     const { client, requests } = scripted([message([toolUse("t1", "create_draft_post", draft)], "tool_use"), message([{ type: "text", text: "Couldn't find a free slot." }], "end_turn")]);
     const res = await m.run.runAgent("content", { trigger: "schedule", client });
     expect(resultText(lastToolResults(requests[1]!.body)[0]!)).toContain('"Existing post" is already on instagram within two hours');
@@ -308,6 +314,9 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
       format: "reel",
       scheduled_at: `${day}T19:00:00+05:30`,
       idea: "Shani's transit in 60 seconds",
+      heading: "Shani changes sign this week",
+      subhead: "Read the transit from the Moon and the lagna, not from the headline",
+      cta: "Open your free desk",
       script: "Hook: Shani moves signs this week.",
       caption: "Shani (Saturn) changes sign this week. Read the transit from Moon and lagna on a sample chart in the desk.",
       creative_brief: "Saturn rings over a kundli grid",
@@ -318,7 +327,15 @@ describe.skipIf(!reachable)("agent runs with a database", () => {
     expect(r2.summary).toMatch(/^1 post drafted/);
     const items = await m.db.db.select().from(m.db.calendarItems);
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ id: idea!.id, status: "drafted", settings: { pillar: "Transit updates", needs_jyotish_review: true, drafted_by: "content agent" } });
+    expect(items[0]).toMatchObject({
+      id: idea!.id,
+      status: "drafted",
+      // The three lead lines land on the row, not only in the caption.
+      heading: "Shani changes sign this week",
+      subhead: "Read the transit from the Moon and the lagna, not from the headline",
+      cta: "Open your free desk",
+      settings: { pillar: "Transit updates", needs_jyotish_review: true, drafted_by: "content agent" },
+    });
   });
 
   it("the SEO agent writes a planned page into the approval queue, after fixing a short answer", async () => {

@@ -165,6 +165,18 @@ export const calendarItems = pgTable(
     status: text("status").notNull().default("idea"), // idea | drafted | in_review | approved | scheduled | published | failed
     /** Title for YouTube and blogs; also the overlay on generated thumbnails. */
     title: text("title"),
+    /**
+     * The three lines a post leads with, on every channel.
+     *
+     * They are not the caption and not the title: the heading is what someone reads first, the
+     * subhead is the one line that earns the rest, and the call to action is the single thing
+     * they should do. Kept as their own columns rather than buried in the caption so a person
+     * can edit one without rewriting the post, an agent can be asked for them, and a creative
+     * can print them on the image.
+     */
+    heading: text("heading"),
+    subhead: text("subhead"),
+    cta: text("cta"),
     /** Per-channel options, e.g. { "post_type": "story" } or { "visibility": "unlisted" }. */
     settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),
     /** Postiz post ID once scheduled there. The post's Postiz group is always this item's ID. */

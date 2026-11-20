@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { exactTokens, shortTokens } from "@/lib/format-tokens";
 
 /**
  * The console's own small pieces. They deliberately mirror the tenant app's `components/ui.tsx`
@@ -88,6 +89,31 @@ export function StatTile({
 
 export function Money({ usd }: { usd: number }) {
   return <>${usd.toFixed(2)}</>;
+}
+
+/**
+ * A token count, short enough to read in a table.
+ *
+ * Exact below ten thousand, then k and M — nobody compares workspaces digit by digit, and
+ * "1.4M" says more at a glance than "1,432,908". The exact figure is the title attribute, for
+ * when somebody does want it.
+ */
+export function Tokens({ n }: { n: number }) {
+  return (
+    <span title={exactTokens(n)} className="tabular">
+      {shortTokens(n)}
+    </span>
+  );
+}
+
+/** How much of a row's bar is filled, for comparing one workspace against the heaviest. */
+export function ShareBar({ value, of }: { value: number; of: number }) {
+  const pct = of > 0 ? Math.max(value > 0 ? 2 : 0, Math.round((value / of) * 100)) : 0;
+  return (
+    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-paper" aria-hidden="true">
+      <span className="block h-full rounded-full bg-dusk" style={{ width: `${pct}%` }} />
+    </span>
+  );
 }
 
 /** Dates in the console are India time, like everywhere else in this product. */

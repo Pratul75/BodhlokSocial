@@ -3,6 +3,7 @@ import { assets, connections, creativeJobs, db } from "@bodh/db";
 import { loadBrand, monthlyLimits, monthlyUsage } from "@bodh/integrations/creative";
 import { enterTenantScope, requireModule } from "@/lib/auth";
 import { vertexConfiguredByRuntime } from "@/lib/creative";
+import { creativePrefill } from "@/lib/creative-prefill";
 import { ago, num } from "@/lib/format";
 import { AssetThumb } from "@/components/asset-thumb";
 import { Meter } from "@/components/charts";
@@ -19,8 +20,11 @@ export const metadata = { title: "Creative studio" };
 const SOURCE: Record<string, string> = { upload: "Uploaded", imagen: "Imagen", gemini: "Generated", veo: "Veo" };
 const KIND: Record<string, string> = { image: "Image", carousel: "Carousel", thumbnail: "Thumbnail", video: "Video" };
 
-export default async function CreativePage() {
+export default async function CreativePage({ searchParams }: { searchParams: Promise<{ item?: string }> }) {
   const user = enterTenantScope(await requireModule("creative"));
+  // Opened from a calendar post: the studio starts with that post's own words and shape, and
+  // what it makes goes back onto the post.
+  const prefill = await creativePrefill((await searchParams).item);
   const [rows, [vertex], jobs, usage, brand, limits] = await Promise.all([
     db.select().from(assets).orderBy(desc(assets.createdAt)).limit(120),
     db.select().from(connections).where(eq(connections.key, "vertex")),
@@ -40,7 +44,11 @@ export default async function CreativePage() {
       <div className="mb-6 grid gap-6 lg:grid-cols-[1.2fr_1fr] [&>*]:min-w-0">
         <Card>
           <CardHeader title="Generate" sub={vertexReady ? "Gemini for images, Veo for video, through Vertex AI" : undefined} />
-          <GenerateForm disabled={!vertexReady} reason="Connect Vertex AI in Connections to generate." />
+          <GenerateForm
+            disabled={!vertexReady}
+            reason="Connect Vertex AI in Connections to generate."
+            prefill={prefill && !prefill.locked ? prefill : null}
+          />
         </Card>
 
         <div className="space-y-6">

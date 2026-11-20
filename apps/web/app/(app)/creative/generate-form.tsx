@@ -12,14 +12,43 @@ const KINDS = [
   { value: "video", label: "Video", sub: "Veo, 4 to 8 seconds" },
 ] as const;
 
-export function GenerateForm({ disabled, reason }: { disabled: boolean; reason?: string }) {
+export interface GeneratePrefill {
+  itemId: string;
+  idea: string;
+  kind: string;
+  aspect: string;
+  prompt: string;
+  title: string;
+  subhead: string;
+  cta: string;
+}
+
+export function GenerateForm({
+  disabled,
+  reason,
+  prefill,
+}: {
+  disabled: boolean;
+  reason?: string;
+  /** Set when the studio was opened from a calendar post: its words, its shape, its post. */
+  prefill?: GeneratePrefill | null;
+}) {
   const [state, action, pending] = useActionState<GenerateResult, FormData>(generateCreative, null);
-  const [kind, setKind] = useState<(typeof KINDS)[number]["value"]>("image");
+  const [kind, setKind] = useState<(typeof KINDS)[number]["value"]>(
+    (KINDS.find((k) => k.value === prefill?.kind)?.value ?? "image") as (typeof KINDS)[number]["value"],
+  );
   const label = "mb-1 block text-xs text-muted";
 
   return (
     <form action={action} className="space-y-4 px-5 py-4">
+      {prefill && <input type="hidden" name="itemId" value={prefill.itemId} />}
       <fieldset disabled={disabled || pending} className="space-y-4">
+        {prefill && (
+          <p className="rounded-lg bg-dusk-soft px-3 py-2 text-sm">
+            Making the creative for <span className="font-medium">{prefill.idea}</span>. What comes out is attached to
+            that post.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="What to make">
           {KINDS.map((k) => (
             <label
@@ -37,6 +66,7 @@ export function GenerateForm({ disabled, reason }: { disabled: boolean; reason?:
           <span className={label}>Describe it</span>
           <textarea
             name="prompt"
+            defaultValue={prefill?.prompt ?? ""}
             rows={4}
             required
             minLength={10}
@@ -46,18 +76,41 @@ export function GenerateForm({ disabled, reason }: { disabled: boolean; reason?:
           />
         </label>
 
-        {kind === "thumbnail" && (
-          <label className="block text-sm">
-            <span className={label}>Title on the thumbnail</span>
-            <input name="title" maxLength={60} required className={inputClass} placeholder="Saturn in the 7th house" />
-          </label>
+        {/*
+          The three lines printed on the image, the same three a calendar item carries. Required
+          on a thumbnail, optional everywhere else: an image with nothing to say is still a
+          perfectly good image, and the fields are left empty rather than hidden so nobody has to
+          discover them.
+        */}
+        {kind !== "video" && (
+          <div className="grid gap-4 lg:grid-cols-3">
+            <label className="block text-sm">
+              <span className={label}>{kind === "thumbnail" ? "Heading on the thumbnail" : "Heading on the image"}</span>
+              <input
+                name="title"
+                defaultValue={prefill?.title ?? ""}
+                maxLength={120}
+                required={kind === "thumbnail"}
+                className={inputClass}
+                placeholder="Saturn in the 7th house"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className={label}>Subheading</span>
+              <input name="subhead" defaultValue={prefill?.subhead ?? ""} maxLength={200} className={inputClass} placeholder="Read it in D1 and D9 first" />
+            </label>
+            <label className="block text-sm">
+              <span className={label}>Call to action</span>
+              <input name="cta" defaultValue={prefill?.cta ?? ""} maxLength={80} className={inputClass} placeholder="Open your free desk" />
+            </label>
+          </div>
         )}
 
         <div className="flex flex-wrap gap-4">
           {(kind === "image" || kind === "carousel") && (
             <label className="block w-36 text-sm">
               <span className={label}>Shape</span>
-              <select name="aspect" defaultValue="4:5" className={inputClass}>
+              <select name="aspect" defaultValue={prefill?.aspect ?? "4:5"} className={inputClass}>
                 <option value="4:5">4:5 feed</option>
                 <option value="1:1">1:1 square</option>
                 <option value="9:16">9:16 story</option>
