@@ -14,7 +14,7 @@
  *   - is anything relying on a capability whose module is off
  */
 import { INTEGRATIONS, MODULES, FEATURE_KEYS, MODULE_INTEGRATIONS, FEATURE_MODULE, type ModuleKey } from "@bodh/shared";
-import { buildEntitlements, listTenants, ownerSql, sql as tenantSql, withTenant } from "@bodh/db";
+import { buildEntitlements, listTenants, migrationFiles, ownerSql, sql as tenantSql, withTenant } from "@bodh/db";
 
 const ok = (s: string) => console.log(`  ok      ${s}`);
 const warn = (s: string) => console.log(`  CHECK   ${s}`);
@@ -25,6 +25,64 @@ async function exists(table: string): Promise<boolean> {
     select count(*)::text as n from information_schema.tables
     where table_schema = 'platform' and table_name = ${table}`) as unknown as { n: string }[];
   return rows[0]!.n !== "0";
+}
+
+/**
+ * The question a deploy day actually turns on: which migration files would RUN against the
+ * existing installation, as opposed to being recorded as already there.
+ *
+ * On a database that predates per-schema migration records, the runner reads Drizzle's own
+ * `__drizzle_migrations` and marks every file whose journal timestamp it finds as applied
+ * WITHOUT running it. If that matching ever failed, an old file would run a second time — and
+ * two of them are destructive (`DROP TABLE "leads"`, a `DELETE FROM "connections"`). This says
+ * in advance exactly which files would run, and shouts if one of them removes anything.
+ */
+async function migrationPlan(): Promise<number> {
+  const sql = ownerSql();
+  const already = (await sql`
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = '__tenant_migrations' limit 1`) as unknown as unknown[];
+  if (already.length) {
+    ok("public already keeps its own migration record — the baseline step is behind this database");
+    return 0;
+  }
+
+  const files = await migrationFiles();
+  const hasDrizzle = (await sql`
+    select 1 from information_schema.tables
+    where table_schema = 'drizzle' and table_name = '__drizzle_migrations' limit 1`) as unknown as unknown[];
+  if (!hasDrizzle.length) {
+    warn("no drizzle.__drizzle_migrations: this looks like an empty database, where every file runs and that is correct");
+    return 0;
+  }
+
+  const rows = (await sql`select created_at::text as created_at from drizzle.__drizzle_migrations`) as unknown as {
+    created_at: string;
+  }[];
+  const stamps = new Set(rows.map((r) => String(r.created_at)));
+  const baselined = files.filter((f) => stamps.has(String(f.when)));
+  const wouldRun = files.filter((f) => !stamps.has(String(f.when)));
+
+  ok(`${baselined.length} file(s) recognised as already applied — recorded, not run`);
+  if (wouldRun.length === 0) {
+    ok("nothing would run");
+    return 0;
+  }
+
+  let problems = 0;
+  for (const f of wouldRun) {
+    const destructive = f.statements.filter((s) => /^\s*(drop|truncate|delete\s+from)\b/i.test(s));
+    if (destructive.length) {
+      bad(`${f.tag} WOULD RUN and it removes things: ${destructive.map((s) => s.split("\n")[0]!.slice(0, 60)).join(" | ")}`);
+      problems++;
+    } else {
+      warn(`${f.tag} would run (additive)`);
+    }
+  }
+  if (problems) {
+    bad("a destructive file is about to run again — do not deploy until you know why its timestamp was not recognised");
+  }
+  return problems;
 }
 
 async function main() {
@@ -74,6 +132,9 @@ async function main() {
     bad("entitlements_kind_check does not allow 'integration' — run platform SQL 006 first");
     problems++;
   }
+
+  console.log("\n=== What this deploy would run on tenant #1 ===");
+  problems += await migrationPlan();
 
   console.log("\n=== Workspaces ===");
   const tenants = await listTenants();
