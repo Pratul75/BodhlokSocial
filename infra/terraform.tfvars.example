@@ -6,7 +6,7 @@ google_client_id      = "1234567890-abc.apps.googleusercontent.com"
 allowed_email_domains = "rechargestudio.com"
 
 # The first Super Admin. Without it nobody can sign in to /super-admin.
-platform_owner_email  = "kartik@rechargestudio.com"
+platform_owner_email  = "owner@example.com"
 # search_console_site = "sc-domain:asttrolok.com"
 # app_url             = "https://growth.rechargestudio.com"
 # workspace_retention_days = 30   # days an archived workspace is kept before a purge is allowed
