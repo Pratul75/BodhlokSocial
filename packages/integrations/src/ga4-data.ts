@@ -2,10 +2,11 @@
  * GA4 Data API (analyticsdata.googleapis.com): website and app traffic for one GA4 property,
  * read with the ga4 connection's service account and the analytics.readonly scope.
  *
- * The property comes only from the server setting GA4_PROPERTY_ID, never from a request, so the
- * app can read no other property. The service account needs Viewer on that property, and the
+ * The property comes from the workspace's own settings, never from a request, so the app can
+ * read no property but the one that workspace was given. The service account needs Viewer on that property, and the
  * Google Analytics Data API must be enabled in the service account's Google Cloud project.
  */
+import { tenantSetting } from "@bodh/db";
 import { attribute } from "./attribution";
 import type { AttributionChannel } from "@bodh/shared";
 
@@ -19,12 +20,25 @@ export interface Ga4ServiceAccount {
   project_id?: string;
 }
 
+/** Checks a property id. Shared by the environment reader and the per-workspace one. */
+export function validGa4PropertyId(raw: string | null | undefined): string | null {
+  const v = raw?.trim();
+  if (!v) return null;
+  if (!/^\d{4,15}$/.test(v)) throw new Ga4Error("The GA4 property id must be numeric (GA4 → Admin → Property details).", { retryable: false });
+  return v;
+}
+
 /** The configured GA4 property id, or null when GA4 Data API loading is off. Throws on a malformed id. */
 export function ga4PropertyId(env: Record<string, string | undefined> = process.env): string | null {
-  const v = env.GA4_PROPERTY_ID?.trim();
-  if (!v) return null;
-  if (!/^\d{4,15}$/.test(v)) throw new Ga4Error("GA4_PROPERTY_ID must be the numeric GA4 property id (GA4 → Admin → Property details).", { retryable: false });
-  return v;
+  return validGa4PropertyId(env.GA4_PROPERTY_ID);
+}
+
+/**
+ * This workspace's GA4 property. Every workspace measures its own website, so reading one
+ * server-wide property would show every workspace tenant #1's traffic.
+ */
+export async function tenantGa4PropertyId(): Promise<string | null> {
+  return validGa4PropertyId(await tenantSetting("ga4.property_id"));
 }
 
 export class Ga4Error extends Error {

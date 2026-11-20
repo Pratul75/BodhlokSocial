@@ -1,26 +1,32 @@
 import { count, eq } from "drizzle-orm";
 import { approvals, auditLog, db } from "@bodh/db";
 import { modulesForRole, ROLE_LABELS, ROLES } from "@bodh/shared";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
+import { PRODUCT_NAME } from "@/lib/legal";
 import { setDevRole } from "@/app/(app)/actions";
 import { LogOut } from "lucide-react";
 import { KundliMark } from "./kundli-mark";
 import { SidebarNav } from "./sidebar-nav";
 import { RoleSelect } from "./role-select";
+import { StopImpersonationForm } from "@/app/(platform)/super-admin/forms";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
-  const user = await getCurrentUser();
+  const user = enterTenantScope(await getCurrentUser());
   const [[pending], [seeded]] = await Promise.all([
     db.select({ n: count() }).from(approvals).where(eq(approvals.status, "pending")),
     // The seed leaves this row; removing the sample data deletes it. No env flag to forget.
     db.select({ n: count() }).from(auditLog).where(eq(auditLog.action, "seed_sample_data")),
   ]);
-  const nav = modulesForRole(user.role).map((m) => ({
-    href: m.href,
-    label: m.label,
-    group: m.group,
-    badge: m.key === "approvals" && pending && pending.n > 0 ? pending.n : undefined,
-  }));
+  // The sidebar shows what the role allows, narrowed by what this tenant is entitled to.
+  // A module that is off is absent, rather than shown and refused.
+  const nav = modulesForRole(user.role)
+    .filter((m) => allowed(user, m.key))
+    .map((m) => ({
+      href: m.href,
+      label: m.label,
+      group: m.group,
+      badge: m.key === "approvals" && pending && pending.n > 0 ? pending.n : undefined,
+    }));
   const demo = (seeded?.n ?? 0) > 0;
 
   return (
@@ -31,8 +37,8 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
             <KundliMark />
           </span>
           <div className="leading-tight">
-            <div className="font-display text-[17px] font-semibold tracking-tight">BODH Growth</div>
-            <div className="text-[11px] text-night-3">Bodhlok marketing</div>
+            <div className="font-display text-[17px] font-semibold tracking-tight">{user.tenant.name}</div>
+            <div className="text-[11px] text-night-3">{PRODUCT_NAME}</div>
           </div>
         </div>
         <SidebarNav items={nav} />
@@ -52,6 +58,16 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="min-w-0">
+        {user.impersonatedBy && (
+          // Nobody should be able to forget whose data this is, or that it cannot be changed.
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-critical px-4 py-2 text-sm text-white sm:px-8">
+            <span>
+              {user.impersonatedBy} is looking inside <strong>{user.tenant.name}</strong> as {user.email}. Read-only:
+              nothing here can be approved, changed or spent.
+            </span>
+            <StopImpersonationForm />
+          </div>
+        )}
         <header className={`flex flex-wrap items-center justify-end gap-3 border-b border-rule bg-card/70 px-4 py-2.5 backdrop-blur sm:px-8 ${!demo && !user.devMode ? "lg:hidden" : ""}`}>
           {demo && (
             <span className="rounded-full bg-turmeric-soft px-2.5 py-0.5 text-xs font-medium text-turmeric-ink">

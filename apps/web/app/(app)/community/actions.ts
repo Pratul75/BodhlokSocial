@@ -5,14 +5,13 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { communityItems, db } from "@bodh/db";
 import { postCommunityReply } from "@bodh/integrations/community";
-import { canAccess } from "@bodh/shared";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import type { JobState } from "@/app/(app)/seo/actions";
 
 async function socialUser() {
   const user = await getCurrentUser();
-  return canAccess(user.role, "community") ? user : null;
+  return allowed(user, "community") ? user : null;
 }
 
 const Id = z.object({ id: z.uuid() });
@@ -20,7 +19,8 @@ const Id = z.object({ id: z.uuid() });
 /** A question the team decides not to answer. */
 export async function skipItem(_prev: JobState, formData: FormData): Promise<JobState> {
   const user = await socialUser();
-  if (!user) return { error: "Your role can't manage community answers." };
+  if (user) enterTenantScope(user);
+  if (!user) return { error: "You can't manage community answers." };
   const p = Id.extend({ reason: z.string().trim().max(300).optional() }).safeParse(Object.fromEntries(formData));
   if (!p.success) return { error: "Unknown item." };
   const r = await db
@@ -37,7 +37,8 @@ export async function skipItem(_prev: JobState, formData: FormData): Promise<Job
 /** Posts an approved answer again after Reddit or YouTube refused it. */
 export async function retryPost(_prev: JobState, formData: FormData): Promise<JobState> {
   const user = await socialUser();
-  if (!user) return { error: "Your role can't post community answers." };
+  if (user) enterTenantScope(user);
+  if (!user) return { error: "You can't post community answers." };
   const p = Id.safeParse(Object.fromEntries(formData));
   if (!p.success) return { error: "Unknown item." };
   const [item] = await db.select().from(communityItems).where(eq(communityItems.id, p.data.id)).limit(1);
@@ -50,7 +51,8 @@ export async function retryPost(_prev: JobState, formData: FormData): Promise<Jo
 /** For Quora (no API): a person posted the approved answer and records where. */
 export async function markPosted(_prev: JobState, formData: FormData): Promise<JobState> {
   const user = await socialUser();
-  if (!user) return { error: "Your role can't post community answers." };
+  if (user) enterTenantScope(user);
+  if (!user) return { error: "You can't post community answers." };
   const p = Id.extend({ url: z.url().refine((u) => /^https:\/\//.test(u), "Use the https link to the answer.") }).safeParse(Object.fromEntries(formData));
   if (!p.success) return { error: p.error.issues[0]?.message ?? "Paste the link to the posted answer." };
   const r = await db

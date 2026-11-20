@@ -1,6 +1,6 @@
 import { connections, db } from "@bodh/db";
-import { INTEGRATIONS } from "@bodh/shared";
-import { requireModule } from "@/lib/auth";
+import { INTEGRATIONS, integrationAllowed } from "@bodh/shared";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { authEnabled } from "@/lib/session";
 import { getIntegration } from "@bodh/shared";
 import { ago } from "@/lib/format";
@@ -35,12 +35,15 @@ const MESSAGES: Record<string, string> = {
 
 export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ connected?: string; error?: string }> }) {
   const sp = await searchParams;
-  await requireModule("connections");
+  const me = enterTenantScope(await requireModule("connections"));
+  // Only the accounts this workspace was given. The rest are not hidden here and allowed
+  // elsewhere — the server actions and the OAuth routes refuse them too.
+  const offered = INTEGRATIONS.filter((i) => integrationAllowed(me.ent, i.key));
   const rows = await db.select().from(connections);
   const byKey = new Map(rows.map((r) => [r.key, r]));
   const now = new Date();
 
-  const views: ConnectionView[] = INTEGRATIONS.map((i) => {
+  const views: ConnectionView[] = offered.map((i) => {
     const r = byKey.get(i.key);
     return {
       key: i.key,
@@ -65,7 +68,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       note: NOTES[i.key],
     };
   });
-  const groups = [...new Set(INTEGRATIONS.map((i) => i.group))];
+  const groups = [...new Set(offered.map((i) => i.group))];
   const connected = views.filter((v) => v.status === "connected").length;
 
   return (
@@ -89,7 +92,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
             <h2 id={`g-${g}`} className="mb-3 text-xs font-medium tracking-wide text-muted uppercase">{g}</h2>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {views
-                .filter((v) => INTEGRATIONS.find((i) => i.key === v.key)?.group === g)
+                .filter((v) => offered.find((i) => i.key === v.key)?.group === g)
                 .map((v) => (
                   <ConnectionCard key={v.key} c={v} />
                 ))}

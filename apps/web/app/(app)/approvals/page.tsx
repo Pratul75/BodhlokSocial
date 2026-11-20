@@ -3,7 +3,7 @@ import { and, asc, count, desc, eq, inArray, ne } from "drizzle-orm";
 import { approvals, calendarItems, db, users } from "@bodh/db";
 import { APPROVAL_KINDS, canApprove, CHANNEL_LABELS, type ApprovalKind, type Channel } from "@bodh/shared";
 import { lintAdCopy } from "@bodh/guardrails";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago } from "@/lib/format";
 import { checkItem, itemAssets } from "@/lib/posts";
 import { Card, CardHeader, EmptyState, PageHeader, StatusPill, Table } from "@/components/ui";
@@ -22,7 +22,7 @@ const KIND_LABELS: Record<ApprovalKind, string> = {
 };
 
 export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<{ kind?: string }> }) {
-  const user = await requireModule("approvals");
+  const user = enterTenantScope(await requireModule("approvals"));
   const { kind } = await searchParams;
   const activeKind = (APPROVAL_KINDS as readonly string[]).includes(kind ?? "") ? (kind as ApprovalKind) : null;
 

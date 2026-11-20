@@ -16,7 +16,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
-import { billingAccounts, connections, conversionEvents, db, leads, payments, webhookDeliveries } from "@bodh/db";
+import { billingAccounts, connections, conversionEvents, db, leads, payments, webhookDeliveries, tenantHasFeature } from "@bodh/db";
 import type { AttributionChannel } from "@bodh/shared";
 import { attribute } from "./attribution";
 import { normalizeEmail, normalizePhone, sha256, type NormalizedEvent } from "./bodh-events";
@@ -249,6 +249,7 @@ async function upsertAccount(d: Record<string, unknown>): Promise<string | null>
 
 /** Handles one verified billing webhook. Duplicate deliveries (same X-Mp-Id) are acknowledged and skipped. */
 export async function handleBillingWebhook(body: MpWebhook, deliveryKey: string): Promise<WebhookResult> {
+  if (!(await tenantHasFeature("crm.sync"))) return { status: "ignored", detail: "CRM mirroring is not switched on for this workspace." };
   if (!(await logDelivery("crm_billing", deliveryKey, body.event, body))) return { status: "duplicate", detail: "Already received." };
   const d = body.data ?? {};
   let result: WebhookResult;
@@ -404,6 +405,9 @@ async function upsertLead(row: typeof leads.$inferInsert): Promise<"inserted" | 
 
 /** Handles one verified lead webhook. The CRM sends no event ID, so a hash of the body is the delivery key. */
 export async function handleLeadWebhook(body: CrmWebhook, rawBody: string): Promise<WebhookResult> {
+  // "Mirror billing and leads from the CRM" had no effect on the mirroring. Checked before the
+  // delivery is logged, so a workspace that is not paying for it stores nothing at all.
+  if (!(await tenantHasFeature("crm.sync"))) return { status: "ignored", detail: "CRM mirroring is not switched on for this workspace." };
   const key = sha256(rawBody);
   if (!(await logDelivery("crm_leads", key, body.event, body))) return { status: "duplicate", detail: "Already received." };
   let result: WebhookResult;

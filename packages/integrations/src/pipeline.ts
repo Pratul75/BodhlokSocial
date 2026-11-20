@@ -13,6 +13,8 @@ import {
   rebuildFunnel,
   reconcileAttribution,
   webSessionsDaily,
+  tenantHasFeature,
+  tenantSetting,
 } from "@bodh/db";
 import { attribute } from "./attribution";
 import type { NormalizedEvent } from "./bodh-events";
@@ -25,7 +27,7 @@ import {
   fetchSources,
   fetchTotals,
   ga4Client,
-  ga4PropertyId,
+  tenantGa4PropertyId,
   sessionsByAttributionChannel,
   type Ga4ClientDeps,
   type Ga4DayRow,
@@ -33,7 +35,7 @@ import {
   type Ga4ServiceAccount,
   type Ga4SourceRow,
 } from "./ga4-data";
-import { buildClickConversion, fetchGoogleAdsSpend, googleAdsConfigFromEnv, uploadClickConversions } from "./google-ads";
+import { buildClickConversion, fetchGoogleAdsSpend, googleAdsConfig, uploadClickConversions } from "./google-ads";
 import { googleAccessToken } from "./google-oauth";
 import { fetchMetaSpend, sendCapiEvents, type CapiCredentials, type ConversionForCapi, type MarketingCredentials } from "./meta";
 import { readJsonSecret } from "./secrets";
@@ -315,6 +317,9 @@ export async function sendCapiBisecting(
 }
 
 export async function forwardToMeta(): Promise<JobResult> {
+  if (!(await tenantHasFeature("tracking.forwarding"))) {
+    return { status: "skipped", detail: "Sending conversions to the ad platforms is not switched on for this workspace." };
+  }
   const creds = await readJsonSecret<CapiCredentials>("meta_capi");
   if (!creds?.pixel_id || !creds.access_token) return { status: "skipped", detail: "Meta Conversions API is not connected. Events wait in the queue for 7 days." };
   const expired = await expireOld("meta_capi");
@@ -346,7 +351,10 @@ export async function forwardToMeta(): Promise<JobResult> {
 }
 
 export async function forwardToGoogle(): Promise<JobResult> {
-  const cfg = googleAdsConfigFromEnv();
+  if (!(await tenantHasFeature("tracking.forwarding"))) {
+    return { status: "skipped", detail: "Sending conversions to the ad platforms is not switched on for this workspace." };
+  }
+  const cfg = await googleAdsConfig();
   const token = cfg ? await googleAccessToken("google_ads") : null;
   if (!cfg || !token) return { status: "skipped", detail: "Google Ads is not connected. Click conversions wait in the queue for 60 days." };
   const expired = await expireOld("google_ads");
@@ -413,7 +421,7 @@ export async function loadMetaSpend(since: string, until: string): Promise<JobRe
 }
 
 export async function loadGoogleSpend(since: string, until: string): Promise<JobResult> {
-  const cfg = googleAdsConfigFromEnv();
+  const cfg = await googleAdsConfig();
   const token = cfg ? await googleAccessToken("google_ads") : null;
   if (!cfg || !token) return { status: "skipped", detail: "Google Ads is not connected." };
   const rows = await fetchGoogleAdsSpend(cfg, token, since, until);
@@ -437,7 +445,7 @@ interface ServiceAccount {
  */
 export async function loadGa4Sessions(day: string, opts: { days?: number } = {}): Promise<JobResult> {
   const sa = await readJsonSecret<ServiceAccount>("ga4");
-  const propertyId = ga4PropertyId();
+  const propertyId = await tenantGa4PropertyId();
   if (propertyId) {
     if (!sa?.client_email || !sa.private_key) return { status: "skipped", detail: "GA4_PROPERTY_ID is set but no GA4 service account is saved. Add it in Connections → GA4 / Firebase." };
     let days = opts.days ? Math.min(Math.max(Math.trunc(opts.days), 1), GA4_MAX_DAYS) : GA4_DAILY_DAYS;
@@ -455,10 +463,10 @@ export async function loadGa4Sessions(day: string, opts: { days?: number } = {})
       throw e;
     }
   }
-  const projectId = process.env.GA4_BQ_PROJECT || sa?.project_id || process.env.GCP_PROJECT_ID;
-  if (!projectId) return { status: "skipped", detail: "No BigQuery project. Set GA4_BQ_PROJECT or connect GA4." };
-  // Without GA4_BQ_DATASET, use the analytics_<property id> dataset once GA4 starts exporting.
-  const dataset = process.env.GA4_BQ_DATASET || (await findGa4Dataset(projectId, sa ? { client_email: sa.client_email, private_key: sa.private_key } : undefined));
+  const projectId = (await tenantSetting("ga4.bq_project")) || sa?.project_id || process.env.GCP_PROJECT_ID;
+  if (!projectId) return { status: "skipped", detail: "No BigQuery project. Set this workspace's BigQuery project in its settings, or connect GA4." };
+  // Without a dataset in the workspace's settings, use the analytics_<property id> dataset once GA4 starts exporting.
+  const dataset = (await tenantSetting("ga4.bq_dataset")) || (await findGa4Dataset(projectId, sa ? { client_email: sa.client_email, private_key: sa.private_key } : undefined));
   if (!dataset) {
     return { status: "skipped", detail: `No GA4 export in BigQuery project ${projectId} yet. In GA4: Admin > Product links > BigQuery links. Or set GA4_PROPERTY_ID to read GA4 through its Data API.` };
   }

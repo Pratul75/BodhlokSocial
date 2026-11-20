@@ -1,9 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { ModuleKey } from "@bodh/shared";
 import type { BetaMessage, BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { eq } from "drizzle-orm";
 import { agentRuns, db } from "@bodh/db";
 import { anthropicClient, FALLBACK_BETA, MODEL } from "./client";
-import { addUsage, costUsd, emptyTotals, MONTHLY_BUDGET_USD, reserveBudget } from "./cost";
+import { addUsage, costUsd, emptyTotals, reserveBudget } from "./cost";
 
 /** Held against the monthly budget while a chat answer is being written; replaced by the real cost. */
 const CHAT_RESERVE_USD = 1;
@@ -43,7 +44,14 @@ const MAX_TURNS = 20;
 
 /** Answers one chat message, streaming text and tool activity as it happens. Read-only tools. */
 /** start: lets chat start agent runs for the person asking; without it chat only reads. */
-export async function* chat(history: ChatTurn[], userEmail: string, client?: Anthropic, start?: RunStarter): AsyncGenerator<ChatEvent> {
+export async function* chat(
+  history: ChatTurn[],
+  userEmail: string,
+  client?: Anthropic,
+  start?: RunStarter,
+  /** Which modules this person's workspace still has. Omitted means every one. */
+  canRead?: (module: ModuleKey) => boolean,
+): AsyncGenerator<ChatEvent> {
   const turns = history.filter((t) => t.text.trim()).slice(-MAX_TURNS);
   if (turns.at(-1)?.role !== "user") return yield { type: "error", message: "Nothing to answer." };
 
@@ -54,9 +62,9 @@ export async function* chat(history: ChatTurn[], userEmail: string, client?: Ant
   const budget = await reserveBudget(runId, CHAT_RESERVE_USD);
   if (!budget.ok) {
     await db.update(agentRuns).set({ status: "failed", summary: budget.reason, costUsd: "0", finishedAt: new Date() }).where(eq(agentRuns.id, runId));
-    return yield { type: "error", message: `This month's AI budget ($${MONTHLY_BUDGET_USD}) is used up.` };
+    return yield { type: "error", message: budget.reason };
   }
-  const tools = [...readTools({ agent: "chat", runId, drafts: 0 }), ...(start ? chatTools(start) : [])].map((t) => ({ ...t, eager_input_streaming: true }));
+  const tools = [...readTools({ agent: "chat", runId, drafts: 0 }, canRead), ...(start ? chatTools(start) : [])].map((t) => ({ ...t, eager_input_streaming: true }));
   const messages: BetaMessageParam[] = turns.map((t, i) => ({
     role: t.role,
     content: i === turns.length - 1 ? userMessage(t.text, userEmail) : t.text,

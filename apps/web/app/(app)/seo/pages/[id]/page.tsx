@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db, seoPages } from "@bodh/db";
 import { CITIES, istTime } from "@bodh/integrations/panchang";
 import { TEMPLATE_LABELS, type Template } from "@bodh/integrations/seo-catalog";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { jsonLd, panchangWeek, siteUrl, SITE_PATHS } from "@/lib/seo-feed";
 import { Markdown } from "@/components/markdown";
 import { Card, CardHeader, PageHeader, Pill, StatusPill } from "@/components/ui";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Page preview" };
 
 export default async function SeoPagePreview({ params }: { params: Promise<{ id: string }> }) {
-  await requireModule("seo");
+  enterTenantScope(await requireModule("seo"));
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const [page] = await db.select().from(seoPages).where(eq(seoPages.id, id)).limit(1);

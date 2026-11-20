@@ -2,7 +2,7 @@ import Link from "next/link";
 import { and, asc, count, desc, eq, gte, ne } from "drizzle-orm";
 import { agentRuns, approvals, calendarItems, connections, db, reports } from "@bodh/db";
 import { CHANNEL_LABELS, FORMAT_LABELS, type Channel, type Format } from "@bodh/shared";
-import { requireModule } from "@/lib/auth";
+import { allowed, enterTenantScope, requireModule } from "@/lib/auth";
 import { change, dayLabel, isoWeek, num, timeLabel, ago } from "@/lib/format";
 import { funnelTotals } from "@/lib/funnel";
 import { FunnelStrip } from "@/components/charts";
@@ -20,7 +20,10 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 export default async function TodayPage() {
-  const user = await requireModule("today");
+  const user = enterTenantScope(await requireModule("today"));
+  // Today summarises other modules. A workspace without one of them should not be shown a link
+  // into it — the sidebar already hides those, and a dead link here undoes that.
+  const can = (key: Parameters<typeof allowed>[1]) => allowed(user, key);
   const now = new Date();
   const startOfDay = new Date(now);
   startOfDay.setHours(0, 0, 0, 0);
@@ -55,7 +58,7 @@ export default async function TodayPage() {
             ? `${pendingTotal} item${pendingTotal === 1 ? " is" : "s are"} waiting for your approval. Nothing goes public until someone approves it.`
             : "Nothing is waiting for approval."
         }
-        actions={pendingTotal > 0 ? <LinkButton href="/approvals" variant="primary">Review approvals</LinkButton> : undefined}
+        actions={pendingTotal > 0 && can("approvals") ? <LinkButton href="/approvals" variant="primary">Review approvals</LinkButton> : undefined}
       />
 
       <section aria-labelledby="funnel-heading" className="mb-8">
@@ -69,9 +72,11 @@ export default async function TodayPage() {
               </span>
             )}
           </h2>
-          <Link href="/analytics" className="text-sm text-dusk hover:underline">
-            Funnel by channel
-          </Link>
+          {can("analytics") && (
+            <Link href="/analytics" className="text-sm text-dusk hover:underline">
+              Funnel by channel
+            </Link>
+          )}
         </div>
         <FunnelStrip totals={week} />
         {latestReport && (
@@ -87,7 +92,7 @@ export default async function TodayPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Waiting for approval" aside={<Link href="/approvals" className="text-sm text-dusk hover:underline">Open queue</Link>} />
+          <CardHeader title="Waiting for approval" aside={can("approvals") ? <Link href="/approvals" className="text-sm text-dusk hover:underline">Open queue</Link> : undefined} />
           {pendingByKind.length === 0 ? (
             <EmptyState title="The queue is clear">Agents will add new drafts here after their next run.</EmptyState>
           ) : (
@@ -124,7 +129,7 @@ export default async function TodayPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <CardHeader title="Coming up on the calendar" aside={<Link href="/calendar" className="text-sm text-dusk hover:underline">Open calendar</Link>} />
+          <CardHeader title="Coming up on the calendar" aside={can("calendar") ? <Link href="/calendar" className="text-sm text-dusk hover:underline">Open calendar</Link> : undefined} />
           {upcoming.length === 0 ? (
             <EmptyState title="Nothing scheduled">Add an idea to the calendar, or ask the Content agent to draft next week.</EmptyState>
           ) : (
@@ -147,7 +152,7 @@ export default async function TodayPage() {
         </Card>
       </div>
 
-      {user.role === "admin" && notConnected[0] && notConnected[0].n > 0 && (
+      {user.role === "admin" && can("connections") && notConnected[0] && notConnected[0].n > 0 && (
         <p className="mt-6 text-sm text-muted">
           {notConnected[0].n} integrations are not connected yet, so agents run on sample data.{" "}
           <Link href="/connections" className="text-dusk hover:underline">

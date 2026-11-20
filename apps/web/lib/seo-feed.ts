@@ -1,10 +1,12 @@
 import "server-only";
 import { timingSafeEqual, createHash } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
-import { db, seoPages } from "@bodh/db";
+import { currentTenant, db, entitlementsFor, seoPages } from "@bodh/db";
+import { featureUsable, isUnrestricted, type Entitlements } from "@bodh/shared";
 import { CITIES, istToday, panchang, type Panchang } from "@bodh/integrations/panchang";
 import { dataForSeoCredentials } from "@bodh/integrations/seo";
 import { normalizeTarget } from "@bodh/integrations/dataforseo";
+import { FEED_TOKEN_KEY, tenantSecret } from "@/lib/tenant-secrets";
 
 type Page = typeof seoPages.$inferSelect;
 
@@ -26,12 +28,26 @@ export async function siteUrl(): Promise<string> {
   return creds ? `https://${normalizeTarget(creds.target)}` : "https://www.bodhlok.com";
 }
 
+/** The SEO module and the feed feature, both of which the page feed needs. */
+function effectiveAccessForTenant(ent: Entitlements): boolean {
+  return (isUnrestricted(ent) || ent.modules.has("seo")) && featureUsable(ent, "feed.pages");
+}
+
 /**
- * The feed is off unless SEO_FEED_TOKEN is set; callers send it as `Authorization: Bearer <token>`.
- * A ?token= query parameter is not accepted: URLs end up in proxy and access logs.
+ * The feed is off for a workspace until it has a feed token; callers send it as
+ * `Authorization: Bearer <token>`. A ?token= query parameter is not accepted: URLs end up in
+ * proxy and access logs. The token belongs to the workspace, so one workspace's token never
+ * opens another's pages.
  */
-export function feedAuthorized(req: Request): boolean {
-  const token = process.env.SEO_FEED_TOKEN;
+export async function feedAuthorized(req: Request): Promise<boolean> {
+  // The feed serves the SEO module's pages, so a workspace without that module — or without
+  // the feature that serves them — has no feed, whatever token the caller is holding. A token
+  // issued before the module was switched off must not outlive it.
+  const tenant = currentTenant();
+  const ent = await entitlementsFor(tenant.id);
+  if (!effectiveAccessForTenant(ent)) return false;
+
+  const token = await tenantSecret(FEED_TOKEN_KEY);
   if (!token) return false;
   const given = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
   if (!given) return false;
@@ -41,8 +57,12 @@ export function feedAuthorized(req: Request): boolean {
 
 export const FEED_HEADERS = { "X-Robots-Tag": "noindex, nofollow", "Cache-Control": "private, max-age=300" };
 
-export function feedDenied() {
-  return Response.json({ error: process.env.SEO_FEED_TOKEN ? "Unauthorized" : "The page feed is off: SEO_FEED_TOKEN isn't set." }, { status: process.env.SEO_FEED_TOKEN ? 401 : 503, headers: FEED_HEADERS });
+export async function feedDenied() {
+  const configured = (await tenantSecret(FEED_TOKEN_KEY)) !== null;
+  return Response.json(
+    { error: configured ? "Unauthorized" : "The page feed is off: this workspace has no feed token." },
+    { status: configured ? 401 : 503, headers: FEED_HEADERS },
+  );
 }
 
 export function jsonLd(page: Page, url: string) {

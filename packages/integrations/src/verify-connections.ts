@@ -8,7 +8,7 @@ import { eq, inArray } from "drizzle-orm";
 import { connections, db } from "@bodh/db";
 import { getIntegration } from "@bodh/shared";
 import { googleAccessToken } from "./google-oauth";
-import { googleAdsConfigFromEnv, verifyGoogleAdsAccess } from "./google-ads";
+import { googleAdsConfig, verifyGoogleAdsAccess } from "./google-ads";
 import { secretName, secretStore } from "./secrets";
 import { hasValidator, validateCredential, type Validation, type Validator } from "./validate";
 import { checkCmsConnection } from "./site-publisher";
@@ -33,7 +33,7 @@ async function checkGoogle(key: string): Promise<Validation> {
     return sites.length ? { ok: true, label: `${sites.length} verified propert${sites.length === 1 ? "y" : "ies"}` } : { ok: false, error: "No verified Search Console properties." };
   }
   if (key === "google_ads") {
-    const cfg = googleAdsConfigFromEnv();
+    const cfg = await googleAdsConfig();
     if (!cfg) return { ok: true, label: "Signed in (developer token pending)" };
     return { ok: true, label: await verifyGoogleAdsAccess(cfg, token) };
   }

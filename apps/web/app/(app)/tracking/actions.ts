@@ -2,14 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { forwardToGoogle, forwardToMeta, istDate, rebuild, runJob } from "@bodh/integrations/pipeline";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 
 export type RunResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
 export async function runTrackingJob(_prev: RunResult, formData: FormData): Promise<RunResult> {
-  const user = await getCurrentUser();
-  if (user.role !== "admin") return { ok: false, error: "Only admins can run tracking jobs." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "tracking") || user.role !== "admin") return { ok: false, error: "Only admins can run tracking jobs." };
   const job = String(formData.get("job"));
   try {
     let message: string;

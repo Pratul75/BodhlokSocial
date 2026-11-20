@@ -6,9 +6,9 @@ import { and, eq } from "drizzle-orm";
 import { approvals, calendarItems, communityItems, db, directoryListings, seoPages } from "@bodh/db";
 import { applyChange, recheckChange, rejectChange } from "@bodh/integrations/ads";
 import { postCommunityReply } from "@bodh/integrations/community";
-import { APPROVAL_KINDS, canApprove, type ApprovalKind } from "@bodh/shared";
+import { APPROVAL_KINDS, canApprove, type ApprovalKind, APPROVAL_MODULE, MODULES } from "@bodh/shared";
 import { runSeoJob } from "@/lib/agents";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { checkItem } from "@/lib/posts";
 
@@ -22,14 +22,21 @@ export async function decide(_prev: DecideResult | null, formData: FormData): Pr
 
   if (!["approve", "reject"].includes(decision)) return { ok: false, error: "Unknown decision." };
 
-  const user = await getCurrentUser();
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "approvals")) return { ok: false, error: "Approvals aren't switched on for this workspace." };
   const [item] = await db.select().from(approvals).where(eq(approvals.id, id)).limit(1);
   if (!item) return { ok: false, error: "This item no longer exists." };
   if (item.status !== "pending") return { ok: false, error: `Someone already ${item.status} this item.` };
 
   const kind = item.kind as ApprovalKind;
   if (!(APPROVAL_KINDS as readonly string[]).includes(kind) || !canApprove(user.role, kind)) {
-    return { ok: false, error: "Your role can't decide on this kind of item." };
+    return { ok: false, error: "You can't decide on this kind of item." };
+  }
+  // Approving reaches into another module and acts there — a live ad change, a public reply, a
+  // page published to the website. Having Approvals on is not permission to do that.
+  if (!allowed(user, APPROVAL_MODULE[kind])) {
+    const label = MODULES.find((m) => m.key === APPROVAL_MODULE[kind])?.label ?? APPROVAL_MODULE[kind];
+    return { ok: false, error: `${label} isn't switched on for this workspace, so this can't be approved.` };
   }
   if (decision === "reject" && !note) {
     return { ok: false, error: "Add a note so the agent knows what to change." };

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { desc, inArray } from "drizzle-orm";
 import { communityItems, connections, db } from "@bodh/db";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago } from "@/lib/format";
 import { AgentRunPanel } from "@/components/agent-run-panel";
 import { Card, CardHeader, EmptyState, PageHeader, Pill, StatusPill } from "@/components/ui";
@@ -19,7 +19,7 @@ const STAGES = [
 ] as const;
 
 export default async function CommunityPage() {
-  await requireModule("community");
+  enterTenantScope(await requireModule("community"));
   const [items, conns] = await Promise.all([
     db.select().from(communityItems).orderBy(desc(communityItems.foundAt)).limit(300),
     db.select().from(connections).where(inArray(connections.key, ["reddit", "youtube"])),

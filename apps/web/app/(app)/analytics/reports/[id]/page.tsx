@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, reports } from "@bodh/db";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { Markdown } from "@/components/markdown";
 import { Card, PageHeader, StatusPill } from "@/components/ui";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Report" };
 
 export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireModule("analytics");
+  enterTenantScope(await requireModule("analytics"));
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const [r] = await db.select().from(reports).where(eq(reports.id, id)).limit(1);

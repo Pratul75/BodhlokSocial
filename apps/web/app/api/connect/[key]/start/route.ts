@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getIntegration } from "@bodh/shared";
+import { getIntegration, integrationAllowed } from "@bodh/shared";
 import { googleConnectClient } from "@bodh/integrations/google-oauth";
-import { getCurrentUser } from "@/lib/auth";
+import { enterTenantScope, getCurrentUser, allowed } from "@/lib/auth";
 import { appUrl, buildAuthUrl, randomToken } from "@/lib/google";
 import { cookieOptions, OAUTH_COOKIE, sealOAuthState } from "@/lib/session";
 
@@ -12,9 +12,11 @@ import { cookieOptions, OAUTH_COOKIE, sealOAuthState } from "@/lib/session";
  */
 export async function GET(req: Request, { params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
-  const user = await getCurrentUser();
+  const user = enterTenantScope(await getCurrentUser());
   const back = (q: string) => NextResponse.redirect(new URL(`/connections?${q}`, appUrl(req)));
-  if (user.role !== "admin") return back("error=admin_only");
+  if (!allowed(user, "connections") || user.role !== "admin") return back("error=admin_only");
+  // The account itself has to be one this workspace was given, not merely one Google offers.
+  if (!integrationAllowed(user.ent, key)) return back(`error=not_enabled&key=${key}`);
   const def = getIntegration(key);
   if (!def?.googleOAuth?.enabled) return back(`error=not_enabled&key=${key}`);
   const client = await googleConnectClient();

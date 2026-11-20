@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq, inArray } from "drizzle-orm";
 import { approvals, assets, calendarItems, db } from "@bodh/db";
-import { CHANNELS, FORMATS, canAccess } from "@bodh/shared";
-import { getCurrentUser } from "@/lib/auth";
+import { CHANNELS, FORMATS } from "@bodh/shared";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { checkItem, itemAssets } from "@/lib/posts";
 
@@ -52,8 +52,8 @@ function readForm(formData: FormData) {
 }
 
 export async function saveItem(_prev: ItemResult, formData: FormData): Promise<ItemResult> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "calendar")) return { ok: false, error: "Your role can't edit the calendar." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "calendar")) return { ok: false, error: "You can't edit the calendar." };
   const id = String(formData.get("id"));
   const item = await load(id);
   if (!item) return { ok: false, error: "This item no longer exists." };
@@ -105,8 +105,8 @@ export async function saveItem(_prev: ItemResult, formData: FormData): Promise<I
 }
 
 export async function sendForApproval(formData: FormData): Promise<void> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "calendar")) return;
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "calendar")) return;
   const id = String(formData.get("id"));
   const item = await load(id);
   if (!item || !["idea", "drafted", "failed"].includes(item.status)) return;
@@ -141,8 +141,8 @@ export async function sendForApproval(formData: FormData): Promise<void> {
 }
 
 export async function unschedule(formData: FormData): Promise<void> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "calendar")) return;
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "calendar")) return;
   const id = String(formData.get("id"));
   const item = await load(id);
   if (!item || !["approved", "scheduled"].includes(item.status)) return;
@@ -154,8 +154,8 @@ export async function unschedule(formData: FormData): Promise<void> {
 }
 
 export async function deleteItem(formData: FormData): Promise<void> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "calendar")) return;
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "calendar")) return;
   const id = String(formData.get("id"));
   const item = await load(id);
   if (!item || !["idea", "drafted"].includes(item.status) || item.postizId) return;

@@ -9,7 +9,7 @@ import { dataForSeoCredentials, latestAudit, nextPlannedPages } from "@bodh/inte
 import { WRITABLE_TEMPLATES } from "@bodh/integrations/seo-catalog";
 import { readSkill } from "./skills";
 import { checkPost, isPublishChannel } from "@bodh/guardrails/posts";
-import { channelLabel, STARTABLE_AGENTS, type StartableAgent } from "@bodh/shared";
+import { channelLabel, STARTABLE_AGENTS, type StartableAgent, type ModuleKey } from "@bodh/shared";
 
 /** What a tool knows about the run it belongs to. */
 export interface ToolContext {
@@ -85,7 +85,7 @@ async function funnelFor(from: string, to: string) {
   }[];
 }
 
-export function readTools(_ctx: ToolContext) {
+export function readTools(_ctx: ToolContext, canRead?: (module: ModuleKey) => boolean) {
   const getFunnel = betaZodTool({
     name: "get_funnel",
     description:
@@ -295,8 +295,31 @@ export function readTools(_ctx: ToolContext) {
     },
   });
 
-  return [getFunnel, getTopAds, getCalendar, getRecentPosts, getBrandKit, readWebsite, getStrategyPlan, getKeywords, readSkillTool, trends, ideas, audit, visibility];
+  const all = [getFunnel, getTopAds, getCalendar, getRecentPosts, getBrandKit, readWebsite, getStrategyPlan, getKeywords, readSkillTool, trends, ideas, audit, visibility];
+  // A read tool is a module's data by another door. Without this, a workspace that keeps one
+  // module on can ask the agents to read every other module it no longer has.
+  return canRead ? all.filter((t) => { const m = READ_TOOL_MODULE[t.name]; return !m || canRead(m); }) : all;
 }
+
+/**
+ * Which module each read tool's data belongs to.
+ *
+ * Tools with no entry here read nothing a module owns — the open web, or a skill file — so they
+ * are not gated.
+ */
+export const READ_TOOL_MODULE: Record<string, ModuleKey | undefined> = {
+  get_funnel: "analytics",
+  get_top_ads: "ads",
+  get_calendar: "calendar",
+  get_recent_posts: "publishing",
+  get_brand_kit: "creative",
+  get_strategy_plan: "strategy",
+  get_keywords: "seo",
+  get_search_trends: "seo",
+  get_keyword_ideas: "seo",
+  get_site_audit: "seo",
+  get_ai_visibility: "seo",
+};
 
 /* ---------- strategy agent ---------- */
 

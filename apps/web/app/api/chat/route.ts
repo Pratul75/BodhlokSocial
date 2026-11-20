@@ -1,10 +1,9 @@
 import { z } from "zod";
 import { log } from "@bodh/shared/log";
 import { chat } from "@bodh/agents";
-import { AGENT_MODULE, canAccess, type StartableAgent } from "@bodh/shared";
-import { getCurrentUser } from "@/lib/auth";
+import { AGENT_FEATURE, AGENT_MODULE, type StartableAgent } from "@bodh/shared";
+import { allowed, enterTenantScope, featureOn, getCurrentUser } from "@/lib/auth";
 import { startAgentRun } from "@/lib/agents";
-
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -15,16 +14,20 @@ const Body = z.object({
 
 /** Streams the answer as JSON lines: {type: "text" | "tool" | "done" | "error", ...}. */
 export async function POST(req: Request) {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "chat")) return Response.json({ error: "No access" }, { status: 403 });
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "chat") || !featureOn(user, "chat")) return Response.json({ error: "No access" }, { status: 403 });
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Bad request" }, { status: 400 });
 
   const encoder = new TextEncoder();
   // Chat can start the agents this person could start from their pages.
   const start = async (agent: StartableAgent, task: string | undefined) =>
-    canAccess(user.role, AGENT_MODULE[agent]) ? startAgentRun(agent, user.email, task) : { error: "Your role can't run that agent." };
-  const events = chat(parsed.data.messages, user.email, undefined, start);
+    allowed(user, AGENT_MODULE[agent]) && featureOn(user, AGENT_FEATURE[agent]!)
+      ? startAgentRun(agent, user.email, task)
+      : { error: "You can't run that agent." };
+  // Chat may read only what this workspace still has. Without this, keeping Ask-the-agents on
+  // is a way to read every module that was switched off.
+  const events = chat(parsed.data.messages, user.email, undefined, start, (m) => allowed(user, m));
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {

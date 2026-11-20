@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { agentRuns, brandKit, db, strategyPlans } from "@bodh/db";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago } from "@/lib/format";
 import { Card, CardHeader, EmptyState, PageHeader, StatusPill } from "@/components/ui";
 import { nextMonthIst } from "./actions";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Strategy" };
 
 export default async function StrategyPage() {
-  const user = await requireModule("strategy");
+  const user = enterTenantScope(await requireModule("strategy"));
   const now = new Date();
   const [[kit], busyRuns, [last], next] = await Promise.all([
     db.select().from(brandKit).limit(1),

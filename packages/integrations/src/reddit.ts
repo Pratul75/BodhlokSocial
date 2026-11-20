@@ -6,7 +6,7 @@
  * Every request carries a descriptive User-Agent, as Reddit's API rules require.
  */
 import { eq } from "drizzle-orm";
-import { connections, db } from "@bodh/db";
+import { connections, currentTenant, db } from "@bodh/db";
 import { readJsonSecret } from "./secrets";
 
 export const REDDIT_SCOPES = ["identity", "read", "submit"];
@@ -57,16 +57,19 @@ async function tokenRequest(app: RedditApp, body: Record<string, string>): Promi
 
 export const exchangeRedditCode = (app: RedditApp, code: string, redirectUri: string) => tokenRequest(app, { grant_type: "authorization_code", code, redirect_uri: redirectUri });
 
-let cached: { token: string; refresh: string; expiresAt: number } | null = null;
+// Per tenant: one workspace's Reddit token must never answer another workspace's request.
+const cached = new Map<string, { token: string; refresh: string; expiresAt: number }>();
 
 /** Access token for the connected account, refreshed when needed. Null when Reddit isn't connected. */
 export async function redditAccess(): Promise<{ token: string; username: string } | null> {
   const [app, grant] = await Promise.all([readJsonSecret<RedditApp>("reddit_app"), readJsonSecret<RedditGrant>("reddit")]);
   if (!app || !grant?.refresh_token) return null;
-  if (cached && cached.refresh === grant.refresh_token && cached.expiresAt > Date.now() + 60_000) return { token: cached.token, username: grant.username };
+  const key = currentTenant().id;
+  const hit = cached.get(key);
+  if (hit && hit.refresh === grant.refresh_token && hit.expiresAt > Date.now() + 60_000) return { token: hit.token, username: grant.username };
   try {
     const t = await tokenRequest(app, { grant_type: "refresh_token", refresh_token: grant.refresh_token });
-    cached = { token: t.access_token, refresh: grant.refresh_token, expiresAt: Date.now() + (t.expires_in ?? 3600) * 1000 };
+    cached.set(key, { token: t.access_token, refresh: grant.refresh_token, expiresAt: Date.now() + (t.expires_in ?? 3600) * 1000 });
     return { token: t.access_token, username: grant.username };
   } catch (e) {
     if (e instanceof RedditError && (e.status === 400 || e.status === 401)) {
@@ -138,7 +141,7 @@ export async function postRedditComment(access: { token: string; username: strin
 
 /** Revokes the stored grant at Reddit (best effort) before the secret is deleted on disconnect. */
 export async function revokeRedditGrant(): Promise<void> {
-  cached = null;
+  cached.delete(currentTenant().id);
   const [app, grant] = await Promise.all([readJsonSecret<RedditApp>("reddit_app"), readJsonSecret<RedditGrant>("reddit")]);
   if (!app || !grant?.refresh_token) return;
   try {

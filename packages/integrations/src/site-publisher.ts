@@ -13,11 +13,15 @@
  * already happened here.
  */
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
-import { auditLog, connections, db, seoPages, type FaqItem } from "@bodh/db";
+import { auditLog, connections, db, seoPages, tenantHasFeature, tenantSetting, type FaqItem } from "@bodh/db";
 import { allows, BodhlokCms, CmsError, markdownToRichText, tokenExpiry, type CmsCredentials, type CmsTaxonomy, type PostFields } from "./bodhlok-cms";
 import { readJsonSecret, secretName, secretStore } from "./secrets";
 
-export const SITE = process.env.SEO_SITE_URL?.replace(/\/$/, "") ?? "https://bodhlok.com";
+/** The website this workspace publishes to. Each workspace has its own. */
+export async function siteAddress(): Promise<string> {
+  const stored = (await tenantSetting("site.url"))?.replace(/\/$/, "");
+  return stored || "https://bodhlok.com";
+}
 export const AUTHOR_NAME = "Bodhlok";
 
 export async function siteCredentials(): Promise<CmsCredentials | null> {
@@ -103,7 +107,7 @@ export function faqMarkdown(faq: FaqItem[]): string {
 }
 
 /** Title, content, SEO fields and excerpt for the CMS; the same shape creates a post or saves a new draft. */
-export function postFields(page: PageForSite, category: string): PostFields {
+export function postFields(page: PageForSite, category: string, site: string): PostFields {
   const title = stripSuffix(page.title);
   const description = trimTo(page.description ?? page.answer ?? "", 155);
   const cover = coverFor(category);
@@ -113,7 +117,7 @@ export function postFields(page: PageForSite, category: string): PostFields {
     title,
     description,
     schema_type: "Article",
-    og_image: `${SITE}${cover}`,
+    og_image: `${site}${cover}`,
     og_image_alt: "Bodhlok astrology software chart preview",
   };
   if (page.keyword) seo.focus_keyword = page.keyword;
@@ -203,6 +207,8 @@ async function ensureAuthor(cms: BodhlokCms): Promise<number> {
 
 /** Publishes every approved page that is waiting; each page succeeds or fails on its own. */
 export async function publishQueued(): Promise<string> {
+  if (!(await tenantHasFeature("publishing.site_cms"))) return "Publishing to the website CMS is not switched on for this workspace.";
+  const site = await siteAddress();
   const creds = await siteCredentials();
   if (!creds) return "bodhlok.com CMS isn't connected.";
   const pages = await db
@@ -235,7 +241,7 @@ export async function publishQueued(): Promise<string> {
     const category = p.siteCategory ?? categoryFor(p);
     try {
       const cat = await ensureCategory(cms, categories, category);
-      const fields: PostFields = { ...postFields(p, category), primary_category_id: cat.id, author_id: authorId };
+      const fields: PostFields = { ...postFields(p, category, site), primary_category_id: cat.id, author_id: authorId };
       let doc = p.siteDocumentId ? await cms.getDocument(p.siteDocumentId).catch(() => null) : null;
       doc ??= await cms.findPost(p.slug);
       if (doc) await cms.saveDraft(doc.id, { ...fields, change_note: "Updated from BODH Growth OS" });

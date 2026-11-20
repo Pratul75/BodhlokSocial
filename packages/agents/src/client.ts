@@ -23,9 +23,19 @@ export async function checkAnthropicKey(apiKey: string): Promise<{ ok: true; lab
   }
 }
 
+/**
+ * The Claude client for the workspace this is running for.
+ *
+ * A workspace that has connected its own key is billed for its own usage. Otherwise the
+ * platform's key is used, deliberately: this is the platform paying, and what stops one
+ * workspace spending another's share is that the monthly budget and the per-run cap are both
+ * that workspace's own (see `monthlyBudgetUsd`). Set ANTHROPIC_KEY_PER_TENANT=true to refuse
+ * the platform key instead, so every workspace must bring its own.
+ */
 export async function anthropicClient(): Promise<Anthropic | null> {
   const stored = (await (await secretStore()).get(secretName("anthropic")))?.trim();
-  const apiKey = stored || process.env.ANTHROPIC_API_KEY;
+  const platformKey = process.env.ANTHROPIC_KEY_PER_TENANT === "true" ? undefined : process.env.ANTHROPIC_API_KEY;
+  const apiKey = stored || platformKey;
   if (!apiKey) return null;
   return new Anthropic({ apiKey, maxRetries: 3 });
 }

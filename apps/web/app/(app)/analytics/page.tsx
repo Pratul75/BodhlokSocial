@@ -2,7 +2,7 @@ import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 import { creativePerformance, db, pipelineRuns, reports } from "@bodh/db";
 import { channelLabel } from "@bodh/shared";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago, daysAgo, inr, num, pct, toIsoDate } from "@/lib/format";
 import { costPerActivated, funnelByChannel, funnelTotals, returnOnSpend, weeklyActivations } from "@/lib/funnel";
 import { FunnelStrip, PeriodBars } from "@/components/charts";
@@ -18,7 +18,7 @@ const RANGES = [7, 28, 90] as const;
 const channelName = channelLabel;
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
-  const user = await requireModule("analytics");
+  const user = enterTenantScope(await requireModule("analytics"));
   const { days: d } = await searchParams;
   const days = RANGES.includes(Number(d) as (typeof RANGES)[number]) ? Number(d) : 28;
 

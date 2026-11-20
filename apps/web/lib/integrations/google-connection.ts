@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { connections, db, keywords } from "@bodh/db";
 import { googleAccessToken, revokeGoogleGrant, type StoredGoogleGrant } from "@bodh/integrations/google-oauth";
 import { syncAdStructure } from "@bodh/integrations/ads";
-import { googleAdsConfigFromEnv, verifyGoogleAdsAccess } from "@bodh/integrations/google-ads";
+import { googleAdsConfig, verifyGoogleAdsAccess } from "@bodh/integrations/google-ads";
 import { intentFor } from "@bodh/integrations/dataforseo";
 import { myChannel } from "@bodh/integrations/youtube";
 import { listSites, pickSite, topQueries } from "./search-console";
@@ -20,12 +20,12 @@ export async function accessTokenFor(key: string): Promise<string> {
 export async function describeAccount(key: string, accessToken: string): Promise<string> {
   if (key === "search_console") {
     const sites = await listSites(accessToken);
-    const site = pickSite(sites);
+    const site = await pickSite(sites);
     if (!site) throw new Error("This Google account has no verified Search Console properties.");
     return site.siteUrl;
   }
   if (key === "google_ads") {
-    const cfg = googleAdsConfigFromEnv();
+    const cfg = await googleAdsConfig();
     // Without the developer token the account can't be checked yet; the card already says so.
     if (!cfg) return "Signed in (developer token pending)";
     return verifyGoogleAdsAccess(cfg, accessToken);
@@ -60,7 +60,7 @@ export async function syncIntegration(key: string): Promise<SyncResult> {
   }
   const token = await accessTokenFor(key);
   if (key === "google_ads") {
-    if (!googleAdsConfigFromEnv()) throw new Error("Set GOOGLE_ADS_DEVELOPER_TOKEN and GOOGLE_ADS_CUSTOMER_ID on the server first.");
+    if (!(await googleAdsConfig())) throw new Error("Set GOOGLE_ADS_DEVELOPER_TOKEN on the server and this workspace's Google Ads customer id in its settings first.");
     const message = await syncAdStructure();
     await db.update(connections).set({ status: "connected", lastSyncAt: new Date(), error: null, updatedAt: new Date() }).where(eq(connections.key, key));
     return { message };
@@ -71,7 +71,7 @@ export async function syncIntegration(key: string): Promise<SyncResult> {
   }
 
   const sites = await listSites(token);
-  const site = pickSite(sites);
+  const site = await pickSite(sites);
   if (!site) throw new Error("No verified Search Console property found.");
   const rows = await topQueries(token, site.siteUrl);
   const byQuery = new Map(rows.map((r) => [r.query.toLowerCase(), r]));

@@ -5,7 +5,7 @@ import { calendarItems, db, pipelineRuns, publishingChannels } from "@bodh/db";
 import { CHANNEL_LABELS, FORMAT_LABELS, type Channel, type Format } from "@bodh/shared";
 import { channelFor, listIntegrations, type PostizIntegration } from "@bodh/integrations/postiz";
 import { postizCredentials } from "@bodh/integrations/publisher";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ago, dayLabel, timeLabel } from "@/lib/format";
 import { Card, CardHeader, EmptyState, PageHeader, StatusPill, Table } from "@/components/ui";
 import { JobButton } from "@/components/job-button";
@@ -18,7 +18,7 @@ export const metadata = { title: "Publishing" };
 const PUBLISHED_CHANNELS = ["instagram", "facebook", "linkedin", "youtube", "gbp"] as const;
 
 export default async function PublishingPage() {
-  const user = await requireModule("publishing");
+  const user = enterTenantScope(await requireModule("publishing"));
   const creds = await postizCredentials();
   let integrations: PostizIntegration[] = [];
   let postizError: string | null = null;

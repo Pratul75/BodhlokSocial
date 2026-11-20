@@ -5,7 +5,7 @@
  * applyChange() is the only code that writes to the ad platforms.
  */
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
-import { adChanges, adEntities, approvals, auditLog, budgets, connections, creativePerformance, db, experiments } from "@bodh/db";
+import { adChanges, adEntities, approvals, auditLog, budgets, connections, creativePerformance, db, experiments, tenantHasFeature } from "@bodh/db";
 import { checkAdChange, isLosingAd, lintAdCopy, lintPositioning, MAX_TEST_VARIANTS, type AdChange, type Decision } from "@bodh/guardrails";
 import {
   fetchGoogleStructure,
@@ -22,7 +22,7 @@ import {
   type Platform,
   type VariantCopy,
 } from "./ads-platforms";
-import { googleAdsConfigFromEnv, type GoogleAdsConfig } from "./google-ads";
+import { googleAdsConfig, type GoogleAdsConfig } from "./google-ads";
 import { googleAccessToken } from "./google-oauth";
 import type { MarketingCredentials } from "./meta";
 import { readJsonSecret } from "./secrets";
@@ -39,7 +39,7 @@ export async function metaCreds(): Promise<MarketingCredentials | null> {
 }
 
 export async function googleAuth(): Promise<{ cfg: GoogleAdsConfig; token: string } | null> {
-  const cfg = googleAdsConfigFromEnv();
+  const cfg = await googleAdsConfig();
   const token = cfg ? await googleAccessToken("google_ads") : null;
   return cfg && token ? { cfg, token } : null;
 }
@@ -192,6 +192,11 @@ function copyProblems(platform: Platform, variants: VariantCopy[]): string[] {
 }
 
 export async function requestChange(req: ChangeRequest, reason: string, actor: Actor): Promise<ChangeResult> {
+  // The workspace's own switch, checked here rather than in the page, because an agent and a
+  // scheduled job reach this function without passing through any page.
+  if (!(await tenantHasFeature("ads.write"))) {
+    return record(req, null, "blocked", "Changes on ad platforms are not switched on for this workspace.", reason, actor);
+  }
   const caps = await spendNow(req.platform);
   let guard: AdChange;
   let label: string;
@@ -259,7 +264,12 @@ export async function requestChange(req: ChangeRequest, reason: string, actor: A
     }
   }
 
-  const decision: Decision = extra ?? (caps ? checkAdChange(guard, { dailyCap: caps.dailyCap, monthlyCap: caps.monthlyCap }, caps) : { outcome: "block", reason: `No spend caps set for ${PLATFORM_LABELS[req.platform]}.` });
+  let decision: Decision = extra ?? (caps ? checkAdChange(guard, { dailyCap: caps.dailyCap, monthlyCap: caps.monthlyCap }, caps) : { outcome: "block", reason: `No spend caps set for ${PLATFORM_LABELS[req.platform]}.` });
+  // An agent may apply a change on its own only where the workspace allows it. Where it does
+  // not, the change still happens — a person approves it first, exactly as a guardrail stop.
+  if (decision.outcome === "allow" && actor.kind === "agent" && !(await tenantHasFeature("ads.auto_apply"))) {
+    decision = { outcome: "needs_approval", reason: "Agents don't apply ad changes by themselves in this workspace." };
+  }
   const [row] = await db
     .insert(adChanges)
     .values({
@@ -382,6 +392,7 @@ export async function retryChange(changeId: string): Promise<{ ok: true } | { ok
 
 /** Writes an allowed or approved change to the platform. The only place that does. */
 export async function applyChange(changeId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await tenantHasFeature("ads.write"))) return { ok: false, error: "Changes on ad platforms are not switched on for this workspace." };
   const [c] = await db.select().from(adChanges).where(eq(adChanges.id, changeId)).limit(1);
   if (!c?.platform || !c.type) return { ok: false, error: "Unknown change." };
   const platform = c.platform as Platform;
@@ -501,7 +512,7 @@ export async function testsWithResults() {
 
 export async function adsConnected(): Promise<Record<Platform, boolean>> {
   const rows = await db.select().from(connections).where(inArray(connections.key, ["meta_marketing", "google_ads"]));
-  return { meta_ads: rows.some((r) => r.key === "meta_marketing" && r.status === "connected"), google_ads: rows.some((r) => r.key === "google_ads" && r.status === "connected") && !!googleAdsConfigFromEnv() };
+  return { meta_ads: rows.some((r) => r.key === "meta_marketing" && r.status === "connected"), google_ads: rows.some((r) => r.key === "google_ads" && r.status === "connected") && Boolean(await googleAdsConfig()) };
 }
 
 export { MAX_TEST_VARIANTS };

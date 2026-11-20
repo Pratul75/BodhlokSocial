@@ -1,9 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { and, eq, gt, inArray, lt, ne } from "drizzle-orm";
-import { agentRuns, auditLog, db, type RunStep } from "@bodh/db";
+import { agentRuns, auditLog, db, tenantHasFeature, type RunStep, tenantHasModule } from "@bodh/db";
+import { AGENT_FEATURE, AGENT_MODULE, type StartableAgent } from "@bodh/shared";
 import { anthropicClient, FALLBACK_BETA, MODEL } from "./client";
-import { addUsage, costUsd, emptyTotals, reserveBudget, type RunTotals } from "./cost";
+import { addUsage, costUsd, emptyTotals, reserveBudget, runCapUsd, type RunTotals } from "./cost";
 import { defaultTask, systemPrompt, userMessage, type AgentName } from "./prompts";
 import { adsTools, contentTools, readTools, seoTools, strategyTools, type ToolContext } from "./tools";
 import { analystTools, communityTools, mentionsTools } from "./tools-growth";
@@ -11,7 +12,10 @@ import { analystTools, communityTools, mentionsTools } from "./tools-growth";
 export const AGENT_NAMES: AgentName[] = ["strategy", "content", "seo", "ads", "community", "mentions", "analyst"];
 export const isAgentName = (a: string): a is AgentName => (AGENT_NAMES as string[]).includes(a);
 
-/** One run may not spend more than this, whatever the monthly budget says. */
+/**
+ * One run may not spend more than this workspace's per-run cap, whatever its monthly budget
+ * says. Kept for the server-wide default; the live value is `runCapUsd()`.
+ */
 export const RUN_CAP_USD = Number(process.env.AI_RUN_CAP_USD ?? 6);
 const EFFORT = { strategy: "high", content: "medium", seo: "medium", ads: "high", community: "medium", mentions: "medium", analyst: "high" } as const;
 const WEB_SEARCHES = { strategy: 8, content: 4, seo: 6, ads: 2, community: 6, mentions: 10, analyst: 2 } as const;
@@ -108,7 +112,25 @@ export const STALE_AFTER_MS = 3_600_000;
  * racing to start the same agent get one run between them: the loser receives the winner's id
  * with created=false.
  */
+/**
+ * Whether this workspace has the agent switched on. Callers ask first so that a workspace
+ * without it gets an answer ("not switched on") instead of a 500 that a scheduler retries.
+ */
+export async function agentEnabled(agent: string): Promise<boolean> {
+  // The agent's own module as well as its feature: an agent is a module's work done without a
+  // person, so a workspace that no longer has the module does not get the agent either.
+  const module = AGENT_MODULE[agent as StartableAgent];
+  if (module && !(await tenantHasModule(module))) return false;
+  const feature = AGENT_FEATURE[agent];
+  return !feature || (await tenantHasFeature(feature));
+}
+
 export async function queueRun(agent: string, trigger: RunOptions["trigger"]): Promise<{ id: string; created: boolean }> {
+  // Every way an agent can start — a person's Run button, chat, the worker's schedule — comes
+  // through here, so this is where a workspace's switch has to be read.
+  if (!(await agentEnabled(agent))) {
+    throw new Error(`The ${agent} agent is not switched on for this workspace.`);
+  }
   // A row left behind by a crash would block the agent forever; expire it first.
   await db
     .update(agentRuns)
@@ -166,8 +188,9 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
   const client = opts.client ?? (await anthropicClient());
   if (!client) return finish(runId, "failed", "No Anthropic API key. An admin can add one in Connections → Claude.", totals);
 
-  // Reserve this run's cap against the monthly budget before spending anything.
-  const budget = await reserveBudget(runId, RUN_CAP_USD);
+  // Reserve this run's cap against THIS workspace's monthly budget before spending anything.
+  const runCap = await runCapUsd();
+  const budget = await reserveBudget(runId, runCap);
   if (!budget.ok) return finish(runId, "failed", budget.reason, totals);
   const capUsd = budget.capUsd;
 
@@ -214,9 +237,9 @@ export async function runAgent(agent: AgentName, opts: RunOptions, existingRunId
       }
       if (costUsd(totals) > capUsd) {
         stopped =
-          capUsd < RUN_CAP_USD
+          capUsd < runCap
             ? `Stopped: this month's AI budget ran out ($${capUsd.toFixed(2)} was left for this run).`
-            : `Stopped at the per-run cost cap of $${RUN_CAP_USD}.`;
+            : `Stopped at the per-run cost cap of $${runCap}.`;
         break;
       }
       if (message.stop_reason === "pause_turn") runner.pushMessages({ role: "assistant", content: message.content });

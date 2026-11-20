@@ -5,7 +5,8 @@ import { connections, db } from "@bodh/db";
 import { getIntegration } from "@bodh/shared";
 import { googleConnectClient, staffGoogleClient } from "@bodh/integrations/google-oauth";
 import { audit } from "@/lib/audit";
-import { getCurrentUser } from "@/lib/auth";
+import { enterTenantScope, getCurrentUser, allowed } from "@/lib/auth";
+import { integrationAllowed } from "@bodh/shared";
 import { appUrl, exchangeCode } from "@/lib/google";
 import { describeAccount, type StoredGoogleGrant } from "@/lib/integrations/google-connection";
 import { secretName, secretStore } from "@/lib/secrets";
@@ -22,14 +23,17 @@ export async function GET(req: Request) {
     return res;
   };
 
-  const user = await getCurrentUser();
-  if (user.role !== "admin") return back("error=admin_only");
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "connections") || user.role !== "admin") return back("error=admin_only");
   if (params.get("error")) return back("error=cancelled");
   const code = params.get("code");
   if (!saved || saved.purpose !== "connect" || !saved.integration || !code || params.get("state") !== saved.state) {
     return back("error=expired");
   }
   const key = saved.integration;
+  // Checked again on the way back in: the grant may have been started before the account was
+  // taken away from this workspace, and a token must not land for one it no longer has.
+  if (!integrationAllowed(user.ent, key)) return back(`error=not_enabled&key=${key}`);
   const def = getIntegration(key);
   if (!def?.googleOAuth?.enabled) return back("error=not_enabled");
 

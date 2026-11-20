@@ -1,5 +1,6 @@
 import "server-only";
 import { createRemoteJWKSet, jwtVerify, base64url } from "jose";
+import { tenantSetting } from "@bodh/db";
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -19,12 +20,24 @@ export function appUrl(req: Request): string {
   return (process.env.APP_URL ?? new URL(req.url).origin).replace(/\/$/, "");
 }
 
-export function allowedDomains(): string[] {
-  const raw = process.env.ALLOWED_EMAIL_DOMAINS ?? process.env.ALLOWED_EMAIL_DOMAIN ?? "rechargestudio.com";
-  return raw
+/** Parses a comma-separated domain list. Shared by the workspace reader and its callers' tests. */
+export function parseDomains(raw: string | null | undefined): string[] {
+  return (raw ?? "")
     .split(",")
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean);
+}
+
+/**
+ * Which email domains may sign in to THIS workspace.
+ *
+ * One server-wide list would mean every workspace admits the same company's staff, and a new
+ * customer could not let its own people in without letting everyone else's in too.
+ */
+export async function allowedDomains(): Promise<string[]> {
+  const stored = parseDomains(await tenantSetting("auth.allowed_email_domains"));
+  if (stored.length) return stored;
+  return parseDomains(process.env.ALLOWED_EMAIL_DOMAIN ?? "rechargestudio.com");
 }
 
 export async function buildAuthUrl(opts: {

@@ -23,7 +23,7 @@ describe("GA4 property setting", () => {
   it("is off when unset, accepts a numeric id, and refuses anything else", () => {
     expect(ga4PropertyId({})).toBeNull();
     expect(ga4PropertyId({ GA4_PROPERTY_ID: " 412345678 " })).toBe("412345678");
-    expect(() => ga4PropertyId({ GA4_PROPERTY_ID: "properties/412345678" })).toThrow(/numeric GA4 property id/);
+    expect(() => ga4PropertyId({ GA4_PROPERTY_ID: "properties/412345678" })).toThrow(/must be numeric/);
     expect(() => ga4PropertyId({ GA4_PROPERTY_ID: "G-ABC123" })).toThrow();
   });
 });

@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const base = process.env.DATABASE_URL ?? "postgres://bodh:bodh@localhost:5433/bodh";
 const dbName = `bodh_adstest_${Date.now()}`;
+let testRole: string | null = null;
 const admin = postgres(base, { max: 1, onnotice: () => {} });
 const reachable = await admin`select 1`.then(() => true).catch(() => false);
 
@@ -34,6 +35,9 @@ describe.skipIf(!reachable)("ad changes through the guardrails", () => {
     await migrate(drizzle(mc), { migrationsFolder: fileURLToPath(new URL("../../db/migrations", import.meta.url)) });
     await mc.end();
     m = { db: await import("@bodh/db"), ads: await import("./ads"), secrets: await import("./secrets"), drizzle: await import("drizzle-orm") };
+    // The database the test just made is a single-tenant installation: give it its workspace,
+    // the way a first deploy does, so the application code has one to run for.
+    testRole = (await m.db.bootstrapSingleTenant()).role;
     await (await m.secrets.secretStore()).put("integration-meta_marketing", JSON.stringify({ ad_account_id: "act_1", access_token: "t" }));
     await m.db.db.insert(m.db.budgets).values({ platform: "meta_ads", dailyCap: 10000, monthlyCap: 200000 }).onConflictDoUpdate({ target: m.db.budgets.platform, set: { dailyCap: 10000, monthlyCap: 200000 } });
 
@@ -45,6 +49,7 @@ describe.skipIf(!reachable)("ad changes through the guardrails", () => {
         { id: "a2", name: "Generic hook", adset_id: "s1", campaign_id: "c1", status: "ACTIVE", creative: { id: "cr2", title: "Astrology app", body: "Try it" } },
       ],
     };
+
     vi.stubGlobal("fetch", async (u: string | URL, init?: RequestInit) => {
       const url = new URL(String(u));
       const path = url.pathname.replace(/^\/v[\d.]+\//, "");
@@ -73,6 +78,7 @@ describe.skipIf(!reachable)("ad changes through the guardrails", () => {
     vi.unstubAllGlobals();
     if (m) await m.db.sql.end();
     await admin.unsafe(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+    if (testRole) await admin.unsafe(`drop role if exists "${testRole}"`).catch(() => undefined);
     await admin.end();
     if (dir) await rm(dir, { recursive: true, force: true });
   });

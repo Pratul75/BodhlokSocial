@@ -5,7 +5,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
-import { agentRuns, aiVisibilityChecks, db, geoQuestions } from "@bodh/db";
+import { agentRuns, aiVisibilityChecks, db, geoQuestions, tenantHasFeature } from "@bodh/db";
 import { readJsonSecret, secretName, secretStore } from "@bodh/integrations/secrets";
 import { vertexAuth, type ServiceAccountKey } from "@bodh/integrations/vertex";
 import { anthropicClient, MODEL } from "./client";
@@ -140,6 +140,12 @@ export async function ensureGeoQuestions(): Promise<void> {
  * Returns at once with what happened.
  */
 export async function startVisibilityChecks(trigger: "schedule" | "manual" = "schedule"): Promise<string> {
+  // The switch that says "Weekly AI-visibility checks" never reached the checks themselves, so
+  // turning it off changed nothing. Every way in comes through here — the schedule and the
+  // button both — which is where the workspace's answer belongs.
+  if (!(await tenantHasFeature("seo.geo_checks"))) {
+    return "AI-visibility checks are not switched on for this workspace.";
+  }
   const queued = await queueRun("geo", trigger);
   if (!queued.created) return "Already running: the AI-visibility checks started earlier are still going.";
   const budget = await reserveBudget(queued.id, GEO_RESERVE_USD);

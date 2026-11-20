@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { connections, db } from "@bodh/db";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { ChatPanel } from "@/components/chat-panel";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 
@@ -16,7 +16,7 @@ const EXAMPLES = [
 ];
 
 export default async function ChatPage() {
-  await requireModule("chat");
+  enterTenantScope(await requireModule("chat"));
   const [anthropic] = await db.select().from(connections).where(eq(connections.key, "anthropic"));
   const ready = anthropic?.status === "connected" || Boolean(process.env.ANTHROPIC_API_KEY);
 

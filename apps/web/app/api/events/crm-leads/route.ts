@@ -1,4 +1,6 @@
 import { crmCredentials, handleLeadWebhook, verifyCrmSignature, type CrmWebhook } from "@bodh/integrations/crm";
+import { publicTenant } from "@/lib/tenant";
+import { enterTenant } from "@bodh/db";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +12,10 @@ const MAX_BYTES = 256_000;
  * (X-Webhook-Signature). See docs/crm.md.
  */
 export async function POST(req: Request) {
+  // Which workspace this call belongs to. `/t/<slug>/api/…` says so; the bare path is tenant #1's.
+  const tenant = await publicTenant();
+  if (!tenant) return Response.json({ error: "Unknown workspace" }, { status: 404 });
+  enterTenant(tenant);
   const creds = await crmCredentials("crm_leads");
   if (!creds) return Response.json({ error: "CRM lead intake is not configured." }, { status: 503 });
 

@@ -4,7 +4,7 @@ import { aiVisibilityChecks, connections, db, geoQuestions, keywords, seoAudits,
 import { ENGINE_LABELS, ENGINES, ensureGeoQuestions } from "@bodh/agents";
 import { ensurePageCatalog, latestAudit, pageCounts } from "@bodh/integrations/seo";
 import { TEMPLATE_LABELS, type Template } from "@bodh/integrations/seo-catalog";
-import { requireModule } from "@/lib/auth";
+import { enterTenantScope, requireModule } from "@/lib/auth";
 import { num, pct } from "@/lib/format";
 import { PeriodBars } from "@/components/charts";
 import { AgentRunPanel } from "@/components/agent-run-panel";
@@ -26,7 +26,7 @@ const TEMPLATES: Template[] = ["compare", "guide", "planet_house", "nakshatra", 
 const fmt = (d: Date) => d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default async function SeoPage({ searchParams }: { searchParams: Promise<{ kw?: string }> }) {
-  const user = await requireModule("seo");
+  const user = enterTenantScope(await requireModule("seo"));
   const { kw } = await searchParams;
   await ensureGeoQuestions();
   if ((await pageCounts()).length === 0) await ensurePageCatalog();

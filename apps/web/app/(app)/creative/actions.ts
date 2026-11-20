@@ -1,12 +1,10 @@
 "use server";
 
 import type { JobState } from "@/app/(app)/seo/actions";
-
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { assets, brandKit, db } from "@bodh/db";
-import { canAccess } from "@bodh/shared";
-import { getCurrentUser } from "@/lib/auth";
+import { allowed, enterTenantScope, getCurrentUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { saveUpload, imageSize } from "@/lib/storage";
 import { runImageJob } from "@/lib/creative";
@@ -19,8 +17,8 @@ const ALLOWED = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/qu
 export type UploadResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
 export async function uploadAssets(_prev: UploadResult, formData: FormData): Promise<UploadResult> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "creative")) return { ok: false, error: "Your role can't upload creative." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "creative")) return { ok: false, error: "You can't upload creative." };
   const files = formData.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
   if (files.length === 0) return { ok: false, error: "Choose at least one JPG, PNG or MP4." };
 
@@ -52,8 +50,8 @@ export async function uploadAssets(_prev: UploadResult, formData: FormData): Pro
 export type GenerateResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
 export async function generateCreative(_prev: GenerateResult, formData: FormData): Promise<GenerateResult> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "creative")) return { ok: false, error: "Your role can't generate creative." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "creative")) return { ok: false, error: "You can't generate creative." };
   const kind = String(formData.get("kind"));
   const prompt = String(formData.get("prompt") ?? "").trim();
   if (prompt.length < 10) return { ok: false, error: "Describe what you want in at least a sentence." };
@@ -88,8 +86,8 @@ export async function generateCreative(_prev: GenerateResult, formData: FormData
 }
 
 export async function checkVideos(_prev: JobState, _formData: FormData): Promise<JobState> {
-  const user = await getCurrentUser();
-  if (!canAccess(user.role, "creative")) return { error: "Your role can't use the Creative studio." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "creative")) return { error: "You can't use the Creative studio." };
   try {
     const r = await pollVideoJobs();
     revalidatePath("/creative");
@@ -103,8 +101,10 @@ export async function checkVideos(_prev: JobState, _formData: FormData): Promise
 export type BrandResult = { ok: true; message: string } | { ok: false; error: string } | null;
 
 export async function saveBrandKit(_prev: BrandResult, formData: FormData): Promise<BrandResult> {
-  const user = await getCurrentUser();
-  if (user.role !== "admin" && user.role !== "social_manager") return { ok: false, error: "Only admins and social media managers can change the brand kit." };
+  const user = enterTenantScope(await getCurrentUser());
+  if (!allowed(user, "creative") || (user.role !== "admin" && user.role !== "social_manager")) {
+    return { ok: false, error: "Only admins and social media managers can change the brand kit." };
+  }
   const lines = (k: string) => String(formData.get(k) ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
   const palette: { name: string; hex: string }[] = [];
   for (const l of lines("palette")) {

@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { enterTenantScope, getCurrentUser, allowed } from "@/lib/auth";
+import { integrationAllowed } from "@bodh/shared";
 import { appUrl, randomToken } from "@/lib/google";
 import { postizApp, postizUrls } from "@/lib/integrations/postiz-oauth";
 import { cookieOptions, OAUTH_COOKIE, sealOAuthState } from "@/lib/session";
 
 /** Sends an admin to Postiz to approve BODH Growth OS. */
 export async function GET(req: Request) {
-  const user = await getCurrentUser();
+  const user = enterTenantScope(await getCurrentUser());
   const back = (q: string) => NextResponse.redirect(new URL(`/connections?${q}`, appUrl(req)));
-  if (user.role !== "admin") return back("error=admin_only");
+  if (!allowed(user, "connections") || !integrationAllowed(user.ent, "postiz") || user.role !== "admin") return back("error=admin_only");
   const app = await postizApp();
   if (!app) return back("error=not_enabled&key=postiz");
   const state = randomToken();
