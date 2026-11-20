@@ -1,20 +1,19 @@
 import Link from "next/link";
 import { accessLevel, entitlementsFor, listOrgAdmins, orgById, ownerSql } from "@bodh/db";
 import { FEATURE_KEYS, MODULES } from "@bodh/shared";
-import { platformAudit, requireOperator } from "@/lib/platform-auth";
+import { platformAudit } from "@/lib/platform-auth";
+import { requireWorkspaceAdmin } from "@/lib/workspace-admin";
 import { allWorkspaceStats } from "@/lib/platform-stats";
 import { ConsoleCard, Empty, Money, StatTile, WhenText } from "../../ui";
 import { ClientAccessForm } from "../../forms";
-import { loadWorkspace } from "./workspace";
 
 export const dynamic = "force-dynamic";
 
 /** What this workspace is, in numbers, with the two or three things worth doing next. */
 export default async function WorkspaceOverview({ params }: { params: Promise<{ id: string }> }) {
-  const op = await requireOperator();
   const { id } = await params;
-  const { tenant, plan, createdAt } = await loadWorkspace(id);
-  await platformAudit({ actor: op.email, action: "view_tenant", target: tenant.slug, tenantId: tenant.id });
+  const { viewer, tenant, plan, createdAt } = await requireWorkspaceAdmin(id);
+  await platformAudit({ actor: viewer.email, action: "view_tenant", target: tenant.slug, tenantId: tenant.id });
 
   const stats = (await allWorkspaceStats()).find((s) => s.tenant.id === id);
   // Who holds this workspace, and how far into it they reach.
@@ -87,7 +86,7 @@ export default async function WorkspaceOverview({ params }: { params: Promise<{ 
           </dl>
         </ConsoleCard>
 
-        {org && (
+        {org && viewer.isPlatform && (
           <ConsoleCard title={`${org.name} — the agency that holds this workspace`} sub="How far it reaches in">
             <div className="space-y-3 px-5 py-4 text-sm">
               <p className="text-muted">
@@ -97,7 +96,7 @@ export default async function WorkspaceOverview({ params }: { params: Promise<{ 
                     ? `${org.name} sees this workspace's counts and totals in its own panel, and has no accounts inside it.`
                     : `This workspace is hidden from ${org.name}'s panel, and the agency has no accounts inside it.`}
               </p>
-              {op.role === "owner" ? (
+              {viewer.canSuspend ? (
                 <ClientAccessForm tenantId={tenant.id} level={agencyLevel ?? "full"} />
               ) : (
                 <p className="text-xs text-muted">Only an owner can change this.</p>
@@ -111,6 +110,7 @@ export default async function WorkspaceOverview({ params }: { params: Promise<{ 
           </ConsoleCard>
         )}
 
+        {viewer.isPlatform && (
         <ConsoleCard title="Where it lives" sub="The parts that make this workspace its own">
           <dl className="divide-y divide-rule text-sm">
             <div className="flex items-center justify-between px-5 py-3">
@@ -143,6 +143,7 @@ export default async function WorkspaceOverview({ params }: { params: Promise<{ 
             </div>
           </dl>
         </ConsoleCard>
+        )}
       </div>
 
       <div className="mt-4">

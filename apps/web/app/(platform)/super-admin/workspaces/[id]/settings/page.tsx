@@ -1,9 +1,9 @@
 import { storedSettings, tenantSetting, TENANT_SETTING_KEYS, TENANT_SETTING_LABELS, withTenant, type TenantSettingKey, archiveInfo } from "@bodh/db";
-import { platformAudit, requireOperator } from "@/lib/platform-auth";
+import { platformAudit } from "@/lib/platform-auth";
+import { requireWorkspaceAdmin } from "@/lib/workspace-admin";
 import { ConsoleCard } from "../../../ui";
 import { PlanForm, RenameWorkspaceForm, WorkspaceSettingForm } from "../../../workspace-forms";
 import { PurgeWorkspaceForm } from "../../../forms";
-import { loadWorkspace } from "../workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +28,10 @@ const HINTS: Partial<Record<TenantSettingKey, string>> = {
  * before handing it over should not have to sign in as them to do it.
  */
 export default async function WorkspaceSettings({ params }: { params: Promise<{ id: string }> }) {
-  const op = await requireOperator();
   const { id } = await params;
-  const { tenant, plan } = await loadWorkspace(id);
+  const { viewer, tenant, plan } = await requireWorkspaceAdmin(id);
   const archive = tenant.status === "archived" ? await archiveInfo(id) : null;
-  await platformAudit({ actor: op.email, action: "view_tenant_settings", target: tenant.slug, tenantId: id });
+  await platformAudit({ actor: viewer.email, action: "view_tenant_settings", target: tenant.slug, tenantId: id });
 
   const stored = await storedSettings(id);
   // Whether a blank field is still answered by the server's own setting, so "empty" and
@@ -46,7 +45,7 @@ export default async function WorkspaceSettings({ params }: { params: Promise<{ 
     <>
       <ConsoleCard title="Workspace" sub="What this workspace is called, and what you are charging it for">
         <div>
-          {op.role === "owner" ? (
+          {viewer.canManage ? (
             <>
               <RenameWorkspaceForm tenantId={id} name={tenant.name} />
               <PlanForm tenantId={id} plan={plan} />

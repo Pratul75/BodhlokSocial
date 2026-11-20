@@ -1,10 +1,10 @@
 import { connections, db, entitlementsFor, withTenant } from "@bodh/db";
 import { INTEGRATIONS, MODULE_INTEGRATIONS, MODULES } from "@bodh/shared";
-import { platformAudit, requireOperator } from "@/lib/platform-auth";
+import { platformAudit } from "@/lib/platform-auth";
+import { requireWorkspaceAdmin } from "@/lib/workspace-admin";
 import { EVENTS_SECRET_KEY, FEED_TOKEN_KEY, hasTenantSecret } from "@/lib/tenant-secrets";
 import { ConsoleCard, ConsolePill, Empty, WhenText } from "../../../ui";
 import { EntitlementToggle, PublicSecretForm } from "../../../forms";
-import { loadWorkspace } from "../workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +18,9 @@ const tone = (status: string) =>
  * connecting Google in one workspace does nothing to another.
  */
 export default async function WorkspaceIntegrations({ params }: { params: Promise<{ id: string }> }) {
-  const op = await requireOperator();
   const { id } = await params;
-  const { tenant } = await loadWorkspace(id);
-  await platformAudit({ actor: op.email, action: "view_tenant_integrations", target: tenant.slug, tenantId: id });
+  const { viewer, tenant } = await requireWorkspaceAdmin(id);
+  await platformAudit({ actor: viewer.email, action: "view_tenant_integrations", target: tenant.slug, tenantId: id });
 
   let rows: { key: string; status: string; error: string | null; lastSyncAt: Date | null; accountLabel: string | null }[] = [];
   let secrets = { events: false, feed: false };
@@ -55,7 +54,7 @@ export default async function WorkspaceIntegrations({ params }: { params: Promis
     <>
       {error && <p className="mb-4 rounded-lg bg-sindoor-soft px-4 py-3 text-sm text-sindoor">{error}</p>}
 
-      {op.role === "owner" && (
+      {viewer.canManage && (
         <div className="mb-6">
           <ConsoleCard
             title="What this workspace may connect"

@@ -33,4 +33,9 @@ export const TABS = [
   { slug: "settings", label: "Settings" },
 ] as const;
 
-export const tabHref = (id: string, slug: string) => `/super-admin/workspaces/${id}${slug ? `/${slug}` : ""}`;
+/**
+ * A tab's address, under whichever panel the viewer came in through. The platform console and
+ * an agency's own panel show the same pages; only the path they live at differs.
+ */
+export const tabHref = (id: string, slug: string, base = "/super-admin/workspaces") =>
+  `${base}/${id}${slug ? `/${slug}` : ""}`;

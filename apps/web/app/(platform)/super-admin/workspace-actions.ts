@@ -22,7 +22,8 @@ import {
 } from "@bodh/db";
 import { CAPACITY_KEYS, capacity, FEATURE_KEYS, INTEGRATIONS, isRole, MODULES, type CapacityKey } from "@bodh/shared";
 import { presetContents } from "./access-presets";
-import { platformAudit, requireOperator, requireOwner } from "@/lib/platform-auth";
+import { platformAudit } from "@/lib/platform-auth";
+import { requireWorkspaceManager } from "@/lib/workspace-admin";
 import { clearUserPassword, issueUserInvite } from "@/lib/user-passwords";
 
 export type WorkspaceResult = { ok: true; message: string } | { ok: false; error: string } | null;
@@ -52,8 +53,10 @@ async function writable(tenantId: string): Promise<TenantRef> {
  * the control plane's directory is what lets them in.
  */
 export async function inviteWorkspaceUser(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
-  const op = await requireOperator();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const name = String(formData.get("name") ?? "").trim();
   const role = String(formData.get("role") ?? "");
@@ -87,8 +90,10 @@ export async function issueWorkspacePasswordLink(
   _prev: WorkspaceLinkResult,
   formData: FormData,
 ): Promise<WorkspaceLinkResult> {
-  const op = await requireOwner();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const userId = String(formData.get("userId") ?? "");
   try {
     const tenant = await writable(tenantId);
@@ -108,8 +113,10 @@ export async function issueWorkspacePasswordLink(
 
 /** Takes somebody's password away again, leaving Google as their only way in. */
 export async function clearWorkspacePassword(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
-  const op = await requireOwner();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const userId = String(formData.get("userId") ?? "");
   try {
     const tenant = await writable(tenantId);
@@ -125,8 +132,10 @@ export async function clearWorkspacePassword(_prev: WorkspaceResult, formData: F
 
 /** Changes somebody's role inside a workspace. */
 export async function setWorkspaceUserRole(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
-  const op = await requireOperator();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const userId = String(formData.get("userId") ?? "");
   const role = String(formData.get("role") ?? "");
   if (!isRole(role)) return { ok: false, error: "Unknown role." };
@@ -150,8 +159,10 @@ export async function setWorkspaceUserRole(_prev: WorkspaceResult, formData: For
  * signed out everywhere rather than on their next page load.
  */
 export async function setWorkspaceUserActive(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
-  const op = await requireOperator();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const userId = String(formData.get("userId") ?? "");
   const active = String(formData.get("active") ?? "") === "true";
 
@@ -192,8 +203,10 @@ export async function setWorkspaceUserActive(_prev: WorkspaceResult, formData: F
 /* -------------------------------------------------------------------------- */
 
 export async function applyAccessPreset(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
-  const op = await requireOwner();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const preset = String(formData.get("preset") ?? "");
   if (preset !== "full" && preset !== "essentials") return { ok: false, error: "Pick Full or Essentials." };
 
@@ -256,8 +269,10 @@ async function wouldExceedAgencyBudget(tenantId: string, proposed: number): Prom
 }
 
 export async function setCapacity(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
-  const op = await requireOperator();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const key = String(formData.get("key") ?? "") as CapacityKey;
   const raw = String(formData.get("value") ?? "").trim();
   if (!(CAPACITY_KEYS as readonly string[]).includes(key)) return { ok: false, error: "Unknown limit." };
@@ -290,8 +305,10 @@ export async function setCapacity(_prev: WorkspaceResult, formData: FormData): P
 
 /** One of the workspace's own configuration values, set from the console rather than by its admin. */
 export async function setWorkspaceSetting(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
-  const op = await requireOperator();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const key = String(formData.get("key") ?? "");
   const value = String(formData.get("value") ?? "").trim();
   if (!isTenantSettingKey(key)) return { ok: false, error: "Unknown setting." };
@@ -312,8 +329,10 @@ export async function setWorkspaceSetting(_prev: WorkspaceResult, formData: Form
 
 /** Renames a workspace. The address and the schema never change: they are what everything keys on. */
 export async function renameWorkspace(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
-  const op = await requireOwner();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const name = String(formData.get("name") ?? "").trim();
   if (name.length < 2 || name.length > 80) return { ok: false, error: "Give it a name of two to eighty characters." };
   await ownerSql()`update platform.tenants set name = ${name}, updated_at = now() where id = ${tenantId}`;
@@ -325,8 +344,10 @@ export async function renameWorkspace(_prev: WorkspaceResult, formData: FormData
 
 /** The plan a workspace is on. A label for the people running the platform; nothing enforces it. */
 export async function setWorkspacePlan(_prev: WorkspaceResult, formData: FormData): Promise<WorkspaceResult> {
-  const op = await requireOwner();
   const tenantId = String(formData.get("tenantId") ?? "");
+  const ctx = await requireWorkspaceManager(tenantId);
+  if (!ctx) return { ok: false, error: "You can't change that workspace." };
+  const op = { email: ctx.viewer.email };
   const plan = String(formData.get("plan") ?? "").trim().toLowerCase();
   if (!["full", "essentials", "trial", "custom"].includes(plan)) return { ok: false, error: "Unknown plan." };
   await ownerSql()`update platform.tenants set plan = ${plan}, updated_at = now() where id = ${tenantId}`;
