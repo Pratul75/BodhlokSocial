@@ -3,7 +3,8 @@ import { KundliMark } from "@/components/kundli-mark";
 import { authEnabled, devAuthAllowed, safeReturnTo } from "@/lib/session";
 import { allowedDomains } from "@/lib/google";
 import { tenantFromRequest } from "@/lib/tenant";
-import { PasswordSignInForm } from "./forms";
+import { choicesFromToken } from "@/lib/workspace-choice";
+import { PasswordSignInForm, WorkspacePicker } from "./forms";
 
 export const metadata = { title: "Sign in" };
 export const dynamic = "force-dynamic";
@@ -23,11 +24,15 @@ const ERRORS: Record<string, string> = {
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string; signed_out?: string; set?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; signed_out?: string; set?: string; choose?: string }>;
 }) {
   const sp = await searchParams;
   const enabled = authEnabled();
   const next = safeReturnTo(sp.next);
+  // A Google sign-in that opened more than one workspace comes back here to ask which. The
+  // token is the proof; an expired or tampered one leaves an empty list and the page simply
+  // shows the ordinary doors again.
+  const choices = sp.choose ? await choicesFromToken(sp.choose) : [];
   // The workspace this address belongs to decides whose domains these are; with no workspace in
   // the address it falls back to the server's own, which is the single-tenant case.
   const domains = await allowedDomains().catch(() => ["example.com"]);
@@ -46,12 +51,16 @@ export default async function SignInPage({
           </div>
         </div>
 
-        <h1 className="mt-8 font-display text-2xl font-semibold tracking-tight">Sign in</h1>
-        <p className="mt-1 text-sm text-muted">
-          {enabled
-            ? `Use your ${domains.map((d) => `@${d}`).join(" or ")} Google account, or the email and password an admin set up for you.`
-            : "Use the email and password an admin set up for you."}
-        </p>
+        <h1 className="mt-8 font-display text-2xl font-semibold tracking-tight">
+          {choices.length ? "Which workspace?" : "Sign in"}
+        </h1>
+        {choices.length === 0 && (
+          <p className="mt-1 text-sm text-muted">
+            {enabled
+              ? `Use your ${domains.map((d) => `@${d}`).join(" or ")} Google account, or the email and password an admin set up for you.`
+              : "Use the email and password an admin set up for you."}
+          </p>
+        )}
 
         {sp.error && ERRORS[sp.error] && (
           <p className="mt-4 rounded-lg bg-sindoor-soft px-3 py-2 text-sm text-sindoor" role="alert">{ERRORS[sp.error]}</p>
@@ -65,6 +74,12 @@ export default async function SignInPage({
           </p>
         )}
 
+        {choices.length ? (
+          <div className="mt-6">
+            <WorkspacePicker choices={choices} token={sp.choose!} next={next} />
+          </div>
+        ) : (
+          <>
         {/* The password door. Always here: it belongs to the workspace, not to Google. */}
         <div className="mt-6">
           <PasswordSignInForm next={next} />
@@ -97,6 +112,8 @@ export default async function SignInPage({
             <Link href="/" className="font-medium underline">Open the app</Link>
           </div>
         ) : null}
+          </>
+        )}
       </div>
       <nav className="absolute bottom-6 flex gap-5 text-xs text-night-3">
         <Link href="/about" className="hover:text-white">About</Link>

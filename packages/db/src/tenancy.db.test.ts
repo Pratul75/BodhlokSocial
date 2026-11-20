@@ -16,6 +16,7 @@ const reachable = await admin`select 1`.then(() => true).catch(() => false);
 
 describe.skipIf(!reachable)("two-tenant isolation", () => {
   let mod: typeof import("./index");
+  let seedBaseline: typeof import("./seed-tenant").seedTenantBaseline;
   let one: import("./client").TenantRef;
   let two: import("./client").TenantRef;
 
@@ -30,6 +31,7 @@ describe.skipIf(!reachable)("two-tenant isolation", () => {
     // Build the schema the way a deploy does: the control plane, then the migration runner over
     // tenant #1's own schema — the same path migrate.ts takes.
     mod = await import("./index");
+    ({ seedTenantBaseline: seedBaseline } = await import("./seed-tenant"));
     await mod.setupPlatform();
     const bootstrap = await mod.migrateTenant(
       { id: "bootstrap", slug: "first", name: "First", dataSchema: "public", dbRole: null, status: "active" },
@@ -239,6 +241,18 @@ describe.skipIf(!reachable)("two-tenant isolation", () => {
       }
       mod.forgetEntitlements();
     }
+  });
+
+  it("puts the admin it creates into the directory, so sign-in can find the workspace", async () => {
+    // How a fresh installation's very first admin gets in. Nothing has bound a workspace yet
+    // when they arrive at the sign-in page, so the only thing that can say which workspace
+    // their address belongs to is the control plane's directory — and the user row written by
+    // the deploy is the one row no Admin page ever wrote. Without this the first admin of a new
+    // deployment can sign in to nothing at all.
+    const email = "first-admin@first.test";
+    await mod.withTenant(one, () => seedBaseline({ adminEmail: email, adminName: "First Admin" }));
+    const found = await mod.tenantsForEmail(email);
+    expect(found.map((t) => t.slug)).toEqual([one.slug]);
   });
 
   it("stops falling back to tenant #1 once a second workspace exists", async () => {

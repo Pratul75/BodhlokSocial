@@ -672,3 +672,57 @@ none in Bodhlok: the picker offered **Acme Ltd** and **Zenith Dental**
 Dental as Kshitij, and that session was then refused at Acme's address.
 
 Full gate: **402 tests pass**, `tsc --noEmit` clean, `eslint .` clean.
+
+---
+
+## The Google door asks the same question (later addition)
+
+The picker above was built for the password door only. The Google door had the other half of the
+rule and not this one: it signed people in when the directory named exactly one workspace, and
+when it named several it returned "no workspace" — the audit log said `refused: no workspace` and
+the person was shown "Your account hasn't been added yet", which was not true. Its own comment
+said somebody in two workspaces "has to come in through one of their addresses", and that answer
+stopped existing the day `/t/<slug>/` came out of the URLs.
+
+It matters because live signs in with Google. Nobody is affected while an installation has one
+workspace; the day an operator adds an existing person to a second one, that person's Google
+sign-in stops working, and nothing in the console would say why.
+
+So both doors now end at the same step:
+
+| | password | Google |
+| --- | --- | --- |
+| what proves the person | scrypt verification in each workspace | a verified Google ID token |
+| how the choice is carried | five-minute signed token | the same token, `door: "google"` |
+| where the picker is drawn | returned to the form as action state | `/signin?choose=<token>` |
+| who finishes it | `chooseWorkspace` | `chooseWorkspace` |
+
+`ChoiceClaims` gained `door`, and `verifyChoiceToken` refuses a token that does not say which
+door it came through — including one from before this change. The door is not decoration: a
+temporary password has to be replaced before anybody is let in, and somebody arriving through
+Google never typed one, so `chooseWorkspace` applies `mustChangePassword` only to the password
+door.
+
+Each candidate workspace also judges the sign-in **itself**, rather than one workspace judging for
+all of them: the allowed-domain list is a per-workspace setting, and being named in the directory
+is not the same as still having an active row inside the workspace. Only the workspaces that pass
+both go on the list. Exactly one left means straight in — better than the old behaviour, which
+refused. None left means the first real reason is the one the person is told.
+
+### The directory had a hole under all of this
+
+The control plane's directory is what both doors read before any workspace is bound. Three places
+kept it current — Admin, the console, and the one-time backfill in `registerFirstTenant` — and two
+places wrote user rows without telling it:
+
+- `seedTenantBaseline`, which creates the **first admin of a new deployment** from
+  `BOOTSTRAP_ADMIN_EMAIL`. On a fresh database the backfill runs before that admin exists, so the
+  very first person a deploy creates could not be found by either door.
+- the sample-data seeder, which `TRUNCATE`s users and writes five of its own.
+
+Both now write the directory. This is also why CI's end-to-end run went red on this branch: with
+no directory row and no `DEFAULT_TENANT_SLUG`, dev sign-in resolved no workspace and all 19 pages
+redirected to `/signin`. Dev sign-in now resolves its workspace the way the real doors do — the
+address first, then the directory for `DEV_USER_EMAIL` — and falls back to `DEFAULT_TENANT_SLUG`
+only when the directory says nothing. The fail-open flag is no longer what makes development
+work.

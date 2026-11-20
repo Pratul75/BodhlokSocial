@@ -208,11 +208,20 @@ export function safeReturnTo(value: string | null | undefined): string {
 export const IMPERSONATION_COOKIE = "bodh_impersonation";
 export const CHOICE_AUDIENCE = "bodh-workspace-choice";
 
+/** Which door a half-finished sign-in came through. Each one proves itself differently. */
+export type SignInDoor = "password" | "google";
+
 /** What a half-finished sign-in remembers while somebody picks which workspace they meant. */
 export interface ChoiceClaims {
-  /** Every workspace this password opened, as `tenantId:userId`. */
+  /** Every workspace this sign-in opened, as `tenantId:userId`. */
   opened: string[];
   email: string;
+  /**
+   * How they got this far. A password opened these workspaces; a Google identity was verified
+   * for them. It matters afterwards: a temporary password has to be replaced before anyone is
+   * let in, and somebody who came through Google never typed one.
+   */
+  door: SignInDoor;
 }
 
 /**
@@ -223,7 +232,7 @@ export interface ChoiceClaims {
  * five minutes — a copied one buys nothing a correct password did not already buy.
  */
 export async function createChoiceToken(claims: ChoiceClaims): Promise<string> {
-  return new SignJWT({ opened: claims.opened, email: claims.email })
+  return new SignJWT({ opened: claims.opened, email: claims.email, door: claims.door })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("5m")
@@ -238,7 +247,10 @@ export async function verifyChoiceToken(token: string | undefined): Promise<Choi
     const opened = payload.opened;
     if (!Array.isArray(opened) || opened.some((o) => typeof o !== "string")) return null;
     if (typeof payload.email !== "string") return null;
-    return { opened: opened as string[], email: payload.email };
+    // An unrecognised door is refused rather than read as the gentler one: a token that does not
+    // say how it was earned is a token this build did not mint.
+    if (payload.door !== "password" && payload.door !== "google") return null;
+    return { opened: opened as string[], email: payload.email, door: payload.door };
   } catch {
     return null;
   }

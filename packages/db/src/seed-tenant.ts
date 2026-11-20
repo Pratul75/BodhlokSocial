@@ -10,8 +10,9 @@
  */
 import { eq } from "drizzle-orm";
 import { INTEGRATIONS } from "@bodh/shared";
-import { db } from "./client";
+import { currentTenant, db } from "./client";
 import { brandKit, budgets, connections, users } from "./schema";
+import { noteUserInDirectory } from "./tenancy";
 
 export interface TenantBaseline {
   adminEmail?: string;
@@ -44,5 +45,10 @@ export async function seedTenantBaseline(opts: TenantBaseline = {}): Promise<voi
         .values({ email, name, role: "admin" })
         .onConflictDoUpdate({ target: users.email, set: { role: "admin", active: true } });
     }
+    // The control plane's directory is how sign-in finds which workspaces an address can open,
+    // before any workspace is bound. A user row written here and nowhere else would leave the
+    // very first admin of a new installation unable to sign in to it.
+    const tenant = currentTenant();
+    if (tenant.id !== "bootstrap") await noteUserInDirectory(tenant.id, email, true);
   }
 }

@@ -13,10 +13,13 @@ import {
   SESSION_COOKIE,
   SESSION_DAYS,
   verifyChoiceToken,
+  type SignInDoor,
 } from "@/lib/session";
 import { passwordProblem } from "@/lib/passwords";
+import type { WorkspaceChoice } from "@/lib/workspace-choice";
 import { slugFromHost, slugFromPath } from "@/lib/tenant";
 import type { SignInTarget } from "@/lib/user-passwords";
+export type { WorkspaceChoice };
 import {
   checkPassword,
   issueUserInvite,
@@ -25,12 +28,6 @@ import {
   tenantForInviteToken,
   userForInviteToken,
 } from "@/lib/user-passwords";
-
-/** A workspace somebody can pick, once their password has opened more than one. */
-export interface WorkspaceChoice {
-  tenantId: string;
-  name: string;
-}
 
 export type PasswordSignInState =
   | { error: string }
@@ -91,6 +88,7 @@ export async function signInWithPassword(_prev: PasswordSignInState, formData: F
     token: await createChoiceToken({
       email,
       opened: outcome.choose.map((t) => `${t.tenant.id}:${t.user.id}`),
+      door: "password",
     }),
     next,
   };
@@ -132,9 +130,12 @@ export async function chooseWorkspace(_prev: ChooseWorkspaceState, formData: For
     {
       tenant,
       user: { id: row.id, email: row.email, name: row.name, sessionVersion: row.sessionVersion },
-      mustChange: row.mustChangePassword,
+      // Somebody who came through Google never typed a password here, so a temporary one waiting
+      // in this workspace is not in their way: the Google door does not ask for one at all.
+      mustChange: claims.door === "google" ? false : row.mustChangePassword,
     },
     safeReturnTo(String(formData.get("next") ?? "/")),
+    claims.door,
   );
 }
 
@@ -142,7 +143,7 @@ export async function chooseWorkspace(_prev: ChooseWorkspaceState, formData: For
  * The last few steps, shared by signing in and by picking a workspace afterwards: a temporary
  * password goes to the page where it is replaced, anything else gets a session.
  */
-async function finishSignIn(target: SignInTarget, next: string): Promise<{ error: string }> {
+async function finishSignIn(target: SignInTarget, next: string, door: SignInDoor = "password"): Promise<{ error: string }> {
   const { tenant, user } = target;
   const slug = await slugFromAddress();
   const prefix = slug ? `/t/${slug}` : "";
@@ -174,7 +175,13 @@ async function finishSignIn(target: SignInTarget, next: string): Promise<{ error
   );
   // Written inside the workspace, where the rest of its audit log lives.
   await withTenant(tenant, () =>
-    db.insert(auditLog).values({ actor: user.email, actorType: "user", action: "sign_in", target: "app", result: "password" }),
+    db.insert(auditLog).values({
+      actor: user.email,
+      actorType: "user",
+      action: "sign_in",
+      target: "app",
+      result: door === "google" ? `signed in to ${tenant.slug}` : "password",
+    }),
   );
   redirect(to);
 }

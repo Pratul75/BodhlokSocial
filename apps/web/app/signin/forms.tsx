@@ -8,8 +8,8 @@ import {
   type ChooseWorkspaceState,
   type PasswordSignInState,
   type SetPasswordState,
-  type WorkspaceChoice,
 } from "./actions";
+import type { WorkspaceChoice } from "@/lib/workspace-choice";
 
 const field =
   "w-full rounded-lg border border-rule bg-card px-3 py-2.5 text-sm text-ink placeholder:text-muted/70 focus:border-dusk focus:outline-none";
@@ -53,15 +53,23 @@ export function PasswordSignInForm({ next }: { next: string }) {
   );
 }
 
-/** Which workspace they meant, asked only after the password has already matched in several. */
-function WorkspacePicker({ choices, token, next }: { choices: WorkspaceChoice[]; token: string; next: string }) {
+/**
+ * Which workspace they meant, asked only once a sign-in has already opened several.
+ *
+ * Both doors end here: the password form renders it with the state it got back, and a Google
+ * sign-in arrives at /signin?choose=<token> and has the page render it. The token carries the
+ * proof either way, so this component holds nothing but the question.
+ */
+export function WorkspacePicker({ choices, token, next }: { choices: WorkspaceChoice[]; token: string; next: string }) {
   const [state, action, pending] = useActionState<ChooseWorkspaceState, FormData>(chooseWorkspace, null);
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="token" value={token} />
       <input type="hidden" name="next" value={next} />
       <p className="text-sm text-muted">
-        You work in {choices.length} workspaces. Which one are you opening?
+        {choices.length === 1
+          ? "One workspace is still open to you. Continue to it?"
+          : `You work in ${choices.length} workspaces. Which one are you opening?`}
       </p>
       <div className="space-y-2">
         {choices.map((c) => (

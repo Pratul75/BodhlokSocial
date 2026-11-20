@@ -3,7 +3,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
-import { db, enterTenant, ownerSql, tenantById, users, type TenantRef } from "@bodh/db";
+import { db, enterTenant, ownerSql, tenantById, tenantsForEmail, users, type TenantRef } from "@bodh/db";
 import {
   effectiveAccess,
   hasFeature,
@@ -22,7 +22,7 @@ import {
   verifyImpersonationToken,
   verifySessionToken,
 } from "./session";
-import { bindTenant, NoTenant, TenantMismatch, TenantSuspended, tenantPrefix, UnknownTenant } from "./tenant";
+import { bindTenant, NoTenant, TenantMismatch, TenantSuspended, tenantFromRequest, tenantPrefix, UnknownTenant } from "./tenant";
 import { tenantEntitlements } from "./entitlements";
 
 export interface CurrentUser {
@@ -133,10 +133,15 @@ async function loadCurrentUser(): Promise<CurrentUser> {
   if (authEnabled() || !devAuthAllowed()) redirect(`${await tenantPrefix()}/signin`);
 
   // Development only, and only with no sign-in client at all: everybody is DEV_USER_EMAIL.
-  const tenant = await bind(null);
-  enterTenant(tenant);
   const email = process.env.DEV_USER_EMAIL?.trim().toLowerCase();
   if (!email) throw new Error("Set DEV_USER_EMAIL in .env to run without Google sign-in.");
+  // Which workspace is this? The address, when it names one. Otherwise the workspaces this
+  // address can actually open, oldest first — the same control-plane directory both real sign-in
+  // doors read. Only if that says nothing does this fall through to the DEFAULT_TENANT_SLUG
+  // fallback inside bind(), which answers for a single-tenant installation and nothing else.
+  const { named } = await tenantFromRequest();
+  const tenant = await bind(named ? null : ((await tenantsForEmail(email))[0]?.id ?? null));
+  enterTenant(tenant);
   const [row] = await db
     .select()
     .from(users)

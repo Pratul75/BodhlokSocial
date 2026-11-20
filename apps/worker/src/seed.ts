@@ -9,7 +9,7 @@
  */
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db, firstTenant, sql, withTenant } from "@bodh/db";
+import { currentTenant, db, firstTenant, noteUserInDirectory, sql, withTenant } from "@bodh/db";
 import * as s from "@bodh/db/schema";
 import type { NormalizedEvent } from "@bodh/integrations/bodh-events";
 import { forwardToGoogle, forwardToMeta, ingestEvents, loadGa4Sessions, loadMetaSpend, rebuild, runJob } from "@bodh/integrations/pipeline";
@@ -64,6 +64,12 @@ async function main() {
       { email: "sales@rechargestudio.com", name: "Sales Lead", role: "sales" },
     ])
     .returning();
+
+  // The seed TRUNCATEs users and writes its own, so the control plane's directory has to be told
+  // about them: it is what sign-in reads to find which workspace an address belongs to, and
+  // without it these five exist inside the workspace but can reach no door into it.
+  const here = currentTenant();
+  for (const row of userRows) await noteUserInDirectory(here.id, row.email, row.active);
 
   await db.insert(s.connections).values(INTEGRATIONS.map((i) => ({ key: i.key })));
 
