@@ -13,6 +13,8 @@ import {
   SESSION_COOKIE,
   SESSION_DAYS,
   verifyChoiceToken,
+  WORKSPACE_COOKIE,
+  workspaceCookieOptions,
   type SignInDoor,
 } from "@/lib/session";
 import { passwordProblem } from "@/lib/passwords";
@@ -173,6 +175,9 @@ async function finishSignIn(target: SignInTarget, next: string, door: SignInDoor
     await createSessionToken({ sub: user.id, email: user.email, sv: user.sessionVersion, tid: tenant.id }),
     cookieOptions(SESSION_DAYS * 86400),
   );
+  // The same workspace, written where the page can read it, so a tab left open on another one
+  // can notice. See WORKSPACE_COOKIE.
+  jar.set(WORKSPACE_COOKIE, tenant.id, workspaceCookieOptions(SESSION_DAYS * 86400));
   // Written inside the workspace, where the rest of its audit log lives.
   await withTenant(tenant, () =>
     db.insert(auditLog).values({
@@ -220,6 +225,7 @@ export async function setPasswordFromInvite(_prev: SetPasswordState, formData: F
   // Any session opened before now is dead: the session version went up.
   const jar = await cookies();
   jar.delete(SESSION_COOKIE);
+  jar.delete(WORKSPACE_COOKIE);
   const slug = await slugFromAddress();
   redirect(`${slug ? `/t/${slug}` : ""}/signin?set=1`);
 }

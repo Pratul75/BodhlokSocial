@@ -16,6 +16,8 @@ import {
   safeReturnTo,
   SESSION_COOKIE,
   SESSION_DAYS,
+  WORKSPACE_COOKIE,
+  workspaceCookieOptions,
 } from "@/lib/session";
 
 function fail(req: Request, error: string) {
@@ -124,6 +126,7 @@ export async function GET(req: Request) {
   await audit({ actor: user.email, actorType: "user", action: "sign_in", target: "app", result: `signed in to ${tenant.slug}` });
   const res = NextResponse.redirect(new URL(saved.returnTo, appUrl(req)));
   res.cookies.delete(OAUTH_COOKIE);
+  res.cookies.set(WORKSPACE_COOKIE, tenant.id, workspaceCookieOptions(SESSION_DAYS * 86400));
   res.cookies.set(
     SESSION_COOKIE,
     // The tenant travels in the session, so every later request knows whose data this is even

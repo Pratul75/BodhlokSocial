@@ -756,7 +756,7 @@ export async function registerFirstTenant(opts: { slug: string; name: string }):
  */
 export async function tenantsForEmail(email: string): Promise<TenantRef[]> {
   const rows = (await ownerSql()<TenantRow[]>`
-    select t.id, t.slug, t.name, t.data_schema, t.db_role, t.db_role_secret, t.status
+    select t.id, t.slug, t.name, t.data_schema, t.db_role, t.db_role_secret, t.status, t.org_id
     from platform.user_directory d
     join platform.tenants t on t.id = d.tenant_id
     where d.email = ${email.trim().toLowerCase()} and d.active = true and t.status = 'active'
